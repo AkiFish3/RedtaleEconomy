@@ -281,6 +281,10 @@ public final class CheckinModule implements RedtaleModule {
 					"streak:" + s.streak);
 		}
 		if (tier != null) grantItems(uuid, tier.items());
+		// R32：签到涨协会声望
+		GuildModule.addRep(uuid, "checkin");
+		// R20：签到给战令经验
+		BattlePassModule.addXp(uuid, "checkin");
 		boolean hasAny = reward > 0 || (tier != null && !tier.items().isEmpty());
 		return new Outcome(hasAny ? Result.OK : Result.NO_TIER, s.streak, reward, "");
 	}

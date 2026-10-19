@@ -25,7 +25,8 @@ public final class MenuEntries {
 			new Entry("tasks", "tasks", true),
 			new Entry("shop", "shop", true),
 			new Entry("mail", "mail", false),
-			new Entry("season", "season", false));
+			new Entry("season", "season", false),
+			new Entry("warehouse", "storage", true));
 
 	private MenuEntries() {
 	}

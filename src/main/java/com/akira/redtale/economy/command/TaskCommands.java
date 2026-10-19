@@ -3,7 +3,11 @@ package com.akira.redtale.economy.command;
 import com.akira.redtale.economy.perm.Permissions;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.lang.Lang;
+import com.akira.redtale.economy.module.impl.BattlePassModule;
+import com.akira.redtale.economy.module.impl.BountyModule;
+import com.akira.redtale.economy.module.impl.GuildModule;
 import com.akira.redtale.economy.module.impl.TaskModule;
+import com.akira.redtale.economy.module.impl.WarehouseModule;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -78,8 +82,15 @@ public final class TaskCommands {
 		if (p == null) return onlyPlayer(src);
 		TaskModule.Action a = TaskModule.refresh(p.getUuid());
 		if (a == TaskModule.Action.NO_REFRESH) {
-			src.sendError(Text.literal(Lang.msg("tasks.noRefresh")));
-			return 0;
+			// R29：次数用完 → 尝试消耗刷新券（背包优先，其次仓库）
+			String ticket = TaskModule.refreshTicketItem();
+			if (ticket.isEmpty() || !consumeTicket(p, ticket)) {
+				src.sendError(Text.literal(Lang.msg("tasks.noRefresh")));
+				return 0;
+			}
+			TaskModule.refreshByTicket(p.getUuid());
+			src.sendFeedback(() -> Text.literal(Lang.msg("tasks.refreshedByTicket", displayName(ticket))), false);
+			return list(ctx);
 		}
 		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.refreshed")), false);
 		return list(ctx);
@@ -104,15 +115,18 @@ public final class TaskCommands {
 			return 0;
 		}
 
-		// 先全量校验再扣，避免扣了一半发现不够
+		// 先全量校验再扣，避免扣了一半发现不够（R27：仓库也算可用量）
 		for (TaskModule.ItemCount ic : t.items) {
-			if (countOf(p, ic.id) < ic.count) {
+			if (countAvailable(p, ic.id) < ic.count) {
 				src.sendError(Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)));
 				return 0;
 			}
 		}
 		for (TaskModule.ItemCount ic : t.items) {
-			removeFrom(p, ic.id, ic.count);
+			// R27：先扣仓库，不够的部分再扣背包
+			int fromWarehouse = WarehouseModule.takeFor(p.getUuid(), ic.id, ic.count);
+			int rest = ic.count - fromWarehouse;
+			if (rest > 0) removeFrom(p, ic.id, rest);
 		}
 
 		long reward = TaskModule.claimAndSave(p.getUuid(), slot);
@@ -120,6 +134,14 @@ public final class TaskCommands {
 			src.sendError(Text.literal(Lang.msg("tasks.already")));
 			return 0;
 		}
+		// R20：领任务给战令经验
+		BattlePassModule.addXp(p.getUuid(), "taskClaim");
+		// R31：submit 类悬赏跟着缴纳一起推进（按实际缴纳的物品算）
+		for (TaskModule.ItemCount ic : t.items) {
+			BountyModule.onSubmit(p.getUuid(), ic.id, ic.count);
+		}
+		// R32：缴纳涨协会声望
+		GuildModule.addRep(p.getUuid(), "submit");
 		final long r = reward;
 		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.claimed", slot, BalanceService.format(r))), false);
 		return 1;
@@ -154,12 +176,32 @@ public final class TaskCommands {
 			src.sendError(Text.literal(Lang.msg("tasks.already")));
 			return 0;
 		}
+		// R20：领任务给战令经验
+		BattlePassModule.addXp(p.getUuid(), "taskClaim");
 		final long r = reward;
 		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.claimed", slot, BalanceService.format(r))), false);
 		return 1;
 	}
 
-	// ---------------------------------------------------------------- 背包
+	// ---------------------------------------------------------------- 背包 / 仓库
+
+	/** 背包 + 仓库的可用总量（R27 缴纳校验用）。 */
+	private static int countAvailable(ServerPlayerEntity p, String itemId) {
+		return countOf(p, itemId) + WarehouseModule.countFor(p.getUuid(), itemId);
+	}
+
+	/** R29：消耗 1 张刷新券；背包优先，其次仓库。 */
+	private static boolean consumeTicket(ServerPlayerEntity p, String ticketId) {
+		if (countOf(p, ticketId) > 0) {
+			removeFrom(p, ticketId, 1);
+			return true;
+		}
+		if (TaskModule.refreshTicketFromWarehouse()
+				&& WarehouseModule.takeFor(p.getUuid(), ticketId, 1) > 0) {
+			return true;
+		}
+		return false;
+	}
 
 	private static int countOf(ServerPlayerEntity p, String itemId) {
 		Item item = item(itemId);

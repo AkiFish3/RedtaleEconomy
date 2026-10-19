@@ -16,12 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MenuEntriesTest {
 
 	/** 服务端已注册、且玩家侧可用的命令（对照 command 包的 literal(...)）。 */
-	private static final Set<String> SERVER_COMMANDS = Set.of("bal", "checkin", "tasks", "shop");
+	private static final Set<String> SERVER_COMMANDS = Set.of("bal", "checkin", "tasks", "shop", "storage");
 
 	@Test
-	void sixEntriesInDeclaredOrder() {
+	void entriesInDeclaredOrder() {
 		List<String> keys = MenuEntries.all().stream().map(MenuEntries.Entry::key).toList();
-		assertEquals(List.of("balance", "checkin", "tasks", "shop", "mail", "season"), keys);
+		assertEquals(List.of("balance", "checkin", "tasks", "shop", "mail", "season", "warehouse"), keys);
 	}
 
 	@Test
@@ -53,7 +53,7 @@ class MenuEntriesTest {
 
 	@Test
 	void readyListMatchesFlags() {
-		assertEquals(4, MenuEntries.ready().size());
+		assertEquals(5, MenuEntries.ready().size(), "U4 + R27：余额/签到/任务/商店/仓储");
 		assertTrue(MenuEntries.ready().stream().allMatch(MenuEntries.Entry::ready));
 	}
 
@@ -67,7 +67,7 @@ class MenuEntriesTest {
 	@Test
 	void keybindNamesCoverMenuPlusEveryEntry() {
 		List<String> names = MenuEntries.keybindNames();
-		assertEquals(7, names.size(), "U5 要求 7 个动作");
+		assertEquals(8, names.size(), "U5 7 个动作 + R27 仓储入口");
 		assertEquals("menu", names.get(0));
 		assertEquals(MenuEntries.all().size() + 1, names.size());
 		assertEquals(names.size(), new HashSet<>(names).size(), "动作名不能重复");

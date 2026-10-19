@@ -37,7 +37,7 @@ dependencies {
 	// 软依赖编译期依赖（不打包）：FTB Quests / FTB Library，仅用于 R9 的 reward 类型
 	// 运行时由 FTBQ 提供；未安装时本 mod 相关类通过 isModLoaded 守卫不会被加载
 	// 仓库不含这两个 jar（版权），缺失时给出明确提示而不是一堆 import 报错
-	['ftb-quests.jar', 'ftb-library.jar'].each { name ->
+	['ftb-quests.jar', 'ftb-library.jar', 'architectury.jar', 'contact.jar', 'sdm_economy.jar'].each { name ->
 		if (file("libs/$name").exists()) {
 			modCompileOnly files("libs/$name")
 		} else {
@@ -93,4 +93,10 @@ publishing {
 	repositories {
 		// 发布配置
 	}
+}
+
+// B01：编译期开 lint，warning 一律修掉（构建日志里出现「警告」即为回归）
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.compilerArgs << '-Xlint:deprecation' << '-Xlint:unchecked'
 }

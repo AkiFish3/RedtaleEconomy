@@ -57,6 +57,15 @@ public final class MigrateCommand {
 								.executes(ctx -> storage(ctx, false))
 								.then(CommandManager.literal("confirm")
 										.executes(ctx -> storage(ctx, true)))))
+				.then(CommandManager.literal("sdm")
+						.then(CommandManager.literal("scan").executes(ctx -> sdm(ctx, "scan")))
+						.then(CommandManager.literal("apply")
+								.executes(ctx -> sdm(ctx, "apply"))
+								.then(CommandManager.literal("confirm").executes(ctx -> sdm(ctx, "apply-confirm"))))
+						.then(CommandManager.literal("rollback")
+								.executes(ctx -> sdm(ctx, "rollback"))
+								.then(CommandManager.literal("confirm").executes(ctx -> sdm(ctx, "rollback-confirm"))))
+						.then(CommandManager.literal("status").executes(ctx -> sdm(ctx, "status"))))
 				.then(CommandManager.literal("identity")
 						.then(CommandManager.argument("from", StringArgumentType.word())
 								.then(CommandManager.argument("to", StringArgumentType.word())
@@ -312,5 +321,84 @@ public final class MigrateCommand {
 				+ " 人（离线或无余额组件）；provider 已切到 " + to), true);
 		RedtaleEconomy.LOGGER.info("[migrate] {} → {}：{} 成功 / {} 跳过", from.id(), to, done, skipped);
 		return done;
+	}
+
+	/**
+	 * {@code /redtale migrate sdm scan|apply|rollback|status}（R23）。
+	 *
+	 * <p>scan 只读 SDM 内存数据报「人数 / 总额 / 异常」；apply 必须加 confirm，
+	 * 执行前会把「谁拿了多少」快照到 backup/，rollback 就按快照扣回（只扣到 0，不变负）。
+	 */
+	private static int sdm(CommandContext<ServerCommandSource> ctx, String mode) {
+		ServerCommandSource src = ctx.getSource();
+		if (!com.akira.redtale.economy.integration.SdmMigrate.available()) {
+			src.sendError(Text.literal("§c未检测到 sdm_economy，无法迁移"));
+			return 0;
+		}
+		var server = com.akira.redtale.economy.RedtaleEconomy.server();
+		if (server == null) {
+			src.sendError(Text.literal("§c服务器尚未就绪"));
+			return 0;
+		}
+		switch (mode) {
+			case "status" -> {
+				String snap = com.akira.redtale.economy.integration.SdmMigrate.snapshotPath();
+				src.sendFeedback(() -> Text.literal(snap.isEmpty()
+						? "§7还没有迁移快照（apply 后才会生成）"
+						: "§7最近一份迁移快照：" + snap), false);
+				return 1;
+			}
+			case "rollback" -> {
+				String snap = com.akira.redtale.economy.integration.SdmMigrate.snapshotPath();
+				if (snap.isEmpty()) {
+					src.sendError(Text.literal("§c没有可用的迁移快照"));
+					return 0;
+				}
+				src.sendFeedback(() -> Text.literal("§e回滚预检：按 " + snap
+						+ " 逐人扣回（只扣到 0，不会变负）。确认请执行 §f/redtale migrate sdm rollback confirm"), false);
+				return 1;
+			}
+			case "rollback-confirm" -> {
+				int n = com.akira.redtale.economy.integration.SdmMigrate.rollback();
+				if (n < 0) {
+					src.sendError(Text.literal("§c回滚失败：没有快照或快照损坏"));
+					return 0;
+				}
+				src.sendFeedback(() -> Text.literal("§a已按快照回滚 " + n + " 个账号的余额"), true);
+				return 1;
+			}
+			default -> {
+				var rows = com.akira.redtale.economy.integration.SdmMigrate.snapshot(server);
+				long total = com.akira.redtale.economy.integration.SdmMigrate.total(rows);
+				int neg = com.akira.redtale.economy.integration.SdmMigrate.negativeCount(rows);
+				src.sendFeedback(() -> Text.literal("§eSDM 迁移预检：§f" + rows.size() + " §7个账号，合计 §f"
+						+ com.akira.redtale.economy.economy.BalanceService.format(total)
+						+ (neg > 0 ? " §c（" + neg + " 个负余额）" : "")), false);
+				if (rows.isEmpty()) {
+					src.sendFeedback(() -> Text.literal("§7没有符合条件的账号（检查 minAmount / ratio / sourceCurrencyId）"), false);
+					return 1;
+				}
+				if ("scan".equals(mode)) {
+					int shown = 0;
+					for (var r : rows) {
+						if (shown++ >= 5) {
+							src.sendFeedback(() -> Text.literal("§8…（其余省略）"), false);
+							break;
+						}
+						src.sendFeedback(() -> Text.literal("§8· §f" + r.uuid()
+								+ " §7raw=" + r.raw() + " → §a"
+								+ com.akira.redtale.economy.economy.BalanceService.format(r.copper())), false);
+					}
+					src.sendFeedback(() -> Text.literal("§7确认请执行 §f/redtale migrate sdm apply confirm"), false);
+					return 1;
+				}
+				if (!com.akira.redtale.economy.config.SdmMigrateConfig.enabled()) {
+					src.sendError(Text.literal("§csdm_migrate.json → enabled=false，已拒绝执行（防误触）"));
+					return 0;
+				}
+				src.sendFeedback(() -> Text.literal("§e将写入 " + rows.size() + " 个账号，确认请执行 §f/redtale migrate sdm apply confirm"), false);
+				return 1;
+			}
+		}
 	}
 }

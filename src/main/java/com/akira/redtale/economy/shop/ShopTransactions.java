@@ -5,6 +5,7 @@ import com.akira.redtale.economy.config.ShopConfig;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.module.ModuleManager;
+import com.akira.redtale.economy.module.impl.GuildModule;
 import com.akira.redtale.economy.module.impl.PremiumModule;
 import com.akira.redtale.economy.net.ShopNetworking;
 import com.akira.redtale.economy.net.ShopProtocol;
@@ -92,6 +93,8 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 		boolean premium = def != null && def.requirePremium();
 
 		long price = e.buyPrice() * count;
+		// R32：协会等级商店折扣（只影响普通货币，赞助点商品不打折）
+		if (!premium) price = GuildModule.applyShopDiscount(player.getUuid(), price);
 		if (price <= 0) {
 			return new ShopProtocol.ActionResult(false, "shop.badRequest", balance, 0);
 		}
@@ -129,6 +132,14 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			}
 		} else if (!BalanceService.take(player.getUuid(), price, Ledger.TYPE_SHOP_BUY, ref)) {
 			return new ShopProtocol.ActionResult(false, "cmd.pay.insufficient", balance, stock);
+		}
+		// R20：商店消费换战令经验（按实际扣掉的铜币算，赞助点消费不计）
+		if (!premium) {
+			try {
+				com.akira.redtale.economy.module.impl.BattlePassModule.addSpendXp(player.getUuid(), price);
+			} catch (Exception ex) {
+				RedtaleEconomy.LOGGER.warn("[pass] 消费经验失败：{}", ex.getMessage());
+			}
 		}
 
 		// 2) 发货 + 3) 提交库存/限购：任一步失败都要退款并留补偿记录（Q2）

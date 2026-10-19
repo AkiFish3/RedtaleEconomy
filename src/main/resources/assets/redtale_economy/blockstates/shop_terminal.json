@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "redtale_economy:block/shop_terminal" }
+  }
+}

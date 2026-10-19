@@ -1,6 +1,10 @@
 package com.akira.redtale.economy;
 
+import com.akira.redtale.economy.command.ItemIdArgument;
 import com.akira.redtale.economy.command.RedtaleCommands;
+import net.fabricmc.fabric.api.command.v2.ArgumentTypeRegistry;
+import net.minecraft.command.argument.serialize.ConstantArgumentSerializer;
+import net.minecraft.util.Identifier;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.CoreConfig;
 import com.akira.redtale.economy.config.EconomyConfig;
@@ -11,12 +15,20 @@ import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.module.ModuleManager;
 import com.akira.redtale.economy.module.impl.AliasModule;
+import com.akira.redtale.economy.module.impl.BattlePassModule;
+import com.akira.redtale.economy.module.impl.BoardModule;
+import com.akira.redtale.economy.module.impl.BountyModule;
+import com.akira.redtale.economy.module.impl.EasyNpcModule;
+import com.akira.redtale.economy.module.impl.GuildModule;
+import com.akira.redtale.economy.module.impl.MailModule;
+import com.akira.redtale.economy.module.impl.TitleModule;
 import com.akira.redtale.economy.module.impl.CheckinModule;
 import com.akira.redtale.economy.module.impl.EconomyModule;
 import com.akira.redtale.economy.module.impl.PremiumModule;
 import com.akira.redtale.economy.module.impl.ShopModule;
 import com.akira.redtale.economy.module.impl.StorageModule;
 import com.akira.redtale.economy.module.impl.TaskModule;
+import com.akira.redtale.economy.module.impl.WarehouseModule;
 import com.akira.redtale.economy.net.ConfigNetworking;
 import com.akira.redtale.economy.net.ShopNetworking;
 import com.mojang.brigadier.CommandDispatcher;
@@ -53,12 +65,27 @@ public class RedtaleEconomy implements ModInitializer {
 		instance = this;
 		LOGGER.info("[{}] initializing (Fabric 1.20.1)", MOD_ID);
 
+		// ★自定义 ArgumentType 必须注册进 Brigadier 的类型表★
+		// 否则服务端向客户端下发命令树时抛 Unrecognized argument type，
+		// 表现为进游戏报「无效的玩家数据 / Couldn't place player in world」
+		ArgumentTypeRegistry.registerArgumentType(
+				new Identifier(MOD_ID, "item_id"),
+				ItemIdArgument.class,
+				ConstantArgumentSerializer.of(ItemIdArgument::itemId));
+
 		FabricLoader.getInstance().getModContainer(MOD_ID)
 				.ifPresent(c -> version = c.getMetadata().getVersion().getFriendlyString());
+
+		// 商店终端方块（R24）：站地 + 墙面两个 id，共用一个方块实体
+		com.akira.redtale.economy.shop.TerminalRegistry.register();
 
 		// 补签券物品（Q1）：签到补签用，id 可在 checkin.json → makeup.ticketItem 引用
 		net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
 				new Identifier(MOD_ID, "makeup_ticket"),
+				new net.minecraft.item.Item(new net.minecraft.item.Item.Settings().maxCount(16)));
+		// 刷新券（R29）：/tasks refresh 次数用完后消耗，也可在商店上架
+		net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+				new Identifier(MOD_ID, "refresh_ticket"),
 				new net.minecraft.item.Item(new net.minecraft.item.Item.Settings().maxCount(16)));
 
 		ConfigManager cfg = ConfigManager.create();
@@ -77,6 +104,14 @@ public class RedtaleEconomy implements ModInitializer {
 		modules.register(new TaskModule());
 		modules.register(new StorageModule());
 		modules.register(new PremiumModule());
+		modules.register(new WarehouseModule());
+		modules.register(new BountyModule());
+		modules.register(new GuildModule());
+		modules.register(new TitleModule());
+		modules.register(new BattlePassModule());
+		modules.register(new BoardModule());
+		modules.register(new MailModule());
+		modules.register(new EasyNpcModule());
 		// 别名必须最后注册：它要看到其它模块已挂好的命令
 		modules.register(new AliasModule());
 		// 后续模块（checkin / tasks / shop / premium / ftbq）在此注册
@@ -99,13 +134,32 @@ public class RedtaleEconomy implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			RedtaleCommands.register(dispatcher);
 			modules.registerCommands(dispatcher);
+			com.akira.redtale.economy.shop.TerminalRegistry.registerCommands(dispatcher);
 		});
 
 		ServerLifecycleEvents.SERVER_STARTED.register(s -> server = s);
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register(
 				(handler, s) -> ShopNetworking.forget(handler.getPlayer().getUuid()));
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
-			// B25 关服顺序：快照 → 余额落盘 → 流水排空 → 关连接
+			// R34：关服按配置还原称号（避免留下半套 display_name）
+			try {
+				TitleModule.restoreAll(s);
+			} catch (Exception e) {
+				LOGGER.warn("[title] 关服还原失败：{}", e.getMessage());
+			}
+			// B25 关服顺序：各模块脏数据 → 快照 → 余额落盘 → 流水排空 → 关连接
+			// 新模块（仓库/悬赏/协会/战令/邮件/委托板）都是「内存改 + 延迟落盘」，
+			// 关服时必须显式排空，否则最后 5 秒内的改动会丢
+			try {
+				com.akira.redtale.economy.warehouse.WarehouseData.flushAll();
+				com.akira.redtale.economy.bounty.BountyState.flushAll();
+				com.akira.redtale.economy.guild.GuildData.flushAll();
+				com.akira.redtale.economy.mail.MailQueue.flushAll();
+				com.akira.redtale.economy.module.impl.BattlePassModule.flushAll();
+				com.akira.redtale.economy.board.BoardStore.save();
+			} catch (Exception e) {
+				LOGGER.warn("[shutdown] 模块落盘失败：{}", e.getMessage());
+			}
 			com.akira.redtale.economy.storage.SnapshotService.flushOnline(s);
 			StorageModule.shutdown();
 			BalanceService.shutdown();

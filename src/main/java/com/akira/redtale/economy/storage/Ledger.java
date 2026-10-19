@@ -34,6 +34,12 @@ public final class Ledger {
 	public static final String TYPE_PAY = "pay";
 	public static final String TYPE_ADMIN = "admin";
 	public static final String TYPE_PREMIUM = "premium";
+	public static final String TYPE_WAREHOUSE = "warehouse.upgrade";
+	public static final String TYPE_BOUNTY = "bounty";
+	public static final String TYPE_PASS = "battlepass";
+	public static final String TYPE_BOARD = "board";
+	public static final String TYPE_MAIL = "mail";
+	public static final String TYPE_MIGRATE = "migrate";
 
 	private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
 	private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM");

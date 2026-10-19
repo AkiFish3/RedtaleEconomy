@@ -53,6 +53,22 @@ public final class RedtaleCommands {
 								.executes(RedtaleCommands::cancelTicket)))
 				.then(CommandManager.literal("help")
 						.executes(RedtaleCommands::help))
+				// B24 补发奖励：统一走邮件（物品进 Contact 信箱/队列，货币进待领取队列）
+				.then(CommandManager.literal("grant")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.literal("money")
+								.then(CommandManager.argument("player",
+												net.minecraft.command.argument.EntityArgumentType.player())
+										.then(CommandManager.argument("amount",
+														com.mojang.brigadier.arguments.LongArgumentType.longArg(1, 9_000_000_000_000L))
+												.executes(RedtaleCommands::grantMoney))))
+						.then(CommandManager.literal("item")
+								.then(CommandManager.argument("player",
+												net.minecraft.command.argument.EntityArgumentType.player())
+										.then(CommandManager.argument("item", ItemIdArgument.itemId())
+												.then(CommandManager.argument("count",
+																com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 64))
+														.executes(RedtaleCommands::grantItem))))))
 				.then(MigrateCommand.build(CoreConfig.perm("adminPermissionLevel", 4)))
 				.then(CommandManager.literal("edit")
 						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
@@ -215,6 +231,57 @@ public final class RedtaleCommands {
 		boolean ok = ConfirmTickets.cancel(player.getUuid(), code);
 		src.sendFeedback(() -> Text.literal(ok ? "§a票据已作废" : "§c没有这张票据"), false);
 		return ok ? 1 : 0;
+	}
+
+	/** B24：补发货币（进待领取队列，玩家 /mail claim 领取）。 */
+	private static int grantMoney(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			net.minecraft.server.network.ServerPlayerEntity target = net.minecraft.command.argument.EntityArgumentType.getPlayer(ctx, "player");
+			long amount = com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "amount");
+			if (!com.akira.redtale.economy.mail.MailService.sendMoney(target.getUuid(), amount, "admin:grant")) {
+				src.sendError(Text.literal("§c补发失败：金额超出 mail.json 的 maxQueueMoney"));
+				return 0;
+			}
+			src.sendFeedback(() -> Text.literal("§a已给 " + target.getName().getString()
+					+ " 补发 " + com.akira.redtale.economy.economy.BalanceService.format(amount)
+					+ "（/mail claim 领取）"), true);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c补发失败：" + e.getMessage()));
+			return 0;
+		}
+	}
+
+	/** B24：补发物品（装 Contact 进信箱，否则进待领取队列）。 */
+	private static int grantItem(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			net.minecraft.server.network.ServerPlayerEntity target = net.minecraft.command.argument.EntityArgumentType.getPlayer(ctx, "player");
+			String itemId = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "item");
+			int count = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "count");
+			net.minecraft.item.Item found;
+			try {
+				var id = net.minecraft.util.Identifier.tryParse(itemId);
+				found = id == null ? null : net.minecraft.registry.Registries.ITEM.get(id);
+			} catch (Exception e) {
+				found = null;
+			}
+			final net.minecraft.item.Item item = found;
+			if (item == null) {
+				src.sendError(Text.literal("§c找不到物品：" + itemId));
+				return 0;
+			}
+			boolean box = com.akira.redtale.economy.mail.MailService.sendItem(RedtaleEconomy.server(),
+					target.getUuid(), new net.minecraft.item.ItemStack(item, count), "admin:grant");
+			src.sendFeedback(() -> Text.literal("§a已给 " + target.getName().getString() + " 补发 "
+					+ count + " 个 " + item.getName().getString()
+					+ (box ? "（已进 Contact 信箱）" : "（已进待领取队列）")), true);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c补发失败：" + e.getMessage()));
+			return 0;
+		}
 	}
 
 	private static int help(CommandContext<ServerCommandSource> ctx) {

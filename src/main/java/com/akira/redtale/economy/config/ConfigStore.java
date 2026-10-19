@@ -299,6 +299,11 @@ public final class ConfigStore {
 		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber()) ? e.getAsLong() : def;
 	}
 
+	public double getPathDouble(String dotPath, double def) {
+		JsonElement e = getPath(dotPath);
+		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber()) ? e.getAsDouble() : def;
+	}
+
 	public String getPathString(String dotPath, String def) {
 		JsonElement e = getPath(dotPath);
 		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isString()) ? e.getAsString() : def;

@@ -73,7 +73,12 @@ public final class TaskModule implements RedtaleModule {
 			.field("conflictPolicy", ConfigSchema.choice("outer", List.of("outer", "merge"),
 					"同 id 任务池冲突策略：outer=路径浅优先，merge=合并物品"))
 			.field("defaultReward", ConfigSchema.obj("默认奖励（模板未指定时用）")
-					.field("money", ConfigSchema.integer(100, 0, 1_000_000_000_000L, "奖励铜币")));
+					.field("money", ConfigSchema.integer(100, 0, 1_000_000_000_000L, "奖励铜币")))
+			.field("refreshTicket", ConfigSchema.obj("刷新券（R29）")
+					.field("item", ConfigSchema.string("redtale_economy:refresh_ticket",
+							"刷新次数用完后自动消耗的物品 id；留空=不启用票据"))
+					.field("fromWarehouse", ConfigSchema.bool(true,
+							"背包没有券时是否去仓库找")));
 
 	// ---------------------------------------------------------------- 池 / 定义缓存
 
@@ -477,6 +482,26 @@ public final class TaskModule implements RedtaleModule {
 		fresh.refreshesLeft = d.refreshesLeft;
 		save(uuid, fresh);
 		return Action.OK;
+	}
+
+	/** R29：用刷新券刷新一次，不消耗每日次数。 */
+	public static Action refreshByTicket(UUID uuid) {
+		Daily d = load(uuid);
+		String date = d.date;
+		Daily fresh = generate(uuid, date);
+		fresh.refreshesLeft = d.refreshesLeft;
+		save(uuid, fresh);
+		return Action.OK;
+	}
+
+	/** 刷新券物品 id；未配置返回空串。 */
+	public static String refreshTicketItem() {
+		return settings().getPathString("refreshTicket.item", "redtale_economy:refresh_ticket").trim();
+	}
+
+	/** 背包没券时是否去仓库找。 */
+	public static boolean refreshTicketFromWarehouse() {
+		return settings().getPathBool("refreshTicket.fromWarehouse", true);
 	}
 
 	public static Task task(UUID uuid, int slot) {
