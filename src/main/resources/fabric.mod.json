@@ -8,9 +8,10 @@
 		"AkiFish3"
 	],
 	"contact": {
-		"homepage": "https://space.bilibili.com/3546831095073406"
+		"homepage": "https://space.bilibili.com/3546831095073406",
+		"sources": "https://github.com/AkiFish3/RedtaleEconomy"
 	},
-	"license": "CC0-1.0",
+	"license": "LGPL-3.0",
 	"icon": "assets/redtale_economy/icon.png",
 	"environment": "*",
 	"entrypoints": {

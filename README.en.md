@@ -1,27 +1,43 @@
 # Redtale Economy
 
-Economy mod for the Redtale Minecraft server. Fabric 1.20.1 / Java 17.
+Economy mod for the [Redtale](https://space.bilibili.com/3546831095073406) Minecraft server.
 
-Every number, interval, cap, path, toggle and message lives in `config/redtale/*.json` and is hot-reloaded
-by `/redtale reload`. Code only carries defaults.
+## Info
 
-## Modules
+| Item | Value |
+|------|-------|
+| Mod ID | `redtale_economy` |
+| MC version | 1.20.1 |
+| Platform | Fabric |
+| Requires | Fabric API (optional: Numismatic, FTB Quests, FTB Ranks / LuckPerms) |
 
-| Module | Scope |
-|---|---|
-| economy | Balances stored in copper; multi-denomination display; multi-wallet (premium / free / voucher, voucher consumed FIFO) |
-| shop | Paged shop (client only receives the current page), stock, purchase limits, price floor/ceiling with per-edit delta guard, deletes go to a trash folder |
-| checkin | Daily check-in with streak and looped reward table, makeup tickets (`makeup_ticket` item) |
-| tasks | Daily tasks with a budget/weight solver that refuses infeasible sets instead of fudging them |
-| storage | Pluggable `json` / `mysql` backend, ledger (daily or monthly), snapshots, two-way migration with dry-run and full backup |
-| premium | Grant and spend premium currency |
-| aliases | Command aliases via `redirect`, so permission checks still follow the target command |
+## Features
 
-Soft integrations (all optional, the mod boots without them):
+- **Economy** — balances stored in copper with multi-denomination display; multi-wallet (premium / free / voucher, voucher consumed FIFO)
+- **Shop** — paged delivery (the client only receives the current page), stock, purchase limits, price floor/ceiling with a per-edit delta guard, deletes go to a trash folder
+- **Check-in** — streaks, looped reward table, makeup tickets (`makeup_ticket` item)
+- **Daily tasks** — budget and weight solver that refuses infeasible sets instead of fudging them
+- **Storage** — switchable `json` / `mysql`, ledger (daily or monthly) plus snapshots, two-way migration with dry-run and full backup
+- **Permissions** — probes FTB Ranks → LuckPerms → OP, falling back to OP only when neither is present
+- **Aliases** — implemented via `redirect`, so permission checks still follow the target command
+> Every number, interval, cap, path, toggle and message lives in `config/redtale/*.json` and is hot-reloaded by `/redtale reload`.
 
-- **Numismatic** — external balance provider (`/redtale migrate provider numismatic`)
-- **FTB Quests** — registers a `redtale_economy:money` reward type
-- **FTB Ranks / LuckPerms** — permission providers; falls back to OP only when neither is present
+Soft integrations (the mod boots without them): Numismatic as an external balance provider, FTB Quests with a
+`redtale_economy:money` reward type.
+
+## Commands
+
+| Command | Permission | Scope |
+|---------|------------|-------|
+| `/redtale help` | `redtale.use` | Command index |
+| `/redtale info` / `modules` | `redtale.use` | Runtime state and module toggles |
+| `/redtale reload` / `save` | `redtale.admin` | Hot reload / flush to disk (with backup) |
+| `/redtale edit <file>` | `redtale.admin` | Edit scalar config in game |
+| `/redtale lang <code>` | `redtale.admin` | Switch language |
+| `/redtale migrate provider\|storage\|identity ... [confirm]` | `redtale.owner` | Switch balance source / storage backend / reattach an old UUID |
+| `/quests` | `redtale.use` | Forward to FTB Quests |
+
+Migration commands always report counts first and back up to `<root>/backup/<action>-<timestamp>/` before touching data.
 
 ## Build
 
@@ -32,36 +48,21 @@ Soft integrations (all optional, the mod boots without them):
 org.gradle.java.home=/path/to/jdk-17
 ```
 
-Third-party mod jars are not distributed here (see [`libs/README.md`](libs/README.md)), then:
+Third-party mod jars are not distributed here (see [`libs/README.md`](libs/README.md)):
 
 ```bash
 ./gradlew build
 # build/libs/redtale_economy-<version>.jar
 ```
 
-## Commands
+## Credits
 
-`/redtale help` lists everything. Notable ones: `reload`, `save`, `edit`, `lang`, `modules`, `info`, plus
-`/redtale migrate provider|storage|identity ... [confirm]`. Migration commands always report counts first and
-back up to `<root>/backup/<action>-<timestamp>/` before touching data.
+Built with AI assistance from **DeepSeek** and **CodeBuddy**.
 
-## Config
+## Join the server
 
-```
-core.json  economy.json  shop/settings.json  checkin.json  premium.json
-storage.json  ftbq.json  sdm_migrate.json  commands.json  modules.json
-```
-
-Paths accept absolute values or the `%server%` placeholder. With the MySQL backend the password can live in a
-separate file (`mysql.passwordFile`) and the JDBC driver is loaded from a configured jar at runtime, so nothing
-secret or proprietary needs to be committed.
-
-## Tests
-
-```bash
-./gradlew test
-```
+QQ group: **1065844449**
 
 ## License
 
-CC0 1.0 Universal — see [LICENSE](LICENSE).
+LGPL-3.0 License
