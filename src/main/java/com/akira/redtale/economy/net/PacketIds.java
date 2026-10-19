@@ -12,11 +12,15 @@ public final class PacketIds {
 
 	public static final Identifier S2C_PAGE = RedtaleEconomy.id("shop/page");
 	public static final Identifier S2C_OPEN = RedtaleEconomy.id("shop/open");
+	public static final Identifier S2C_OPEN_EDIT = RedtaleEconomy.id("shop/open_edit");
 
 	public static final Identifier C2S_CONFIG_SAVE = RedtaleEconomy.id("config/save");
 	public static final Identifier S2C_CONFIG_OPEN = RedtaleEconomy.id("config/open");
 	public static final Identifier S2C_CONFIG_RESULT = RedtaleEconomy.id("config/result");
 	public static final Identifier S2C_ACTION = RedtaleEconomy.id("shop/action");
+
+	public static final Identifier S2C_TASKS = RedtaleEconomy.id("tasks/snapshot");
+	public static final Identifier S2C_CHECKIN = RedtaleEconomy.id("checkin/snapshot");
 
 	private PacketIds() {
 	}

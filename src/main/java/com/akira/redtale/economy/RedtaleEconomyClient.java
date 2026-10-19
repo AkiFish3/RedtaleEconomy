@@ -17,6 +17,9 @@ public class RedtaleEconomyClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		ShopClientNetworking.register();
 		ConfigClientNetworking.register();
+		com.akira.redtale.economy.client.tasks.TaskClientNetworking.register();
+		com.akira.redtale.economy.client.checkin.CheckinClientNetworking.register();
+		com.akira.redtale.economy.client.ui.ClientKeybinds.register();
 		RedtaleEconomy.LOGGER.info("[{}] client initialized", RedtaleEconomy.MOD_ID);
 	}
 }

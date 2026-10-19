@@ -48,6 +48,10 @@ public final class CoreConfig {
 			.field("messages", ConfigSchema.obj("提示文本")
 					.field("prefix", ConfigSchema.string("§7[§6Redtale§7] §r", "聊天提示前缀（支持 § 颜色码）"))
 					.field("notifyOpsOnConfigError", ConfigSchema.bool(true, "配置加载失败时在聊天栏提醒在线 OP")))
+			.field("confirm", ConfigSchema.obj("危险操作二次确认（R25）")
+					.field("dangerousOps", ConfigSchema.bool(false,
+							"是否要求 /shop admin remove|removeshop 先出票据再确认；关闭=保持旧行为直接执行"))
+					.field("ttlSeconds", ConfigSchema.integer(300, 10, 3600, "票据有效期（秒）")))
 			.field("backup", ConfigSchema.obj("配置备份")
 					.field("maxBackups", ConfigSchema.integer(20, 1, 200, "config/redtale/backup 下最多保留几个时间戳目录")));
 

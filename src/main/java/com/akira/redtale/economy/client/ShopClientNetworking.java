@@ -32,6 +32,11 @@ public final class ShopClientNetworking {
 			client.execute(() -> client.setScreen(new ShopScreen(shopId)));
 		});
 
+		ClientPlayNetworking.registerGlobalReceiver(PacketIds.S2C_OPEN_EDIT, (client, handler, buf, sender) -> {
+			String shopId = buf.readString(64);
+			client.execute(() -> client.setScreen(new com.akira.redtale.economy.client.admin.ShopEditScreen(shopId)));
+		});
+
 		ClientPlayNetworking.registerGlobalReceiver(PacketIds.S2C_ACTION, (client, handler, buf, sender) -> {
 			ShopProtocol.ActionResult r = ShopProtocol.readAction(buf);
 			client.execute(() -> ShopClientState.setAction(r));

@@ -103,7 +103,27 @@ public final class ShopAdminCommands {
 						.then(CommandManager.literal("removeshop")
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
-										.executes(ShopAdminCommands::removeShop)))));
+										.executes(ShopAdminCommands::removeShop)))
+						.then(CommandManager.literal("edit")
+								.executes(ctx -> edit(ctx, null))
+								.then(CommandManager.argument("shopId", StringArgumentType.word())
+										.suggests(shops())
+										.executes(ctx -> edit(ctx, StringArgumentType.getString(ctx, "shopId")))))));
+	}
+
+	/** 出票据并提示确认（R25）。 */
+	private static int requireConfirm(CommandContext<ServerCommandSource> ctx, String action, String payload) {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity p = src.getPlayer();
+		if (p == null) {
+			src.sendError(Text.literal("该命令只能由玩家执行（票据要绑玩家）"));
+			return 0;
+		}
+		ConfirmTickets.Ticket t = ConfirmTickets.issue(p.getUuid(), action, payload);
+		src.sendFeedback(() -> Text.literal("§e请确认：§f/redtale confirm " + t.code()
+				+ " §7（" + ConfirmTickets.ttlSeconds() + " 秒内有效；改主意用 §f/redtale cancel "
+				+ t.code() + "§7）"), false);
+		return 1;
 	}
 
 	// ---------------------------------------------------------------- 删除 → 回收站（R16b）
@@ -112,6 +132,9 @@ public final class ShopAdminCommands {
 		ServerCommandSource src = ctx.getSource();
 		String shopId = StringArgumentType.getString(ctx, "shopId");
 		String itemId = StringArgumentType.getString(ctx, "itemId");
+		if (ConfirmTickets.required()) {
+			return requireConfirm(ctx, "shop.remove", shopId + "|" + itemId);
+		}
 		if (!ShopCatalog.removeItem(shopId, itemId)) {
 			src.sendError(Text.literal("§c删除失败：商品不存在或文件写不进去（回收站未写入时不删）"));
 			return 0;
@@ -124,6 +147,9 @@ public final class ShopAdminCommands {
 	private static int removeShop(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		String shopId = StringArgumentType.getString(ctx, "shopId");
+		if (ConfirmTickets.required()) {
+			return requireConfirm(ctx, "shop.removeshop", shopId);
+		}
 		if (!ShopCatalog.removeShop(shopId)) {
 			src.sendError(Text.literal("§c删除商店失败：" + shopId + " 不存在或文件不可写"));
 			return 0;
@@ -156,6 +182,38 @@ public final class ShopAdminCommands {
 			return 1;
 		}
 		return openShop(ctx, ids.get(0));
+	}
+
+	/**
+	 * {@code /shop admin edit [shopId]}：给管理员下发可视化编辑界面（R16a）。
+	 *
+	 * <p>界面本身不做校验，所有写入仍走 price/toggle/stock/add/remove 这些命令。
+	 */
+	private static int edit(CommandContext<ServerCommandSource> ctx, String shopId) {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity p = src.getPlayer();
+		if (p == null) {
+			src.sendError(Text.literal("该命令只能由玩家执行"));
+			return 0;
+		}
+		String id = shopId;
+		if (id == null) {
+			List<String> ids = ShopCatalog.shopIds();
+			if (ids.isEmpty()) {
+				src.sendFeedback(() -> Text.literal(Lang.msg("shop.empty")), false);
+				return 0;
+			}
+			if (ids.size() > 1) {
+				src.sendFeedback(() -> Text.literal(
+						"§7可用商店：§f" + String.join("§7, §f", ids) + " §8（/shop admin edit <id>）"), false);
+				return 1;
+			}
+			id = ids.get(0);
+		}
+		com.akira.redtale.economy.net.ShopNetworking.sendOpenEdit(p, id);
+		final String shown = id;
+		src.sendFeedback(() -> Text.literal("§a已打开编辑界面：§f" + shown), true);
+		return 1;
 	}
 
 	private static int open(CommandContext<ServerCommandSource> ctx) {

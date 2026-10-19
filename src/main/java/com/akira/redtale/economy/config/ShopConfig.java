@@ -18,7 +18,9 @@ public final class ShopConfig {
 					.field("maxPrice", ConfigSchema.integer(1_000_000_000L, 1, 1_000_000_000_000L,
 							"单件最高价（铜）"))
 					.field("maxChangePercentPerEdit", ConfigSchema.integer(0, 0, 100,
-							"单次改价相对原价的最大变动百分比，0=不限（防止手滑多打个 0）")))
+							"单次改价相对原价的最大变动百分比，0=不限（防止手滑多打个 0）"))
+					.field("maxChangePercentPerDay", ConfigSchema.integer(0, 0, 1000,
+							"同一商品当天累计改价相对当日基准价的最大变动百分比，0=不限")))
 			.field("pageSize", ConfigSchema.integer(40, 5, 200,
 					"每页条数；服务端只下发这一页，绝不全量推送"))
 			.field("visibleRows", ConfigSchema.integer(10, 1, 40,
@@ -56,6 +58,10 @@ public final class ShopConfig {
 
 	public static long maxPrice() {
 		return store().getPathLong("limits.maxPrice", 1_000_000_000L);
+	}
+
+	public static int maxChangePercentPerDay() {
+		return (int) store().getPathLong("limits.maxChangePercentPerDay", 0);
 	}
 
 	public static int maxChangePercentPerEdit() {

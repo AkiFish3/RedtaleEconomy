@@ -41,6 +41,16 @@ public final class RedtaleCommands {
 						.executes(RedtaleCommands::modules))
 				.then(CommandManager.literal("info")
 						.executes(RedtaleCommands::info))
+				.then(CommandManager.literal("confirm")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("code",
+										com.mojang.brigadier.arguments.StringArgumentType.word())
+								.executes(RedtaleCommands::confirmTicket)))
+				.then(CommandManager.literal("cancel")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("code",
+										com.mojang.brigadier.arguments.StringArgumentType.word())
+								.executes(RedtaleCommands::cancelTicket)))
 				.then(CommandManager.literal("help")
 						.executes(RedtaleCommands::help))
 				.then(MigrateCommand.build(CoreConfig.perm("adminPermissionLevel", 4)))
@@ -163,6 +173,50 @@ public final class RedtaleCommands {
 	}
 
 	/** B12：一条命令看懂全部入口（文案走 Lang，运营可改）。 */
+	/** {@code /redtale confirm <code>}：核销票据并执行对应动作（R25）。 */
+	private static int confirmTicket(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		var player = src.getPlayer();
+		if (player == null) {
+			src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
+			return 0;
+		}
+		String code = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "code");
+		ConfirmTickets.Ticket t = ConfirmTickets.take(player.getUuid(), code);
+		if (t == null) {
+			src.sendError(Text.literal("§c票据无效、已过期或已被使用"));
+			return 0;
+		}
+		String[] parts = t.payload().split("\\|", 2);
+		boolean ok = switch (t.action()) {
+			case "shop.remove" -> parts.length == 2
+					&& com.akira.redtale.economy.shop.ShopCatalog.removeItem(parts[0], parts[1]);
+			case "shop.removeshop" -> parts.length >= 1
+					&& com.akira.redtale.economy.shop.ShopCatalog.removeShop(parts[0]);
+			default -> false;
+		};
+		if (!ok) {
+			src.sendError(Text.literal("§c执行失败（动作 " + t.action() + "），请检查参数或日志"));
+			return 0;
+		}
+		src.sendFeedback(() -> Text.literal("§a已执行：§f" + t.action() + " §7" + t.payload()), true);
+		return 1;
+	}
+
+	/** {@code /redtale cancel <code>}：作废票据。 */
+	private static int cancelTicket(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		var player = src.getPlayer();
+		if (player == null) {
+			src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
+			return 0;
+		}
+		String code = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "code");
+		boolean ok = ConfirmTickets.cancel(player.getUuid(), code);
+		src.sendFeedback(() -> Text.literal(ok ? "§a票据已作废" : "§c没有这张票据"), false);
+		return ok ? 1 : 0;
+	}
+
 	private static int help(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		src.sendFeedback(() -> Text.literal("§6" + Lang.t("help.title", "Redtale Economy 命令")), false);

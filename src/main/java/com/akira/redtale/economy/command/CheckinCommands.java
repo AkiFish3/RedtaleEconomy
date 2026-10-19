@@ -41,6 +41,8 @@ public final class CheckinCommands {
 					Lang.msg("checkin.already", o.streak())), false);
 			default -> src.sendError(Text.literal(Lang.msg("checkin.disabled")));
 		}
+		// U3：同步刷新可视化面板
+		com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);
 		return 1;
 	}
 
@@ -68,6 +70,7 @@ public final class CheckinCommands {
 		Text msg = Text.literal(Lang.msg(key, cost));
 		if (r == CheckinModule.MakeupResult.OK) {
 			src.sendFeedback(() -> msg, false);
+			com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);
 			return 1;
 		}
 		src.sendError(msg);
@@ -86,6 +89,7 @@ public final class CheckinCommands {
 		boolean signedToday = today.equals(s.lastDate);
 		src.sendFeedback(() -> Text.literal(Lang.msg("checkin.status", s.streak, s.totalDays,
 				Lang.t(signedToday ? "checkin.status.signed" : "checkin.status.notSigned"))), false);
+		com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);
 		return 1;
 	}
 }

@@ -67,6 +67,8 @@ public final class TaskCommands {
 		if (d.tasks.isEmpty()) {
 			src.sendFeedback(() -> Text.literal(Lang.t("tasks.empty")), false);
 		}
+		// U2：同时下发可视化面板（客户端没装本模组时会忽略这个包，聊天栏输出照常）
+		com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
 		return 1;
 	}
 

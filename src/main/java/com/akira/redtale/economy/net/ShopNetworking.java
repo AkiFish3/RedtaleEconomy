@@ -143,6 +143,17 @@ public final class ShopNetworking {
 		}
 	}
 
+	/** 管理员：下发打开「可视化编辑」界面（R16a）。 */
+	public static void sendOpenEdit(ServerPlayerEntity player, String shopId) {
+		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
+		try {
+			buf.writeString(shopId == null ? "" : shopId, 64);
+			ServerPlayNetworking.send(player, PacketIds.S2C_OPEN_EDIT, buf);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[net] 下发打开编辑界面失败：{}", e.getMessage());
+		}
+	}
+
 	/** 玩家退出时清理限流记录。 */
 	public static void forget(UUID uuid) {
 		LAST_REQUEST.remove(uuid);

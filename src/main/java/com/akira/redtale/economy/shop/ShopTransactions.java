@@ -39,6 +39,8 @@ import java.util.UUID;
 public final class ShopTransactions implements ShopNetworking.TransactionHandler {
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final java.time.format.DateTimeFormatter TS =
+			java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final Map<UUID, Limit> LIMITS = new HashMap<>();
 	private static Path limitDir;
 	private static String limitDate = "";
@@ -63,6 +65,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			limitDir = null;
 			RedtaleEconomy.LOGGER.error("[shop] 限购目录不可用：{}", e.getMessage());
 		}
+		CompensationQueue.init(r.path());
 		limitDate = TimeUtil.today();
 		LIMITS.clear();
 		ShopStock.init();
@@ -118,29 +121,40 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			return new ShopProtocol.ActionResult(false, "shop.notFound", balance, 0);
 		}
 
+		// 1) 预占余额/高级币
+		final String ref = shopId + "/" + itemId + "x" + count;
 		if (premium) {
 			if (!PremiumModule.take(player.getUuid(), price)) {
 				return new ShopProtocol.ActionResult(false, "shop.premiumInsufficient", balance, stock);
 			}
-		} else if (!BalanceService.take(player.getUuid(), price, Ledger.TYPE_SHOP_BUY,
-				shopId + "/" + itemId + "x" + count)) {
+		} else if (!BalanceService.take(player.getUuid(), price, Ledger.TYPE_SHOP_BUY, ref)) {
 			return new ShopProtocol.ActionResult(false, "cmd.pay.insufficient", balance, stock);
 		}
 
-		ItemStack stack = new ItemStack(item, count);
-		player.getInventory().insertStack(stack);
-		if (!stack.isEmpty()) {
-			player.dropItem(stack, false);
-		}
-		addDailyLimit(player.getUuid(), key(shopId, itemId), count);
-		long left = stock;
-		if (stock > 0) {
-			left = stock - count;
-			ShopStock.set(shopId, itemId, left);
-		}
+		// 2) 发货 + 3) 提交库存/限购：任一步失败都要退款并留补偿记录（Q2）
+		try {
+			ItemStack stack = new ItemStack(item, count);
+			player.getInventory().insertStack(stack);
+			if (!stack.isEmpty()) {
+				boolean dropped = player.dropItem(stack, false) != null;
+				if (!dropped) {
+					throw new IllegalStateException("背包与地面都放不下 " + count + " 个 " + itemId);
+				}
+			}
+			addDailyLimit(player.getUuid(), key(shopId, itemId), count);
+			long left = stock;
+			if (stock > 0) {
+				left = stock - count;
+				ShopStock.set(shopId, itemId, left);
+			}
 
-		long after = BalanceService.get(player.getUuid());
-		return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
+			long after = BalanceService.get(player.getUuid());
+			return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
+		} catch (Throwable t) {
+			refundBuy(player, premium, price, ref, t);
+			return new ShopProtocol.ActionResult(false, "shop.giveFailed",
+					BalanceService.get(player.getUuid()), stock);
+		}
 	}
 
 	@Override
@@ -172,15 +186,52 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			return new ShopProtocol.ActionResult(false, limitError, balance, 0);
 		}
 
+		// 先扣物品，再入账；入账失败要把物品还回去（Q2）
 		remove(player, item, count);
-		BalanceService.add(player.getUuid(), income, Ledger.TYPE_SHOP_SELL, shopId + "/" + itemId + "x" + count);
-		Limit l = limit(player.getUuid());
-		l.sold.merge(k, count, Integer::sum);
-		l.soldTotal += income;
-		save(player.getUuid(), l);
+		try {
+			BalanceService.add(player.getUuid(), income, Ledger.TYPE_SHOP_SELL,
+					shopId + "/" + itemId + "x" + count);
+			Limit l = limit(player.getUuid());
+			l.sold.merge(k, count, Integer::sum);
+			l.soldTotal += income;
+			save(player.getUuid(), l);
 
-		long after = BalanceService.get(player.getUuid());
-		return new ShopProtocol.ActionResult(true, "shop.sellOk", after, -1);
+			long after = BalanceService.get(player.getUuid());
+			return new ShopProtocol.ActionResult(true, "shop.sellOk", after, -1);
+		} catch (Throwable t) {
+			ItemStack back = new ItemStack(item, count);
+			player.getInventory().insertStack(back);
+			if (!back.isEmpty()) player.dropItem(back, false);
+			CompensationQueue.enqueue(new CompensationQueue.Entry(
+					java.time.LocalDateTime.now().format(TS), player.getUuid().toString(),
+					shopId, itemId, count, income, "sell-add-failed: " + t.getMessage()));
+			RedtaleEconomy.LOGGER.error("[shop] 出售入账失败，已退还物品：{}", t.getMessage(), t);
+			return new ShopProtocol.ActionResult(false, "shop.sellFailed",
+					BalanceService.get(player.getUuid()), -1);
+		}
+	}
+
+	/** 退款 + 补偿记录；退款本身失败只记 ERROR，钱仍需人工补。 */
+	private static void refundBuy(ServerPlayerEntity player, boolean premium, long price,
+			String ref, Throwable cause) {
+		boolean refunded = false;
+		try {
+			if (premium) {
+				PremiumModule.add(player.getUuid(), price);
+			} else {
+				BalanceService.add(player.getUuid(), price, Ledger.TYPE_ADMIN, "refund:" + ref);
+			}
+			refunded = true;
+		} catch (Throwable t) {
+			RedtaleEconomy.LOGGER.error("[shop] 退款失败，需人工补 {} 给 {}（{}）：{}",
+					price, player.getUuid(), ref, t.getMessage());
+		}
+		CompensationQueue.enqueue(new CompensationQueue.Entry(
+				java.time.LocalDateTime.now().format(TS), player.getUuid().toString(),
+				ref, "", 0, price,
+				(refunded ? "refunded: " : "REFUND-FAILED: ") + cause.getMessage()));
+		RedtaleEconomy.LOGGER.error("[shop] 购买发货失败（{}），已{} {}：{}",
+				ref, refunded ? "退款" : "未能退款", price, cause.getMessage());
 	}
 
 	// ---------------------------------------------------------------- 辅助

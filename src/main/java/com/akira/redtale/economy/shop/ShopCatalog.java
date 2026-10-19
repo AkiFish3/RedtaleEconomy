@@ -286,7 +286,7 @@ public final class ShopCatalog implements ShopSource {
 			}
 		}
 		if (target == null) return false;
-		String bad = checkPrice(target, buy, sell);
+		String bad = checkPrice(shopId, itemId, target, buy, sell);
 		if (bad != null) {
 			RedtaleEconomy.LOGGER.warn("[shop] 拒绝改价 {}/{}：{}", shopId, itemId, bad);
 			return false;
@@ -309,12 +309,46 @@ public final class ShopCatalog implements ShopSource {
 	 *
 	 * <p>注意：当前按「单次编辑」判定，尚未累计同一天的多次改价（见 `_MOD_TASKS.md` 遗留）。
 	 */
-	private static String checkPrice(JsonObject item, Long buy, Long sell) {
+	private static String checkPrice(String shopId, String itemId, JsonObject item, Long buy, Long sell) {
 		long min = ShopConfig.minPrice();
 		long max = ShopConfig.maxPrice();
 		int maxPct = ShopConfig.maxChangePercentPerEdit();
+		int dayPct = ShopConfig.maxChangePercentPerDay();
 		String r = checkOne(item, "buy", buy, min, max, maxPct);
-		return r != null ? r : checkOne(item, "sell", sell, min, max, maxPct);
+		if (r == null) r = checkOne(item, "sell", sell, min, max, maxPct);
+		if (r == null) r = checkDaily(shopId, itemId, item, "buy", buy, dayPct);
+		if (r == null) r = checkDaily(shopId, itemId, item, "sell", sell, dayPct);
+		return r;
+	}
+
+	/** 当日基准价：当日第一次改价前的价格；跨天自动重置。 */
+	private static final Map<String, long[]> DAY_BASE = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final int DAY_BASE_DATE = 0;
+	private static final int DAY_BASE_PRICE = 1;
+
+	/** 纯函数：相对基准价的累计变动是否超限（pct<=0 或基准价<=0 一律放行）。 */
+	public static boolean dailyExceeded(long base, long now, int pct) {
+		if (pct <= 0 || base <= 0) return false;
+		return Math.abs(now - base) * 100L > base * (long) pct;
+	}
+
+	private static String checkDaily(String shopId, String itemId, JsonObject item,
+			String field, Long value, int dayPct) {
+		if (dayPct <= 0 || value == null || value <= 0) return null;
+		long cur = num(item, field, 0);
+		if (cur <= 0) return null;
+		String key = shopId + "|" + itemId + "|" + field;
+		int today = (int) java.time.LocalDate.now().toEpochDay();
+		long[] slot = DAY_BASE.get(key);
+		if (slot == null || slot[DAY_BASE_DATE] != today) {
+			slot = new long[]{today, cur};
+			DAY_BASE.put(key, slot);
+		}
+		long base = slot[DAY_BASE_PRICE];
+		if (dailyExceeded(base, value, dayPct)) {
+			return field + " 相对当日基准价 " + base + " 累计变动超过 " + dayPct + "%";
+		}
+		return null;
 	}
 
 	private static String checkOne(JsonObject item, String field, Long value, long min, long max, int maxPct) {
