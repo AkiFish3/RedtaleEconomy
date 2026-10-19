@@ -74,16 +74,6 @@ ICommandPlatform    void register(LiteralArgumentBuilder<ServerCommandSource>);
 
 这 5 个接口 + 两个平台的实现（约 10 个类）就是双端化的全部新增面，其余是机械替换。
 
-
-
-1. **先跑通编译空壳**：Loom/Gradle/JDK 升级 + `gradle.properties` 版本号替换，只让 `build` 过，不修业务。
-2. **Identifier 批量替换**：`new Identifier(` → `Identifier.of(`，再全量 `./gradlew build` 收口。
-3. **网络层**：把自定义包改成 `CustomPayload` record + `PayloadTypeRegistry`，先只做 shop 一个包验证链路，再推 config。
-4. **平台抽象**：照 `redtale-fabric-neoforge-template` 的 common/fabric/neoforge 结构拆模块，Fabric API 调用全部下沉到平台层。
-5. **集成层**：换 FTBQ 2101.x 重新编译 `MoneyReward`，验证 `claim()` 签名；Numismatic / 权限反射逐项重测。
-6. **数据兼容**：`DataCompat.ACCOUNT_VERSION` 保持 1（余额结构未变），`IdentityMap` 无需改；MySQL 表结构不变。
-7. **真机冒烟**：`runServer` 起服 + `/redtale modules` + 一次购买 + 一次签到。
-
 ## 迁移顺序
 
 1. **先跑通编译空壳**：Loom/Gradle/JDK 升级 + `gradle.properties` 版本号替换，只让 `build` 过，不修业务。
