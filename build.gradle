@@ -36,8 +36,14 @@ dependencies {
 
 	// 软依赖编译期依赖（不打包）：FTB Quests / FTB Library，仅用于 R9 的 reward 类型
 	// 运行时由 FTBQ 提供；未安装时本 mod 相关类通过 isModLoaded 守卫不会被加载
-	modCompileOnly files("libs/ftb-quests.jar")
-	modCompileOnly files("libs/ftb-library.jar")
+	// 仓库不含这两个 jar（版权），缺失时给出明确提示而不是一堆 import 报错
+	['ftb-quests.jar', 'ftb-library.jar'].each { name ->
+		if (file("libs/$name").exists()) {
+			modCompileOnly files("libs/$name")
+		} else {
+			logger.warn("[redtale] 缺少 libs/$name —— FTBQ 集成相关源码将无法编译，获取方式见 libs/README.md")
+		}
+	}
 
 	// 纯逻辑单测（不加载 Minecraft 运行时）
 	testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
