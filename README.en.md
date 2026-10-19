@@ -57,7 +57,7 @@ Third-party mod jars are not distributed here (see [`libs/README.md`](libs/READM
 
 ## Credits
 
-Built with AI assistance from **DeepSeek** and **CodeBuddy**.
+Built with AI assistance from **DeepSeek-V4.1-Flash-1017** and **WorkBuddy**.
 
 ## Join the server
 

@@ -56,7 +56,7 @@ org.gradle.java.home=/path/to/jdk-17
 
 ## 鸣谢
 
-本模组在制作过程中使用了 **DeepSeek** 和 **CodeBuddy** 进行 AI 辅助开发。
+本模组在制作过程中使用了 **DeepSeek-V4.1-Flash-1017** 与 **WorkBuddy** 进行 AI 辅助开发。
 
 ## 加入我们的服务器
 
