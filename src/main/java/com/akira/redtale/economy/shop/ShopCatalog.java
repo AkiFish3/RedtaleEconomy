@@ -1,0 +1,664 @@
+package com.akira.redtale.economy.shop;
+
+import com.akira.redtale.economy.RedtaleEconomy;
+import com.akira.redtale.economy.config.ConfigManager;
+import com.akira.redtale.economy.config.ShopConfig;
+import com.akira.redtale.economy.net.ShopProtocol;
+import com.akira.redtale.economy.net.ShopSource;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Stream;
+
+/**
+ * 商店数据源（spec v0.8 §2.1/§2.2 定稿格式）。
+ *
+ * <pre>
+ * shop/
+ *   settings.json                 全局参数（pageSize / conflictPolicy ...）
+ *   shops/**&#47;*.json              每个文件可含多个商店：{"shops": {"id": {...}}}
+ * </pre>
+ *
+ * 规则：
+ * <ul>
+ *   <li>递归扫描所有层级的 {@code *.json}，{@code _} 开头的文件/目录跳过（临时禁用）</li>
+ *   <li>{@code conflictPolicy=outer}：路径越浅越优先，深层同名商店忽略并 INFO</li>
+ *   <li>{@code conflictPolicy=merge}：同名商店合并（同 id 商品只保留先加载的那条）</li>
+ *   <li>不写死任何商品；单文件解析失败只影响该文件</li>
+ * </ul>
+ */
+public final class ShopCatalog implements ShopSource {
+
+	public static final String SHOPS_DIR = "shop/shops";
+	private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
+	/** 单个商品定义（文件侧，不可变）。 */
+	public record ItemDef(String id, String category, long buy, long sell, long stockInit,
+			int dailyBuyLimit, boolean enabled) {
+	}
+
+	/** 一个商店。{@code file} 用于管理命令回写。 */
+	public static final class ShopDef {
+		private final String id;
+		private final String displayName;
+		private final String icon;
+		private final boolean requirePremium;
+		private final Path file;
+		private final Map<String, ItemDef> items = new LinkedHashMap<>();
+
+		ShopDef(String id, String displayName, String icon, boolean requirePremium, Path file) {
+			this.id = id;
+			this.displayName = displayName;
+			this.icon = icon;
+			this.requirePremium = requirePremium;
+			this.file = file;
+		}
+
+		public String id() {
+			return id;
+		}
+
+		public String displayName() {
+			return displayName;
+		}
+
+		public String icon() {
+			return icon;
+		}
+
+		public boolean requirePremium() {
+			return requirePremium;
+		}
+
+		public Path file() {
+			return file;
+		}
+
+		public List<ItemDef> items() {
+			return new ArrayList<>(items.values());
+		}
+
+		public ItemDef item(String itemId) {
+			return items.get(itemId);
+		}
+	}
+
+	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+	private static final Map<String, ShopDef> SHOPS = new LinkedHashMap<>();
+	private static volatile boolean ready;
+	private static volatile long loadedAt;
+
+	private ShopCatalog() {
+	}
+
+	/** 供模块注册配置：settings 的 schema（shops 目录走递归扫描，不占 schema）。 */
+	public static void defineConfig(ConfigManager cfg) {
+		cfg.define(ShopConfig.FILE, ShopConfig.SCHEMA);
+	}
+
+	public static ShopCatalog create() {
+		ShopCatalog c = new ShopCatalog();
+		reload();
+		return c;
+	}
+
+	public static long loadedAt() {
+		return loadedAt;
+	}
+
+	// ---------------------------------------------------------------- 加载
+
+	public static synchronized void reload() {
+		SHOPS.clear();
+		ready = false;
+		Path base = ConfigManager.get().baseDir().resolve(SHOPS_DIR);
+		if (!Files.isDirectory(base)) {
+			try {
+				Files.createDirectories(base);
+				RedtaleEconomy.LOGGER.warn("[shop] {} 不存在，已创建空目录", base);
+			} catch (Exception e) {
+				RedtaleEconomy.LOGGER.error("[shop] 无法创建 {}：{}", base, e.getMessage());
+			}
+			ready = true;
+			loadedAt = System.currentTimeMillis();
+			return;
+		}
+
+		boolean merge = "merge".equalsIgnoreCase(ShopConfig.conflictPolicy());
+		List<Path> files = new ArrayList<>();
+		try (Stream<Path> s = Files.walk(base)) {
+			s.filter(Files::isRegularFile)
+					.filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"))
+					.filter(p -> !isDisabled(base, p))
+					.forEach(files::add);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 扫描 {} 失败：{}", base, e.getMessage());
+		}
+		// 浅目录优先：outer 策略下先加载的赢
+		files.sort(Comparator.comparingInt(p -> base.relativize(p).getNameCount()));
+
+		int fileCount = 0;
+		for (Path f : files) {
+			if (loadFile(f, merge)) fileCount++;
+		}
+		int items = 0;
+		for (ShopDef s : SHOPS.values()) items += s.items.size();
+		ready = true;
+		loadedAt = System.currentTimeMillis();
+		RedtaleEconomy.LOGGER.info("[shop] 已加载 {} 个商店 / {} 件商品（{} 个文件，策略 {}）",
+				SHOPS.size(), items, fileCount, merge ? "merge" : "outer");
+	}
+
+	private static boolean isDisabled(Path base, Path file) {
+		Path rel = base.relativize(file);
+		for (Path part : rel) {
+			if (part.toString().startsWith("_")) return true;
+		}
+		return false;
+	}
+
+	private static boolean loadFile(Path file, boolean merge) {
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 解析 {} 失败：{}", file.getFileName(), e.getMessage());
+			return false;
+		}
+		if (root == null || !root.has("shops") || !root.get("shops").isJsonObject()) {
+			RedtaleEconomy.LOGGER.warn("[shop] {} 缺少 shops 对象，已跳过", file.getFileName());
+			return false;
+		}
+
+		for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("shops").entrySet()) {
+			String id = e.getKey();
+			if (!e.getValue().isJsonObject()) continue;
+			JsonObject o = e.getValue().getAsJsonObject();
+			ShopDef existing = SHOPS.get(id);
+			if (existing != null && !merge) {
+				RedtaleEconomy.LOGGER.info("[shop] 商店 {} 重复定义，按 outer 策略忽略 {}",
+						id, file.getFileName());
+				continue;
+			}
+			ShopDef def = existing != null ? existing : new ShopDef(id,
+					str(o, "displayName", id),
+					str(o, "icon", "minecraft:chest"),
+					bool(o, "requirePremium", false),
+					file);
+			parseItems(def, o, id);
+			SHOPS.put(id, def);
+		}
+		return true;
+	}
+
+	private static void parseItems(ShopDef def, JsonObject shopObj, String shopId) {
+		if (!shopObj.has("items") || !shopObj.get("items").isJsonArray()) return;
+		for (JsonElement el : shopObj.getAsJsonArray("items")) {
+			if (!el.isJsonObject()) continue;
+			JsonObject it = el.getAsJsonObject();
+			String itemId = str(it, "id", "");
+			if (itemId.isEmpty()) continue;
+			if (itemId.indexOf(':') < 0) {
+				RedtaleEconomy.LOGGER.warn("[shop] {} 的商品 id 缺命名空间，已跳过：{}", shopId, itemId);
+				continue;
+			}
+			if (def.items.containsKey(itemId)) {
+				RedtaleEconomy.LOGGER.info("[shop] {}/{} 重复商品，保留先加载的", shopId, itemId);
+				continue;
+			}
+			def.items.put(itemId, new ItemDef(
+					itemId,
+					str(it, "category", ""),
+					num(it, "buy", 0),
+					num(it, "sell", 0),
+					num(it, "stock", -1),
+					(int) num(it, "dailyBuyLimit", -1),
+					bool(it, "enabled", true)));
+		}
+	}
+
+	private static String str(JsonObject o, String k, String def) {
+		JsonElement e = o.get(k);
+		return e != null && e.isJsonPrimitive() ? e.getAsString() : def;
+	}
+
+	private static long num(JsonObject o, String k, long def) {
+		JsonElement e = o.get(k);
+		return e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber() ? e.getAsLong() : def;
+	}
+
+	private static boolean bool(JsonObject o, String k, boolean def) {
+		JsonElement e = o.get(k);
+		return e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isBoolean() ? e.getAsBoolean() : def;
+	}
+
+	// ---------------------------------------------------------------- 写回（管理命令）
+
+	/**
+	 * 改价 / 上下架 / 补货：直接改商品文件并原子写，然后重载目录。
+	 *
+	 * @param buy     {@code null}=不改
+	 * @param sell    {@code null}=不改
+	 * @param stock   {@code null}=不改（同时清掉库存覆盖值）
+	 * @param enabled {@code null}=不改
+	 */
+	public static synchronized boolean updateItem(String shopId, String itemId, Long buy, Long sell,
+			Long stock, Boolean enabled) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null || def.file() == null) return false;
+		Path file = def.file();
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 回写前读取 {} 失败：{}", file.getFileName(), e.getMessage());
+			return false;
+		}
+		if (root == null || !root.has("shops")) return false;
+		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
+		if (shopEl == null || !shopEl.isJsonObject()) return false;
+		JsonElement itemsEl = shopEl.getAsJsonObject().get("items");
+		if (itemsEl == null || !itemsEl.isJsonArray()) return false;
+
+		JsonObject target = null;
+		for (JsonElement el : itemsEl.getAsJsonArray()) {
+			if (el.isJsonObject() && itemId.equals(str(el.getAsJsonObject(), "id", ""))) {
+				target = el.getAsJsonObject();
+				break;
+			}
+		}
+		if (target == null) return false;
+		String bad = checkPrice(target, buy, sell);
+		if (bad != null) {
+			RedtaleEconomy.LOGGER.warn("[shop] 拒绝改价 {}/{}：{}", shopId, itemId, bad);
+			return false;
+		}
+		if (buy != null) target.addProperty("buy", buy);
+		if (sell != null) target.addProperty("sell", sell);
+		if (stock != null) target.addProperty("stock", stock);
+		if (enabled != null) target.addProperty("enabled", enabled);
+
+		if (!writeWithBackup(file, root)) return false;
+		reload();
+		if (stock != null) ShopStock.set(shopId, itemId, stock);
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin update " + shopId + "/" + itemId,
+				"buy=" + buy + " sell=" + sell + " stock=" + stock + " enabled=" + enabled);
+		return true;
+	}
+
+	/**
+	 * 价格护栏（Q4）：越界或单次变动过大直接拒绝，返回原因；null = 通过。
+	 *
+	 * <p>注意：当前按「单次编辑」判定，尚未累计同一天的多次改价（见 `_MOD_TASKS.md` 遗留）。
+	 */
+	private static String checkPrice(JsonObject item, Long buy, Long sell) {
+		long min = ShopConfig.minPrice();
+		long max = ShopConfig.maxPrice();
+		int maxPct = ShopConfig.maxChangePercentPerEdit();
+		String r = checkOne(item, "buy", buy, min, max, maxPct);
+		return r != null ? r : checkOne(item, "sell", sell, min, max, maxPct);
+	}
+
+	private static String checkOne(JsonObject item, String field, Long value, long min, long max, int maxPct) {
+		if (value == null) return null;
+		if (value < 0) return field + " 不能为负";
+		if (min > 0 && value != 0 && value < min) return field + "=" + value + " 低于下限 " + min;
+		if (value > max) return field + "=" + value + " 超过上限 " + max;
+		if (maxPct > 0) {
+			long old = num(item, field, 0);
+			if (old > 0 && value > 0) {
+				long delta = Math.abs(value - old) * 100L;
+				if (delta > old * maxPct) {
+					return field + " 从 " + old + " 改到 " + value + " 超过单次上限 " + maxPct + "%";
+				}
+			}
+		}
+		return null;
+	}
+
+	// ---------------------------------------------------------------- 删除 → 回收站（R16b）
+
+	/** 回收站目录（`_` 前缀 ⇒ 扫描时跳过，不会被当成商店加载）。 */
+	public static final String TRASH_DIR = "shop/_trash";
+
+	/**
+	 * 删除商品：先把定义写进回收站，再从商品文件里移除。
+	 *
+	 * <p>顺序很重要 —— 回收站写失败就<b>不删</b>，避免「删了还找不回来」。
+	 * 回收站文件是完整商品 JSON + 上下文（shopId/file/removedAt），手工还原时复制回
+	 * 对应商店的 {@code items} 数组即可。
+	 */
+	public static synchronized boolean removeItem(String shopId, String itemId) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null || def.file() == null) return false;
+		Path file = def.file();
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 删除前读取 {} 失败：{}", file.getFileName(), e.getMessage());
+			return false;
+		}
+		if (root == null || !root.has("shops")) return false;
+		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
+		if (shopEl == null || !shopEl.isJsonObject()) return false;
+		JsonElement itemsEl = shopEl.getAsJsonObject().get("items");
+		if (itemsEl == null || !itemsEl.isJsonArray()) return false;
+
+		JsonArray items = itemsEl.getAsJsonArray();
+		JsonObject target = null;
+		int index = -1;
+		for (int i = 0; i < items.size(); i++) {
+			JsonElement el = items.get(i);
+			if (el.isJsonObject() && itemId.equals(str(el.getAsJsonObject(), "id", ""))) {
+				target = el.getAsJsonObject();
+				index = i;
+				break;
+			}
+		}
+		if (target == null) return false;
+
+		if (!writeTrash("item", shopId + "-" + itemId.replace(':', '_'), shopId, file, target)) {
+			return false;
+		}
+		items.remove(index);
+		if (!writeWithBackup(file, root)) return false;
+		reload();
+		ShopStock.forget(shopId, itemId);
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin remove " + shopId + "/" + itemId,
+				"moved to " + TRASH_DIR);
+		return true;
+	}
+
+	/** 删除整家商店：定义进回收站；文件里没有别的商店了就把文件本身也移进回收站。 */
+	public static synchronized boolean removeShop(String shopId) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null || def.file() == null) return false;
+		Path file = def.file();
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 删除商店前读取 {} 失败：{}", file.getFileName(), e.getMessage());
+			return false;
+		}
+		if (root == null || !root.has("shops")) return false;
+		JsonObject shops = root.getAsJsonObject("shops");
+		JsonElement shopEl = shops.get(shopId);
+		if (shopEl == null || !shopEl.isJsonObject()) return false;
+
+		if (!writeTrash("shop", shopId, shopId, file, shopEl.getAsJsonObject())) return false;
+		shops.remove(shopId);
+		if (shops.size() == 0) {
+			// 整个文件都空了：文件本身也搬去回收站，避免留下空壳
+			Path trashFile = trashPath("file", file.getFileName().toString().replace(".json", ""));
+			try {
+				Files.createDirectories(trashFile.getParent());
+				Files.move(file, trashFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			} catch (Exception e) {
+				RedtaleEconomy.LOGGER.error("[shop] 移动空商店文件到回收站失败：{}", e.getMessage());
+				return false;
+			}
+		} else if (!writeWithBackup(file, root)) {
+			return false;
+		}
+		ShopStock.forgetShop(shopId);
+		reload();
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin removeshop " + shopId,
+				"moved to " + TRASH_DIR);
+		return true;
+	}
+
+	private static Path trashPath(String kind, String name) {
+		String ts = java.time.LocalDateTime.now()
+				.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+		String safe = name.replaceAll("[^A-Za-z0-9_.-]", "_");
+		return ConfigManager.get().baseDir().resolve(TRASH_DIR).resolve(kind + "-" + ts + "-" + safe + ".json");
+	}
+
+	/** 写回收站文件；任何一步失败返回 false（调用方据此放弃删除）。 */
+	private static boolean writeTrash(String kind, String name, String shopId, Path source, JsonObject body) {
+		Path target = trashPath(kind, name);
+		try {
+			Files.createDirectories(target.getParent());
+			JsonObject wrapper = new JsonObject();
+			wrapper.addProperty("_version", 1);
+			wrapper.addProperty("kind", kind);
+			wrapper.addProperty("shopId", shopId);
+			wrapper.addProperty("sourceFile", source.getFileName().toString());
+			wrapper.addProperty("removedAt", java.time.LocalDateTime.now().toString());
+			wrapper.add("definition", body);
+			return writeFile(target, wrapper);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 写回收站失败 {}：{}", target.getFileName(), e.getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * 新建空商店：写到 {@code shop/shops/<id>.json}（一个文件一个商店，便于手工分担）。
+	 * 已存在则返回 false，不覆盖。
+	 */
+	public static synchronized boolean createShop(String shopId, String displayName) {
+		if (SHOPS.containsKey(shopId)) return false;
+		if (shopId.contains("/") || shopId.contains("\\") || shopId.contains("..")) return false;
+		Path dir = ConfigManager.get().baseDir().resolve(SHOPS_DIR);
+		Path file = dir.resolve(shopId + ".json");
+		if (Files.exists(file)) return false;
+		JsonObject root = new JsonObject();
+		root.addProperty("_version", 1);
+		JsonObject shops = new JsonObject();
+		JsonObject shop = new JsonObject();
+		shop.addProperty("displayName", displayName == null || displayName.isBlank() ? shopId : displayName);
+		shop.addProperty("icon", "minecraft:chest");
+		shop.add("categories", new JsonArray());
+		shop.add("items", new JsonArray());
+		shops.add(shopId, shop);
+		root.add("shops", shops);
+		try {
+			Files.createDirectories(dir);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 无法创建 {}：{}", dir, e.getMessage());
+			return false;
+		}
+		if (!writeFile(file, root)) return false;
+		reload();
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin addshop " + shopId, displayName);
+		return true;
+	}
+
+	/** 往已有商店追加商品（默认无限库存、不限购）。 */
+	public static synchronized boolean addItem(String shopId, String itemId, long buy, long sell,
+			int dailyBuyLimit) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null || def.file() == null) return false;
+		if (itemId.indexOf(':') < 0) return false;
+		Path file = def.file();
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 追加商品前读取 {} 失败：{}", file.getFileName(), e.getMessage());
+			return false;
+		}
+		if (root == null || !root.has("shops")) return false;
+		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
+		if (shopEl == null || !shopEl.isJsonObject()) return false;
+		JsonObject shop = shopEl.getAsJsonObject();
+		JsonElement itemsEl = shop.get("items");
+		JsonArray items;
+		if (itemsEl != null && itemsEl.isJsonArray()) {
+			items = itemsEl.getAsJsonArray();
+		} else {
+			items = new JsonArray();
+			shop.add("items", items);
+		}
+		for (JsonElement el : items) {
+			if (el.isJsonObject() && itemId.equals(str(el.getAsJsonObject(), "id", ""))) return false;
+		}
+		JsonObject it = new JsonObject();
+		it.addProperty("id", itemId);
+		it.addProperty("category", "");
+		it.addProperty("buy", buy);
+		it.addProperty("sell", sell);
+		it.addProperty("stock", -1);
+		it.addProperty("dailyBuyLimit", dailyBuyLimit);
+		items.add(it);
+		if (!writeWithBackup(file, root)) return false;
+		reload();
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin add " + shopId + "/" + itemId,
+				"buy=" + buy + " sell=" + sell);
+		return true;
+	}
+
+	private static boolean writeWithBackup(Path file, JsonObject root) {
+		Path base = ConfigManager.get().baseDir();
+		try {
+			Path backup = base.resolve("backup").resolve(LocalDateTime.now().format(STAMP))
+					.resolve(base.relativize(file));
+			Files.createDirectories(backup.getParent());
+			Files.copy(file, backup, StandardCopyOption.REPLACE_EXISTING);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.warn("[shop] 备份 {} 失败，继续写：{}", file.getFileName(), e.getMessage());
+		}
+		return writeFile(file, root);
+	}
+
+	private static boolean writeFile(Path file, JsonObject root) {
+		Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+		try {
+			try (Writer w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
+				GSON.toJson(root, w);
+			}
+			try {
+				Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			} catch (Exception atomicFail) {
+				Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+			}
+			return true;
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 写入 {} 失败：{}", file.getFileName(), e.getMessage());
+			try {
+				Files.deleteIfExists(tmp);
+			} catch (Exception ignored) {
+				// tmp 留在磁盘也不影响读取
+			}
+			return false;
+		}
+	}
+
+	// ---------------------------------------------------------------- ShopSource
+
+	@Override
+	public boolean ready() {
+		return ready;
+	}
+
+	@Override
+	public boolean has(String shopId) {
+		return SHOPS.containsKey(shopId);
+	}
+
+	@Override
+	public int count(String shopId, String query) {
+		return filtered(shopId, query).size();
+	}
+
+	@Override
+	public List<ShopProtocol.Entry> slice(String shopId, String query, int offset, int limit) {
+		List<ShopProtocol.Entry> all = filtered(shopId, query);
+		if (offset < 0 || offset >= all.size()) return List.of();
+		int to = Math.min(all.size(), offset + Math.max(0, limit));
+		return all.subList(offset, to);
+	}
+
+	private List<ShopProtocol.Entry> filtered(String shopId, String query) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null) return List.of();
+		boolean q = query != null && !query.isBlank();
+		String ql = q ? query.toLowerCase(Locale.ROOT) : "";
+		List<ShopProtocol.Entry> out = new ArrayList<>();
+		for (ItemDef it : def.items.values()) {
+			if (!it.enabled()) continue;
+			if (q && !it.id().toLowerCase(Locale.ROOT).contains(ql)
+					&& !it.category().toLowerCase(Locale.ROOT).contains(ql)) {
+				continue;
+			}
+			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
+			long sell = sellPrice(it);
+			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock,
+					it.buy() > 0, sell > 0));
+		}
+		return out;
+	}
+
+	public static List<ShopProtocol.Entry> allEntries(String shopId) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null) return List.of();
+		List<ShopProtocol.Entry> out = new ArrayList<>();
+		for (ItemDef it : def.items.values()) {
+			if (!it.enabled()) continue;
+			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
+			long sell = sellPrice(it);
+			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock,
+					it.buy() > 0, sell > 0));
+		}
+		return out;
+	}
+
+	public static ShopDef shop(String shopId) {
+		return SHOPS.get(shopId);
+	}
+
+	public static ItemDef item(String shopId, String itemId) {
+		ShopDef def = SHOPS.get(shopId);
+		return def == null ? null : def.item(itemId);
+	}
+
+	public static ShopProtocol.Entry entry(String shopId, String itemId) {
+		ItemDef it = item(shopId, itemId);
+		if (it == null || !it.enabled()) return null;
+		long stock = ShopStock.get(shopId, itemId, it.stockInit());
+		long sell = sellPrice(it);
+		return new ShopProtocol.Entry(it.id(), it.buy(), sell, stock, it.buy() > 0, sell > 0);
+	}
+
+	/** 卖出价：文件里 sell>0 用它，否则按 buy × sellPriceRatio 兜底。 */
+	public static long sellPrice(ItemDef it) {
+		if (it.sell() > 0) return it.sell();
+		double ratio = ShopConfig.sellPriceRatio();
+		if (ratio <= 0 || it.buy() <= 0) return 0L;
+		return (long) Math.floor(it.buy() * ratio);
+	}
+
+	public static int dailyLimitOf(String shopId, String itemId) {
+		ItemDef it = item(shopId, itemId);
+		return it == null ? -1 : it.dailyBuyLimit();
+	}
+
+	public static List<String> shopIds() {
+		return new ArrayList<>(SHOPS.keySet());
+	}
+
+	public static int pageSize() {
+		return ShopConfig.pageSize();
+	}
+}

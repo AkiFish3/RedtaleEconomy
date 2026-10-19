@@ -1,0 +1,116 @@
+package com.akira.redtale.economy.config;
+
+import java.util.List;
+
+/**
+ * {@code config/redtale/shop/settings.json} —— 商店全局参数（spec v0.8 §2.1）。
+ *
+ * <p>所有数值都在这里，代码只写默认值；改完 {@code /redtale reload} 生效。
+ */
+public final class ShopConfig {
+
+	public static final String FILE = "shop/settings.json";
+
+	public static final ConfigSchema SCHEMA = ConfigSchema.obj("商店设置")
+			.field("limits", ConfigSchema.obj("价格护栏（Q4）")
+					.field("minPrice", ConfigSchema.integer(1, 0, 1_000_000_000L,
+							"单件最低价（铜）；0=不限"))
+					.field("maxPrice", ConfigSchema.integer(1_000_000_000L, 1, 1_000_000_000_000L,
+							"单件最高价（铜）"))
+					.field("maxChangePercentPerEdit", ConfigSchema.integer(0, 0, 100,
+							"单次改价相对原价的最大变动百分比，0=不限（防止手滑多打个 0）")))
+			.field("pageSize", ConfigSchema.integer(40, 5, 200,
+					"每页条数；服务端只下发这一页，绝不全量推送"))
+			.field("visibleRows", ConfigSchema.integer(10, 1, 40,
+					"GUI 一屏显示多少行（不影响网络分页，仅本地滚动区高度）"))
+			.field("pageRequestCooldownMs", ConfigSchema.integer(150, 0, 10000,
+					"同一玩家两次翻页请求的最小间隔（毫秒），防刷包"))
+			.field("maxSearchLength", ConfigSchema.integer(32, 1, 128, "搜索词最大长度，超出截断"))
+			.field("maxCountPerTrade", ConfigSchema.integer(6400, 1, 6400,
+					"单次买卖最大数量（协议硬上限 6400，防止一个包搬空仓库）"))
+			.field("conflictPolicy", ConfigSchema.choice("outer", List.of("outer", "merge"),
+					"同名商店/商品冲突策略：outer=浅目录优先，merge=合并"))
+			.field("buyEnabled", ConfigSchema.bool(true, "是否允许购买（总开关）"))
+			.field("sellEnabled", ConfigSchema.bool(true, "是否允许出售（总开关）"))
+			.field("sellPriceRatio", ConfigSchema.decimal(0.5, 0, 100,
+					"卖出价系数：sell<=0 时按 buy×ratio 计算，0=不回收"))
+			.field("sellDailyLimitPerItem", ConfigSchema.integer(0, 0, 1_000_000,
+					"每人每日出售同一商品上限（0=不限）"))
+			.field("sellDailyLimitTotal", ConfigSchema.integer(0, 0, 1_000_000_000L,
+					"每人每日出售总额上限（铜，0=不限）"))
+			.field("stockFile", ConfigSchema.string("shop/stock.json",
+					"库存覆盖文件（相对数据根目录）；只在有限库存时才写"))
+			.field("limitsDir", ConfigSchema.string("shop/limits",
+					"每日限购记录目录（相对数据根目录）"));
+
+	private ShopConfig() {
+	}
+
+	public static ConfigStore store() {
+		return ConfigManager.get().store(FILE);
+	}
+
+	public static long minPrice() {
+		return store().getPathLong("limits.minPrice", 0);
+	}
+
+	public static long maxPrice() {
+		return store().getPathLong("limits.maxPrice", 1_000_000_000L);
+	}
+
+	public static int maxChangePercentPerEdit() {
+		return (int) store().getPathLong("limits.maxChangePercentPerEdit", 0);
+	}
+
+	public static int pageSize() {
+		return (int) store().getLong("pageSize", 40);
+	}
+
+	public static int visibleRows() {
+		return (int) store().getLong("visibleRows", 10);
+	}
+
+	public static int pageRequestCooldownMs() {
+		return (int) store().getLong("pageRequestCooldownMs", 150);
+	}
+
+	public static int maxCountPerTrade() {
+		return (int) store().getLong("maxCountPerTrade", 6400);
+	}
+
+	public static int maxSearchLength() {
+		return (int) store().getLong("maxSearchLength", 32);
+	}
+
+	public static String conflictPolicy() {
+		return store().getString("conflictPolicy", "outer");
+	}
+
+	public static boolean buyEnabled() {
+		return store().getBool("buyEnabled", true);
+	}
+
+	public static boolean sellEnabled() {
+		return store().getBool("sellEnabled", true);
+	}
+
+	public static double sellPriceRatio() {
+		return store().getDouble("sellPriceRatio", 0.5);
+	}
+
+	public static int sellDailyLimitPerItem() {
+		return (int) store().getLong("sellDailyLimitPerItem", 0);
+	}
+
+	public static long sellDailyLimitTotal() {
+		return store().getLong("sellDailyLimitTotal", 0);
+	}
+
+	public static String stockFile() {
+		return store().getPathString("stockFile", "shop/stock.json");
+	}
+
+	public static String limitsDir() {
+		return store().getPathString("limitsDir", "shop/limits");
+	}
+}

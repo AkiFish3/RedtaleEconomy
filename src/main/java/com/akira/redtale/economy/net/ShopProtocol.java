@@ -1,0 +1,97 @@
+package com.akira.redtale.economy.net;
+
+import com.akira.redtale.economy.config.ShopConfig;
+import net.minecraft.network.PacketByteBuf;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 商店协议编解码（spec §7）。
+ *
+ * <p>核心约束：服务端<b>永不</b>下发全量商品。一次请求 = 一页 = {@code shop.pageSize} 条。
+ * 客户端发来的 page 会被钳进 [0, totalPages-1]，负数/超大值都不会导致越界。
+ */
+public final class ShopProtocol {
+
+	public record Entry(String itemId, long buyPrice, long sellPrice, long stock, boolean canBuy, boolean canSell) {
+	}
+
+	public record Page(String shopId, String query, int page, int totalPages, int totalItems, List<Entry> entries) {
+		public static Page empty(String shopId, String query) {
+			return new Page(shopId, query, 0, 0, 0, List.of());
+		}
+	}
+
+	public record ActionResult(boolean ok, String messageKey, long balance, long stockRemaining) {
+	}
+
+	private ShopProtocol() {
+	}
+
+	// ---------------------------------------------------------------- 编码
+
+	public static void writePage(PacketByteBuf buf, Page p) {
+		buf.writeString(p.shopId(), 64);
+		buf.writeString(p.query() == null ? "" : p.query(), 128);
+		buf.writeVarInt(p.page());
+		buf.writeVarInt(p.totalPages());
+		buf.writeVarInt(p.totalItems());
+		buf.writeVarInt(p.entries().size());
+		for (Entry e : p.entries()) {
+			buf.writeString(e.itemId(), 128);
+			buf.writeLong(e.buyPrice());
+			buf.writeLong(e.sellPrice());
+			buf.writeLong(e.stock());
+			buf.writeBoolean(e.canBuy());
+			buf.writeBoolean(e.canSell());
+		}
+		// 追加在尾部：GUI 一屏行数（服务端 shop/settings.json 的 visibleRows）
+		buf.writeVarInt(com.akira.redtale.economy.config.ShopConfig.visibleRows());
+	}
+
+	public static Page readPage(PacketByteBuf buf) {
+		String shopId = buf.readString(64);
+		String query = buf.readString(128);
+		int page = buf.readVarInt();
+		int totalPages = buf.readVarInt();
+		int totalItems = buf.readVarInt();
+		int n = buf.readVarInt();
+		int max = ShopConfig.pageSize() + 1; // 容错一档，防止恶意端塞超长列表
+		List<Entry> list = new ArrayList<>(Math.min(n, max));
+		for (int i = 0; i < n; i++) {
+			String id = buf.readString(128);
+			long buy = buf.readLong();
+			long sell = buf.readLong();
+			long stock = buf.readLong();
+			boolean canBuy = buf.readBoolean();
+			boolean canSell = buf.readBoolean();
+			if (i < max) list.add(new Entry(id, buy, sell, stock, canBuy, canSell));
+		}
+		return new Page(shopId, query, page, totalPages, totalItems, list);
+	}
+
+	public static void writeAction(PacketByteBuf buf, ActionResult r) {
+		buf.writeBoolean(r.ok());
+		buf.writeString(r.messageKey() == null ? "" : r.messageKey(), 96);
+		buf.writeLong(r.balance());
+		buf.writeLong(r.stockRemaining());
+	}
+
+	public static ActionResult readAction(PacketByteBuf buf) {
+		return new ActionResult(buf.readBoolean(), buf.readString(96), buf.readLong(), buf.readLong());
+	}
+
+	/** 分页参数归一化：任何输入都落在一个合法的 [0, totalPages-1]。 */
+	public static int clampPage(int requested, int totalItems, int pageSize) {
+		if (pageSize <= 0) return 0;
+		int totalPages = Math.max(1, (totalItems + pageSize - 1) / pageSize);
+		if (requested < 0) return 0;
+		return Math.min(requested, totalPages - 1);
+	}
+
+	public static int totalPages(int totalItems, int pageSize) {
+		if (pageSize <= 0) return 0;
+		return (totalItems + pageSize - 1) / pageSize;
+	}
+}
