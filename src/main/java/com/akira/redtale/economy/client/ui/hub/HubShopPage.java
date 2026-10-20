@@ -2,6 +2,7 @@ package com.akira.redtale.economy.client.ui.hub;
 
 import com.akira.redtale.economy.client.ShopClientState;
 import com.akira.redtale.economy.net.ShopProtocol;
+import com.akira.redtale.economy.shop.ShopTree;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.item.Item;
@@ -14,16 +15,21 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Hub 内的商店页（U11 第一步：卡片列表 + 搜索 + 分页）。
+ * Hub 内的商店页（U11：目录树 + 筛选 + 搜索 + 分页）。
  *
  * <p>数据来自 {@link ShopClientState}（服务端下发的分页缓存，客户端不信任何数值）。
- * 分类树 / 多维筛选在下一版补，这里先把列表和搜索跑通。
+ * 左侧目录树的形状由商品的 {@code category} 路径决定（见 {@link ShopTree}），
+ * 客户端只用服务端下发的 facet 列表在本地展开，不额外占协议字段。
  */
 public final class HubShopPage {
 
 	private static final int CARD_W = 96;
 	private static final int CARD_H = 58;
 	private static final int GAP = 4;
+	/** 目录树列宽；没有分类时整列不画，卡片区自动占满。 */
+	private static final int TREE_W = 96;
+	private static final int TREE_HEAD = 17;
+	private static final int TREE_ROW = 14;
 
 	private static final int C_CARD_SEL = 0xFF332B18;
 	private static final int C_RED = 0xFFC0605A;
@@ -34,7 +40,29 @@ public final class HubShopPage {
 	public enum Action {
 		NONE, SYNC, BUY, SELL, PREV, NEXT,
 		/** U11b：四个筛选维度，点击循环取值（含"全部"） */
-		FILTER_MOD, FILTER_CAT, FILTER_PRICE, FILTER_STOCK
+		FILTER_MOD, FILTER_CAT, FILTER_PRICE, FILTER_STOCK,
+		/** U11：点目录树节点（下钻）/ 点面包屑回上一级 */
+		TREE_NODE, TREE_UP
+	}
+
+	/** 选中分类的路径（空 = 全部分类）—— 树的位置就是筛选条件，两处不会不同步。 */
+	private static String treePath() {
+		return ShopClientState.filter().categoryOrEmpty();
+	}
+
+	private static int treeWidth(ShopProtocol.Page page) {
+		return page != null && !page.categories().isEmpty() ? TREE_W : 0;
+	}
+
+	/** 卡片区左边界（树占位后右移）。 */
+	private static int gridX(int x, ShopProtocol.Page page) {
+		int tw = treeWidth(page);
+		return tw == 0 ? x : x + tw + 6;
+	}
+
+	private static int gridW(int w, ShopProtocol.Page page) {
+		int tw = treeWidth(page);
+		return tw == 0 ? w : w - tw - 6;
 	}
 
 	/** 价格档位上限（铜）；0 = 不限。点击依次循环。 */
@@ -56,7 +84,9 @@ public final class HubShopPage {
 	}
 
 	private static String catLabel(com.akira.redtale.economy.net.ShopFilter f) {
-		return "类型:" + (f.categoryOrEmpty().isEmpty() ? "全部" : f.categoryOrEmpty());
+		String path = f.categoryOrEmpty();
+		// 树里选的是路径（木材/台阶），chip 上只显示末段，否则宽度吃掉整条筛选栏
+		return "类型:" + (path.isEmpty() ? "全部" : ShopTree.label(path));
 	}
 
 	private static String priceLabel(com.akira.redtale.economy.net.ShopFilter f) {
@@ -82,15 +112,22 @@ public final class HubShopPage {
 		// U11b：筛选栏（mod / 类型 / 价格 / 有货）—— 点击循环取值，与搜索词叠加
 		drawFilterBar(dc, tr, x, y + 20, w, page, mouseX, mouseY);
 
+		// U11：左侧多级目录树（面包屑可点回上级）
+		if (treeWidth(page) > 0) {
+			drawTree(dc, tr, x, y + 38, TREE_W, h - 38 - 26, page, mouseX, mouseY);
+		}
+
 		// 卡片：列数按最小宽算，再把每张卡等比拉宽铺满整行（§37.2 对齐网格）
-		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
-		int cw = cardW(w);
+		int gx = gridX(x, page);
+		int gw = gridW(w, page);
+		int cols = Math.max(1, (gw + GAP) / (CARD_W + GAP));
+		int cw = cardW(gw);
 		int startY = y + 38;
 		List<ShopProtocol.Entry> entries = page.entries();
 		for (int i = 0; i < entries.size(); i++) {
 			int col = i % cols;
 			int row = i / cols;
-			int cx = x + col * (cw + GAP);
+			int cx = gx + col * (cw + GAP);
 			int cy = startY + row * (CARD_H + GAP);
 			if (cy + CARD_H > y + h - 34) break;
 			drawCard(dc, tr, cx, cy, cw, entries.get(i), i == selected, mouseX, mouseY);
@@ -98,12 +135,12 @@ public final class HubShopPage {
 		if (entries.isEmpty()) {
 			boolean filtered = !ShopClientState.filter().isEmpty();
 			dc.drawText(tr, Text.literal(filtered ? "没有符合筛选条件的商品" : "暂无商品"),
-					x + 6, startY + 8, HubTheme.MUTED, false);
+					gx + 6, startY + 8, HubTheme.MUTED, false);
 			// ★不许出面板★：这两行以前直接画，长出边界压在边框上（U6 截图可见）
 			String hint = filtered ? "点上方筛选项可循环切换 / 清除"
 					: "管理员：/shop admin add <商店> <物品> <买价> <卖价>";
-			dc.drawText(tr, Text.literal(trim(tr, hint, w - 16)),
-					x + 6, startY + 22, 0xFF6A6A6A, false);
+			dc.drawText(tr, Text.literal(trim(tr, hint, gw - 16)),
+					gx + 6, startY + 22, 0xFF6A6A6A, false);
 		}
 
 		// 底部：分页 + 选中项操作
@@ -144,6 +181,49 @@ public final class HubShopPage {
 		}
 	}
 
+	/** 目录树列：面包屑（可点回上级）+ 当前层的子分类。 */
+	private static void drawTree(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
+			ShopProtocol.Page page, double mouseX, double mouseY) {
+		String path = treePath();
+		List<String> cats = page.categories();
+		dc.fill(x, y, x + w, y + h, 0xFF1C1C1C);
+		dc.fill(x + w - 1, y, x + w, y + h, HubTheme.LINE);
+
+		// 面包屑：显示当前路径，非根时可点（点它 = 回上一级）
+		boolean upHover = !path.isEmpty()
+				&& mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + TREE_HEAD;
+		dc.fill(x, y, x + w, y + TREE_HEAD, upHover ? 0xFF35302A : 0xFF232323);
+		dc.fill(x, y + TREE_HEAD - 1, x + w, y + TREE_HEAD, HubTheme.LINE);
+		String crumb = path.isEmpty() ? "全部分类" : breadcrumbText(path);
+		String shown = (path.isEmpty() ? "" : "‹ ") + crumb;
+		dc.drawText(tr, Text.literal(trim(tr, shown, w - 8)), x + 4, y + 5,
+				path.isEmpty() ? HubTheme.MUTED : HubTheme.GOLD, false);
+
+		List<String> kids = ShopTree.children(cats, path);
+		if (kids.isEmpty()) {
+			dc.drawText(tr, Text.literal(path.isEmpty() ? "（无分类）" : "（无下级）"),
+					x + 4, y + TREE_HEAD + 4, 0xFF6A6A6A, false);
+			return;
+		}
+		for (int i = 0; i < kids.size(); i++) {
+			int ry = y + TREE_HEAD + i * TREE_ROW;
+			if (ry + TREE_ROW > y + h) break;
+			String name = kids.get(i);
+			String child = ShopTree.join(path, name);
+			boolean hasKid = ShopTree.hasChildren(cats, child);
+			boolean hover = mouseX >= x && mouseX < x + w && mouseY >= ry && mouseY < ry + TREE_ROW;
+			if (hover) dc.fill(x + 1, ry, x + w - 2, ry + TREE_ROW, 0xFF2E2E2E);
+			// ★用 › 而不是 ▸★：默认字体没有 ▸，会渲染成豆腐块（u6-02 截图可见）
+			String line = (hasKid ? "› " : "· ") + name;
+			dc.drawText(tr, Text.literal(trim(tr, line, w - 8)), x + 4, ry + 3,
+					hasKid ? HubTheme.TEXT : HubTheme.MUTED, false);
+		}
+	}
+
+	/** 面包屑文字：`建材 › 木材`（整条太长时由 trim 截断，最深的段会先看不到）。 */
+	private static String breadcrumbText(String path) {
+		return String.join(" › ", ShopTree.crumbs(path));
+	}
 	/** 卡片实际宽度：列数固定后平均分配，保证最右一张顶到内容区右边界。 */
 	private static int cardW(int w) {
 		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
@@ -212,10 +292,32 @@ public final class HubShopPage {
 		return out + "…";
 	}
 
-	/** 点击：先判卡片，再判底部按钮。返回动作 + 通过 {@code out} 带回选中的条目下标。 */
+	/**
+	 * 点击：目录树 → 筛选栏 → 卡片 → 底部按钮。
+	 * 返回动作；选中的条目下标经 {@code outIndex} 带回，
+	 * 目录树的目标路径经 {@code outCat} 带回（{@code TREE_UP} 时是上一级）。
+	 */
 	public static Action click(TextRenderer tr, double mx, double my, int x, int y, int w, int h,
-			int selected, int[] outIndex) {
+			int selected, int[] outIndex, String[] outCat) {
 		ShopProtocol.Page page = ShopClientState.page();
+		// 目录树在最左，先判；命中区不与卡片重叠（卡片区已右移）
+		if (treeWidth(page) > 0 && mx >= x && mx < x + TREE_W
+				&& my >= y + 38 && my < y + h - 26) {
+			String path = treePath();
+			int ty = y + 38;
+			if (my < ty + TREE_HEAD) {
+				if (path.isEmpty()) return Action.NONE;
+				outCat[0] = ShopTree.parent(path);
+				return Action.TREE_UP;
+			}
+			int row = (int) ((my - ty - TREE_HEAD) / TREE_ROW);
+			List<String> kids = ShopTree.children(page.categories(), path);
+			if (row >= 0 && row < kids.size()) {
+				outCat[0] = ShopTree.join(path, kids.get(row));
+				return Action.TREE_NODE;
+			}
+			return Action.NONE;
+		}
 		// 筛选栏优先（在卡片上方，命中区不重叠）
 		if (my >= y + 20 && my < y + 34) {
 			int[] widths = chipWidths(tr, page);
@@ -228,12 +330,14 @@ public final class HubShopPage {
 			}
 			return Action.NONE;
 		}
-		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
-		int cw = cardW(w);
+		int gx = gridX(x, page);
+		int gw = gridW(w, page);
+		int cols = Math.max(1, (gw + GAP) / (CARD_W + GAP));
+		int cw = cardW(gw);
 		int startY = y + 38;
 		List<ShopProtocol.Entry> entries = page.entries();
 		for (int i = 0; i < entries.size(); i++) {
-			int cx = x + (i % cols) * (cw + GAP);
+			int cx = gx + (i % cols) * (cw + GAP);
 			int cy = startY + (i / cols) * (CARD_H + GAP);
 			if (cy + CARD_H > y + h - 34) break;
 			if (mx >= cx && mx < cx + cw && my >= cy && my < cy + CARD_H) {
@@ -257,5 +361,19 @@ public final class HubShopPage {
 
 	public static String normalize(String q) {
 		return q == null ? "" : q.trim().toLowerCase(Locale.ROOT);
+	}
+
+	/**
+	 * 仅 dev 夹具用：目录树第 {@code row} 行的中心坐标（喂给真实 mouseClicked）。
+	 * 没有树或越界返回 {@code null}。
+	 */
+	public static double[] treeRowCenter(int x, int y, int h, int row) {
+		ShopProtocol.Page page = ShopClientState.page();
+		if (treeWidth(page) == 0) return null;
+		List<String> kids = ShopTree.children(page.categories(), treePath());
+		if (row < 0 || row >= kids.size()) return null;
+		double cy = y + 38 + TREE_HEAD + row * TREE_ROW + TREE_ROW / 2.0;
+		if (cy > y + h - 26) return null;
+		return new double[]{x + TREE_W / 2.0, cy};
 	}
 }

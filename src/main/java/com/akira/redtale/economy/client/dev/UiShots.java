@@ -43,8 +43,8 @@ public final class UiShots {
 	private static final int JOIN_TIMEOUT = 400;
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
-	/** 最后一个拍照 step（U10/R39/R42 加了三组，U4 又加了侧边栏五步，从 5 扩到 24）。 */
-	private static final int LAST_STEP = 24;
+	/** 最后一个拍照 step（U4 侧边栏 5 步 + U11 目录树 6 步，从 5 扩到 31）。 */
+	private static final int LAST_STEP = 31;
 
 	private static boolean active;
 	private static int tick;
@@ -174,6 +174,17 @@ public final class UiShots {
 				ClientUiConfig.showLabels = true;
 				ClientUiConfig.save();
 			});
+			// ★U11：商店目录树★ —— 根 → 第 2 级 → 第 3 级（面包屑与列表同步收窄），
+			// 再走真实 charTyped 写搜索词，验「搜索真的过服务端」。
+			// 先关掉上一屏（rank），否则 shotKeep 看到 HubScreen 就以为"已打开"，拍的还是排行页。
+			case 24 -> act(mc, () -> mc.setScreen(null));
+			case 25 -> shotKeep(mc, "u6-16-shop-tree.png", () -> open(mc, HubPage.SHOP, "rt shop"));
+			case 26 -> act(mc, () -> clickTree(mc, 0));
+			case 27 -> shotKeep(mc, "u6-17-shop-tree-l2.png", () -> { });
+			case 28 -> act(mc, () -> clickTree(mc, 0));
+			case 29 -> shotKeep(mc, "u6-18-shop-tree-l3.png", () -> { });
+			case 30 -> act(mc, () -> search(mc, "oak"));
+			case 31 -> shotKeep(mc, "u6-19-shop-search-oak.png", () -> { });
 			default -> finish(mc);
 		}
 	}
@@ -250,6 +261,31 @@ public final class UiShots {
 		boolean hit = hub.devClickSidebar(index);
 		LOG.add("click " + label + " (row " + index + ") hit=" + hit + " page=" + hub.devPageId()
 				+ " at tick " + tick);
+	}
+
+	/** 点商店目录树第 row 行（走 HubScreen 真实 mouseClicked 命中路径），并记录路径变化。 */
+	private static void clickTree(MinecraftClient mc, int row) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("tree click " + row + " skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		String before = ShopClientState.filter().categoryOrEmpty();
+		boolean hit = hub.devClickTreeRow(row);
+		LOG.add("tree click row=" + row + " hit=" + hit + " path=" + before + " -> "
+				+ ShopClientState.filter().categoryOrEmpty() + " at tick " + tick);
+	}
+
+	/** 用真实 charTyped 通道写搜索词（不聚焦就写不进去），再让服务端回一页。 */
+	private static void search(MinecraftClient mc, String text) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("search skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		hub.devSearch(text);
+		LOG.add("search \"" + text + "\" at tick " + tick + " path="
+				+ ShopClientState.filter().categoryOrEmpty());
 	}
 
 	/** 只执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */

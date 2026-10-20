@@ -72,6 +72,8 @@ public final class ShopCatalog implements ShopSource {
 		private final boolean requirePremium;
 		private final Path file;
 		private final Map<String, ItemDef> items = new LinkedHashMap<>();
+		/** §43.2 商店声明过的分类（即使暂时没货也要出现在目录树里）。支持 `建材/木材` 路径写法。 */
+		private final java.util.List<String> declared = new ArrayList<>();
 
 		ShopDef(String id, String displayName, String icon, boolean requirePremium, Path file) {
 			this.id = id;
@@ -107,6 +109,11 @@ public final class ShopCatalog implements ShopSource {
 
 		public ItemDef item(String itemId) {
 			return items.get(itemId);
+		}
+
+		/** 声明过的分类路径（可能比实际有货的更多）。 */
+		public java.util.List<String> declaredCategories() {
+			return declared;
 		}
 	}
 
@@ -222,13 +229,31 @@ public final class ShopCatalog implements ShopSource {
 					bool(o, "requirePremium", false),
 					file);
 			parseItems(def, o, id);
+			parseCategories(def, o);
 			SHOPS.put(id, def);
 		}
 		return true;
 	}
 
-	private static void parseItems(ShopDef def, JsonObject shopObj, String shopId) {
-		if (!shopObj.has("items") || !shopObj.get("items").isJsonArray()) return;
+	/**
+	 * 读商店级 {@code categories}（§43.2）：字符串或 {@code {"id": "建材/木材"}} 都收。
+	 * 这些分类即使没有商品也会出现在目录树里，服主可以先摆好目录再上架。
+	 */
+	private static void parseCategories(ShopDef def, JsonObject shopObj) {
+		if (!shopObj.has("categories") || !shopObj.get("categories").isJsonArray()) return;
+		for (JsonElement el : shopObj.getAsJsonArray("categories")) {
+			String c = "";
+			if (el.isJsonPrimitive()) {
+				c = el.getAsString();
+			} else if (el.isJsonObject()) {
+				c = str(el.getAsJsonObject(), "id", "");
+			}
+			c = c == null ? "" : c.trim();
+			if (!c.isEmpty() && !def.declared.contains(c)) def.declared.add(c);
+		}
+	}
+
+	private static void parseItems(ShopDef def, JsonObject shopObj, String shopId) {		if (!shopObj.has("items") || !shopObj.get("items").isJsonArray()) return;
 		for (JsonElement el : shopObj.getAsJsonArray("items")) {
 			if (!el.isJsonObject()) continue;
 			JsonObject it = el.getAsJsonObject();
@@ -722,6 +747,10 @@ public final class ShopCatalog implements ShopSource {
 		for (ItemDef it : def.items.values()) {
 			if (it.enabled() && !it.category().isBlank()) set.add(it.category());
 		}
+		// §43.2：声明过但暂时没货的分类也下发，目录树才不会因为下架而整块消失
+		for (String c : def.declaredCategories()) {
+			if (c != null && !c.isBlank()) set.add(c);
+		}
 		return new ArrayList<>(set);
 	}
 
@@ -745,7 +774,8 @@ public final class ShopCatalog implements ShopSource {
 		for (ItemDef it : def.items.values()) {
 			if (!it.enabled()) continue;
 			if (!mod.isEmpty() && !namespaceOf(it.id()).toLowerCase(Locale.ROOT).equals(mod)) continue;
-			if (!cat.isEmpty() && !it.category().toLowerCase(Locale.ROOT).equals(cat)) continue;
+			// U11：目录树选中某一级时要含整棵子树（木材 ⇒ 木材/台阶），分隔符整段对齐
+			if (!cat.isEmpty() && !ShopTree.matches(it.category(), cat)) continue;
 			long sell = sellPrice(it);
 			// 价格按「能成交的价格」判断：能买看买价，只能卖看卖价
 			long price = it.buy() > 0 ? it.buy() : sell;

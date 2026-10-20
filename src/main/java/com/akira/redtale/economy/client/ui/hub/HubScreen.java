@@ -715,6 +715,29 @@ public class HubScreen extends Screen {
 		return page.id;
 	}
 
+	/** 仅 dev 夹具：点商店左侧目录树第 {@code row} 行（走真实 mouseClicked 命中路径）。 */
+	public boolean devClickTreeRow(int row) {
+		if (page != HubPage.SHOP) return false;
+		int cx = panelX + sidebarW() + 12;
+		int cy = panelY + TOP_BAR + 8;
+		int cw = panelW - sidebarW() - 24;
+		int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+		double[] p = HubShopPage.treeRowCenter(cx, cy, ch, row);
+		if (p == null) return false;
+		return mouseClicked(p[0], p[1], 0);
+	}
+
+	/** 仅 dev 夹具：走真实 charTyped 通道写字，再请求一页（验搜索真的过服务端）。 */
+	public void devSearch(String text) {
+		if (page != HubPage.SHOP || text == null) return;
+		shopQuery.setLength(0);
+		searchFocused = true;
+		for (int i = 0; i < text.length(); i++) {
+			charTyped(text.charAt(i), 0);
+		}
+		requestShopPage();
+	}
+
 	private boolean handleClick(double mouseX, double mouseY, int button) {
 		// ★确认条在搜索框上方★：必须先判它，否则点"确认"会变成聚焦搜索框
 		if (page == HubPage.STORAGE && HubStoragePage.confirmUpgrade) {
@@ -1079,7 +1102,9 @@ public class HubScreen extends Screen {
 			int cw = panelW - sidebarW() - 24;
 			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
 			int[] idx = {shopSelected};
-			HubShopPage.Action a = HubShopPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch, shopSelected, idx);
+			String[] outCat = {""};
+			HubShopPage.Action a = HubShopPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch,
+					shopSelected, idx, outCat);
 			if (a == HubShopPage.Action.NONE && idx[0] != shopSelected) {
 				shopSelected = idx[0];
 				return true;
@@ -1128,6 +1153,17 @@ public class HubScreen extends Screen {
 				case FILTER_STOCK -> {
 					cycleFilter(3);
 					requestShopPage();
+				}
+				// U11：目录树下钻 / 回上一级 —— 树位置即筛选条件，一次点击同时完成两件事
+				case TREE_NODE, TREE_UP -> {
+					var f = ShopClientState.filter();
+					ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
+							f.modOrEmpty(), outCat[0], f.minPrice(), f.maxPrice(), f.inStockOnly()));
+					shopSelected = -1;
+					requestShopPage();
+					setStatus(outCat[0].isEmpty() ? "已回到全部分类"
+							: "分类：" + String.join(" › ",
+									com.akira.redtale.economy.shop.ShopTree.crumbs(outCat[0])));
 				}
 				default -> {
 				}
