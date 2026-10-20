@@ -45,6 +45,8 @@ public final class PacketIds {
 	public static final Identifier C2S_WAREHOUSE_INV_PICK = RedtaleEconomy.id("warehouse/invpick");
 	public static final Identifier C2S_WAREHOUSE_DROP = RedtaleEconomy.id("warehouse/drop");
 	public static final Identifier C2S_BALANCE_REQ = RedtaleEconomy.id("balance/request");
+	/** U9：「只看活跃」开关随请求一起发（服务端按开关选缓存榜，不在请求里算）。 */
+	public static final Identifier C2S_RANK_REQ = RedtaleEconomy.id("rank/request");
 
 	private PacketIds() {
 	}

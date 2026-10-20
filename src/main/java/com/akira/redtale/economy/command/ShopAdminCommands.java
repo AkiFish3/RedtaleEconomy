@@ -101,6 +101,13 @@ public final class ShopAdminCommands {
 										.executes(ctx -> setGuard(ctx, true)))
 								.then(CommandManager.literal("off")
 										.executes(ctx -> setGuard(ctx, false))))
+						// U11：搜不到时看索引（id/中文/拼音首字母/全拼四段）
+						.then(CommandManager.literal("search")
+								.then(CommandManager.argument("shopId", StringArgumentType.word())
+										.suggests(shops())
+										.then(CommandManager.argument("itemId", StringArgumentType.word())
+												.suggests(items())
+												.executes(ShopAdminCommands::searchIndex))))
 						.then(CommandManager.literal("remove")
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
@@ -356,6 +363,15 @@ public final class ShopAdminCommands {
 	}
 
 	/** E1：打印护栏状态 + 当前 100 铜买价对应的最高卖价。 */
+	/** U11：《/rt admin shop search <店> <物品>》把搜索索引打出来，排查「为什么搜不到」。 */
+	private static int searchIndex(CommandContext<ServerCommandSource> ctx) {
+		String shopId = StringArgumentType.getString(ctx, "shopId");
+		String itemId = StringArgumentType.getString(ctx, "itemId");
+		String desc = ShopCatalog.describeSearch(shopId, itemId);
+		ctx.getSource().sendFeedback(() -> Text.literal("§7搜索索引（id | 中文 | 首字母 | 全拼）：§f" + desc), false);
+		return 1;
+	}
+
 	private static int priceGuard(CommandContext<ServerCommandSource> ctx) {
 		boolean on = com.akira.redtale.economy.shop.PricePolicy.enabled();
 		int margin = com.akira.redtale.economy.shop.PricePolicy.marginPercent();

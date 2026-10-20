@@ -52,8 +52,16 @@ public final class ShopCatalog implements ShopSource {
 	private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
 	/** 单个商品定义（文件侧，不可变）。 */
+	/**
+	 * 一件商品。{@code name} = 配置里写的显示名（可空，仅用于搜索索引；界面仍按客户端语言显示）。
+	 */
 	public record ItemDef(String id, String category, long buy, long sell, long stockInit,
-			int dailyBuyLimit, boolean enabled) {
+			int dailyBuyLimit, boolean enabled, String name) {
+
+		/** 显示名（永不为 null）。 */
+		public String nameOrEmpty() {
+			return name == null ? "" : name;
+		}
 	}
 
 	/** 一个商店。{@code file} 用于管理命令回写。 */
@@ -104,6 +112,8 @@ public final class ShopCatalog implements ShopSource {
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 	private static final Map<String, ShopDef> SHOPS = new LinkedHashMap<>();
+	/** U11：搜索键缓存（shopId/itemId → 索引），随 reload 一起清。 */
+	private static final Map<String, ShopSearch> SEARCH = new java.util.concurrent.ConcurrentHashMap<>();
 	private static volatile boolean ready;
 	private static volatile long loadedAt;
 	/** E1：加载时被钳制的商品数 + 首个样例（只读，供 /shop admin priceguard 展示）。 */
@@ -132,6 +142,8 @@ public final class ShopCatalog implements ShopSource {
 
 	public static synchronized void reload() {
 		SHOPS.clear();
+		SEARCH.clear();
+		ItemLang.clearCache();
 		priceViolations = 0;
 		priceViolationSample = "";
 		ready = false;
@@ -237,7 +249,9 @@ public final class ShopCatalog implements ShopSource {
 					num(it, "sell", 0),
 					num(it, "stock", -1),
 					(int) num(it, "dailyBuyLimit", -1),
-					bool(it, "enabled", true)));
+					bool(it, "enabled", true),
+					// U11：可选显示名，两种写法都收（SDM 迁移与手写都可能用），只进搜索索引
+					str(it, it.has("name") ? "name" : "displayName", "")));
 		}
 		// E1：历史文件里可能已经写了 sell>=buy —— 不拒绝加载（会导致商品消失），
 		// 只在内存里钳制并汇总一条日志，便于运营按 id 去改文件。
@@ -739,20 +753,29 @@ public final class ShopCatalog implements ShopSource {
 			if (filter.maxPrice() > 0 && price > filter.maxPrice()) continue;
 			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
 			if (filter.inStockOnly() && stock == 0) continue;
-			if (tokens.length > 0) {
-				String hay = (it.id() + " " + it.category()).toLowerCase(Locale.ROOT);
-				boolean all = true;
-				for (String t : tokens) {
-					if (!hay.contains(t)) {
-						all = false;
-						break;
-					}
-				}
-				if (!all) continue;
-			}
+			if (tokens.length > 0 && !search(shopId, it).matchesAll(tokens)) continue;
 			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock, it.buy() > 0, sell > 0));
 		}
 		return out;
+	}
+
+	/** U11：取（或建）一件商品的搜索键。显示名解析要走 jar/language，按条目缓存，reload 时清。 */
+	private static ShopSearch search(String shopId, ItemDef it) {
+		String key = shopId + '\u0000' + it.id();
+		ShopSearch s = SEARCH.get(key);
+		if (s != null) return s;
+		s = ShopSearch.of(it.id(), it.category(), it.nameOrEmpty(), ItemLang.displayName(it.id()));
+		SEARCH.put(key, s);
+		return s;
+	}
+
+	/** 诊断（`/rt admin shop search`）：把一件商品的搜索索引打出来，排查「搜不到」。 */
+	public static String describeSearch(String shopId, String itemId) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null) return "商店不存在：" + shopId;
+		ItemDef it = def.item(itemId);
+		if (it == null) return "商品不存在：" + itemId;
+		return search(shopId, it).describe();
 	}
 
 	public static List<ShopProtocol.Entry> allEntries(String shopId) {

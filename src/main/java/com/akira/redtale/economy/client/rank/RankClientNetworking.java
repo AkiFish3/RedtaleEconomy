@@ -32,11 +32,21 @@ public final class RankClientNetworking {
 		return LAST.self();
 	}
 
-	/** 请求一次（发 /rt rank 由服务端下发；这里只在页面打开前兜底）。 */
+	/**
+	 * 请求一次（U9 收尾：走专用包，不再借 {@code /rt rank} 命令）。
+	 *
+	 * @param activeOnly 界面上的「只看活跃」开关；服务端按它选缓存榜，不重算
+	 */
+	public static void request(boolean activeOnly) {
+		if (!ClientPlayNetworking.canSend(PacketIds.C2S_RANK_REQ)) return;
+		net.minecraft.network.PacketByteBuf buf = new net.minecraft.network.PacketByteBuf(
+				io.netty.buffer.Unpooled.buffer());
+		RankProtocol.writeRequest(buf, new RankProtocol.Request(activeOnly));
+		ClientPlayNetworking.send(PacketIds.C2S_RANK_REQ, buf);
+	}
+
+	/** 默认只要活跃榜。 */
 	public static void request() {
-		var mc = net.minecraft.client.MinecraftClient.getInstance();
-		if (mc.player != null) {
-			mc.player.networkHandler.sendChatCommand("rt rank");
-		}
+		request(true);
 	}
 }

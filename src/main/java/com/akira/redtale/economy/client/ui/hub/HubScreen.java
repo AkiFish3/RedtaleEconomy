@@ -145,7 +145,7 @@ public class HubScreen extends Screen {
 					String sid = ShopClientState.shopIdToRequest();
 					if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
 				}
-				case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request();
+				case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
 				case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
 				default -> {
 				}
@@ -969,10 +969,14 @@ public class HubScreen extends Screen {
 			if (ra == HubRankPage.Action.ACTIVE_TOGGLE) {
 				rankActiveOnly = !rankActiveOnly;
 				ClientUiConfig.click();
+				// U9：开关要真的影响数据 —— 带参数重新请求，服务端挑另一份缓存
+				com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
+				setStatus(rankActiveOnly ? "只显示活跃玩家" : "显示全部玩家（含长期未上线）");
 				return true;
 			}
 			if (ra == HubRankPage.Action.SYNC) {
-				setStatus("榜单已是最新（服务端 60 秒刷新一次）");
+				com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
+				setStatus("正在同步榜单…");
 				return true;
 			}
 		}

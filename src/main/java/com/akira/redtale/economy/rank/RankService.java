@@ -55,7 +55,10 @@ public final class RankService {
 
 	private static final Map<UUID, Entry> ENTRIES = new LinkedHashMap<>();
 	private static volatile List<Row> top = List.of();
+	/** U9：不按活跃过滤的全量榜（界面开关关掉时用）。 */
+	private static volatile List<Row> topAll = List.of();
 	private static volatile int total = 0;
+	private static volatile int totalAll = 0;
 	private static volatile long computedAt = 0L;
 
 	private static ScheduledExecutorService exec;
@@ -157,16 +160,17 @@ public final class RankService {
 				e.balance = BalanceService.get(id);
 				e.lastSeen = nowIso;
 			}
-			List<Row> rows = rank();
-			top = rows;
+			top = rank(true);
+			topAll = rank(false);
 			computedAt = now;
 			save();
 		});
 	}
 
-	private static List<Row> rank() {
+	/** @param filterActive false = 不按 lastSeen 过滤（「只看活跃」关掉时用） */
+	private static List<Row> rank(boolean filterActive) {
 		int days = activeDays();
-		LocalDateTime cutoff = days > 0 ? TimeUtil.now().minusDays(days) : null;
+		LocalDateTime cutoff = filterActive && days > 0 ? TimeUtil.now().minusDays(days) : null;
 		List<Map.Entry<UUID, Entry>> alive = new ArrayList<>();
 		for (Map.Entry<UUID, Entry> e : ENTRIES.entrySet()) {
 			if (cutoff != null) {
@@ -182,7 +186,11 @@ public final class RankService {
 			out.add(new Row(i + 1, e.name == null || e.name.isBlank()
 					? alive.get(i).getKey().toString().substring(0, 8) : e.name, e.balance));
 		}
-		total = out.size();
+		if (filterActive) {
+			total = out.size();
+		} else {
+			totalAll = out.size();
+		}
 		return List.copyOf(out);
 	}
 
@@ -197,14 +205,23 @@ public final class RankService {
 
 	// ---------------------------------------------------------------- 读取
 
-	/** 前 10 行（缓存，不触发计算）。 */
+	/** 前 10 行（缓存，不触发计算）。默认「只看活跃」。 */
 	public static List<Row> top(int n) {
-		List<Row> t = top;
+		return top(n, true);
+	}
+
+	/** @param activeOnly true=只含 activeDays 内上线过的人（两份缓存任选一份） */
+	public static List<Row> top(int n, boolean activeOnly) {
+		List<Row> t = activeOnly ? top : topAll;
 		return t.size() <= n ? t : t.subList(0, n);
 	}
 
 	public static int total() {
 		return total;
+	}
+
+	public static int total(boolean activeOnly) {
+		return activeOnly ? total : totalAll;
 	}
 
 	public static long computedAt() {
@@ -213,12 +230,18 @@ public final class RankService {
 
 	/** 自己那一行；不在榜内返回 rank=0 的行（客户端据此显示"未上榜"）。 */
 	public static Row self(UUID uuid, String name) {
+		return self(uuid, name, true);
+	}
+
+	/** @param activeOnly 与 {@link #top(int, boolean)} 同一份榜，保证「自己那行」和榜对上 */
+	public static Row self(UUID uuid, String name, boolean activeOnly) {
 		Entry e = uuid == null ? null : ENTRIES.get(uuid);
 		String display = name != null && !name.isBlank() ? name : (e != null ? e.name : "");
 		// 按 uuid 反查 entry 名再匹配榜单行：玩家改名后榜上仍是旧名，按入参名匹配会漏
 		String key = e != null && e.name != null && !e.name.isBlank() ? e.name : display;
+		List<Row> source = activeOnly ? top : topAll;
 		if (key != null && !key.isBlank()) {
-			for (Row r : top) {
+			for (Row r : source) {
 				if (r.name().equals(key)) {
 					return name == null || name.equals(r.name()) ? r : new Row(r.rank(), display, r.balance());
 				}
@@ -281,8 +304,10 @@ public final class RankService {
 					// 单条坏数据跳过
 				}
 			}
-			top = rank();
-			RedtaleEconomy.LOGGER.info("[rank] 已载入 {} 条历史榜单数据（缓存 {} 行）", ENTRIES.size(), top.size());
+			top = rank(true);
+			topAll = rank(false);
+			RedtaleEconomy.LOGGER.info("[rank] 已载入 {} 条历史榜单数据（缓存 {} 行 / 全量 {} 行）",
+					ENTRIES.size(), top.size(), topAll.size());
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.warn("[rank] 读取 {} 失败：{}", file.getFileName(), e.getMessage());
 		}

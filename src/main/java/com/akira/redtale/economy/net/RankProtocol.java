@@ -16,10 +16,19 @@ public final class RankProtocol {
 	public record Row(int rank, String name, long balance) {
 	}
 
-	public record Snapshot(int board, List<Row> top, Row self, int total, long computedAt) {
+	/**
+	 * @param activeOnly 本次快照是否只含「活跃玩家」（U9：开关由客户端随请求发，
+	 *                   服务端在两份缓存里挑一份，回头带在快照里让界面显示真实状态）
+	 */
+	public record Snapshot(int board, List<Row> top, Row self, int total, long computedAt,
+			boolean activeOnly) {
 		public static Snapshot empty() {
-			return new Snapshot(0, List.of(), null, 0, 0L);
+			return new Snapshot(0, List.of(), null, 0, 0L, true);
 		}
+	}
+
+	/** 客户端请求：{@code activeOnly} = 界面上的「只看活跃」开关。 */
+	public record Request(boolean activeOnly) {
 	}
 
 	private RankProtocol() {
@@ -41,6 +50,7 @@ public final class RankProtocol {
 		}
 		buf.writeVarInt(s.total());
 		buf.writeLong(s.computedAt());
+		buf.writeBoolean(s.activeOnly());
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
@@ -54,6 +64,16 @@ public final class RankProtocol {
 		if (buf.readBoolean()) {
 			self = new Row(buf.readVarInt(), buf.readString(32), buf.readLong());
 		}
-		return new Snapshot(board, top, self, buf.readVarInt(), buf.readLong());
+		return new Snapshot(board, top, self, buf.readVarInt(), buf.readLong(), buf.readBoolean());
+	}
+
+	// ---------------------------------------------------------------- 请求
+
+	public static void writeRequest(PacketByteBuf buf, Request r) {
+		buf.writeBoolean(r.activeOnly());
+	}
+
+	public static Request readRequest(PacketByteBuf buf) {
+		return new Request(buf.readBoolean());
 	}
 }
