@@ -8,6 +8,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
@@ -61,7 +62,7 @@ public final class TaskScreen extends Screen {
 							: ("detect".equals(mode) ? "gui.redtale_economy.tasks.claim"
 									: "gui.redtale_economy.tasks.submit")),
 					btn -> fire(t))
-					.dimensions(left + PANEL_W - 92, by + 12, 80, 20)
+					.dimensions(left + PANEL_W - 92, by + 11, 80, 18)
 					.build();
 			b.active = !t.claimed() && enough(t);
 			addDrawableChild(b);
@@ -103,33 +104,81 @@ public final class TaskScreen extends Screen {
 
 	@Override
 	public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-		super.render(ctx, mouseX, mouseY, delta);
+		// ★顺序★：先画面板与卡片，最后 super.render 画原版按钮 ——
+		// 反过来会让面板盖住按钮底图，只剩一行文字（U6 截图里就是这样）。
 		com.akira.redtale.economy.client.ui.UiStyle.panel(ctx, left, top, PANEL_W, panelH());
 
-		ctx.drawCenteredTextWithShadow(textRenderer, title, left + PANEL_W / 2, top + 10, com.akira.redtale.economy.client.ui.UiStyle.TEXT);
+		ctx.drawTextWithShadow(textRenderer, title, left + PAD + 2, top + 10, com.akira.redtale.economy.client.ui.UiStyle.TEXT);
 		ctx.drawTextWithShadow(textRenderer,
 				Text.literal(snap.date() + "   " + Text.translatable("gui.redtale_economy.tasks.refreshes",
 						snap.refreshesLeft()).getString()),
 				left + PAD, top + 26, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM);
+		com.akira.redtale.economy.client.ui.UiStyle.divider(ctx, left + PAD, top + 42, PANEL_W - PAD * 2);
 
 		List<TaskProtocol.Task> tasks = snap.tasks();
 		if (tasks.isEmpty()) {
 			ctx.drawCenteredTextWithShadow(textRenderer,
-					Text.translatable("gui.redtale_economy.tasks.empty"), left + PANEL_W / 2, top + 70, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM);
+					Text.translatable("gui.redtale_economy.tasks.empty"),
+					left + PANEL_W / 2, top + 66, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM);
+			ctx.drawCenteredTextWithShadow(textRenderer,
+					Text.literal("每天 0 点（core.resetHour）自动换一批 · 剩 " + snap.refreshesLeft() + " 次手动刷新"),
+					left + PANEL_W / 2, top + 82, com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT);
 		}
 
 		int shown = 0;
 		for (TaskProtocol.Task t : tasks) {
 			if (shown >= visible()) break;
 			int y = top + 52 + shown * CARD_H;
-			ctx.fill(left + PAD, y, left + PANEL_W - PAD, y + CARD_H - 6, com.akira.redtale.economy.client.ui.UiStyle.CARD);
+			int ch = CARD_H - 6;
+			boolean hover = mouseX >= left + PAD && mouseX < left + PANEL_W - PAD
+					&& mouseY >= y && mouseY < y + ch;
+			com.akira.redtale.economy.client.ui.UiStyle.card(ctx, left + PAD, y, PANEL_W - PAD * 2, ch, hover);
+			// 左侧强调条：已领灰、可缴纳金、未完成暗
+			int bar = t.claimed() ? com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT
+					: (enough(t) ? com.akira.redtale.economy.client.ui.UiStyle.ACCENT
+							: com.akira.redtale.economy.client.ui.UiStyle.BORDER);
+			ctx.fill(left + PAD, y, left + PAD + 2, y + ch, bar);
 			ctx.drawTextWithShadow(textRenderer,
-					Text.literal("#" + t.slot() + "  " + (t.claimed() ? "§8✔" : "§a→ ") + format(t.reward())),
-					left + PAD + 4, y + 5, com.akira.redtale.economy.client.ui.UiStyle.ACCENT);
-			ctx.drawTextWithShadow(textRenderer, itemLine(t), left + PAD + 4, y + 20, com.akira.redtale.economy.client.ui.UiStyle.TEXT);
+					Text.literal("#" + t.slot() + (t.claimed() ? "  已完成" : "")),
+					left + PAD + 8, y + 5, com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT);
+			String reward = format(t.reward());
+			// 右对齐到「缴纳按钮左边缘 - 8」，否则会被按钮盖住
+			ctx.drawTextWithShadow(textRenderer, Text.literal(reward),
+					left + PANEL_W - 100 - textRenderer.getWidth(reward), y + 5,
+					t.claimed() ? com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT
+							: com.akira.redtale.economy.client.ui.UiStyle.ACCENT);
+			drawItems(ctx, t, left + PAD + 8, y + 24);
 			shown++;
 		}
+
+		// ★按钮最后画★
+		super.render(ctx, mouseX, mouseY, delta);
 	}
+
+	/** 物品行：图标 + 「数量 持有/需要」，图标从注册表取，取不到就只画文字。 */
+	private void drawItems(DrawContext ctx, TaskProtocol.Task t, int x, int y) {
+		int cx = x;
+		for (TaskProtocol.Item i : t.items()) {
+			boolean ok = i.have() >= i.need();
+			ItemStack stack = ItemStack.EMPTY;
+			try {
+				var item = net.minecraft.registry.Registries.ITEM.get(new net.minecraft.util.Identifier(i.id()));
+				stack = new ItemStack(item);
+			} catch (Throwable ignored) {
+				// 未知 id 只画文字
+			}
+			if (!stack.isEmpty()) {
+				ctx.drawItem(stack, cx, y - 4);
+				cx += 18;
+			}
+			String label = i.have() + "/" + i.need();
+			ctx.drawTextWithShadow(textRenderer, Text.literal(label), cx, y,
+					ok ? com.akira.redtale.economy.client.ui.UiStyle.GOOD
+							: com.akira.redtale.economy.client.ui.UiStyle.BAD);
+			cx += textRenderer.getWidth(label) + 10;
+		}
+	}
+
 
 	private Text itemLine(TaskProtocol.Task t) {
 		List<String> parts = new ArrayList<>();

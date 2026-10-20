@@ -48,3 +48,36 @@
 2. 面板要不要加圆角（用 1px 切角实现，不需要贴图）？
 3. 任务卡/商店行是否要加物品图标（商店已有，任务卡还没有）？
 4. 字体要不要用 ResourcePack 的 bitmap font（可以做更细的字号，但需要配套资源包）。
+
+## 5 截图流程（U6 验收用，2026-10-20 建立）
+
+```bat
+:: 1) 放标记文件（存在才启用夹具，平时零开销）
+echo. > run/u6-shots.flag
+:: 2) 直接进开发存档，无人值守拍照
+gradlew runClient --args="--quickPlaySingleplayer u6world"
+:: 3) 图在 run/screenshots/u6-0*.png，日志在 run/u6-shots.log
+:: 4) 拍完删标记，避免下次启动又自动退出
+del run/u6-shots.flag
+```
+
+实现：`client/dev/UiShots`——串行打开 Hub(签到) → Hub(商店) → 任务 → 签到 → 商店，
+每屏等 25 tick 再 `ScreenshotRecorder.saveScreenshot(...)`，五张拍完 `scheduleStop()`。
+它只读现有界面，不写任何玩家数据。
+
+前提：`run/config/redtale/tasks/pools/` 与 `tasks/definitions/` 里要有池与模板
+（仓库里 `demo.json` 是开发用样例），否则任务页永远是空态。
+
+## 6 首轮截图发现的问题（均已修）
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | 签到日历下半截画到面板外，按钮浮在日历上 | `CELL_H` 写死 30，GUI Scale 2（逻辑高 240）只有 160px 内容区 | 按内容区高度自适应 12..30，底部区块贴底边 |
+| 2 | 任务屏按钮只剩文字、没有底图 | `super.render()` 先画按钮，随后 `UiStyle.panel()` 整块盖上去 | 面板/卡片先画，`super.render()` 最后画 |
+| 3 | 任务卡奖励被「缴纳」按钮压住 | 奖励右对齐到 `PANEL_W-PAD-8`，按钮占 `PANEL_W-92..-12` | 奖励改对齐到按钮左边缘 −8 |
+
+## 7 仍待 Aki 决定
+
+- 侧边栏在 240 逻辑高时只露出 6/9 项（有细滚动条 + 滚轮），要不要改成 2 列或折叠分组？
+- 任务卡要不要显示物品中文名（现在只有图标 + 数量），会挤掉一部分横向空间。
+- 商店空态提示是不是太长（一行 40+ 字），要不要缩成「暂无商品 · /shop admin add」。

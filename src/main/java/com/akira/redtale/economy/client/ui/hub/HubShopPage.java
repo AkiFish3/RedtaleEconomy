@@ -101,6 +101,9 @@ public final class HubShopPage {
 			if (filtered) {
 				dc.drawText(tr, Text.literal("点上方筛选项可循环切换 / 清除"),
 						x + 6, startY + 22, 0xFF6A6A6A, false);
+			} else {
+				dc.drawText(tr, Text.literal("这个商店还没有上架商品（管理员：/shop admin add <商店> <物品> <买价> <卖价>）"),
+						x + 6, startY + 22, 0xFF6A6A6A, false);
 			}
 		}
 

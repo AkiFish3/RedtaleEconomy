@@ -21,8 +21,10 @@ import java.time.format.DateTimeParseException;
 public final class HubCheckinPage {
 
 	private static final int CELL_W = 42;
-	private static final int CELL_H = 30;
-	private static final int ROW_GAP = 2;
+	/** 单元格高度上限；实际值按内容区高度收缩（GUI Scale 2 时只有 160px 可用）。 */
+	private static final int CELL_H_MAX = 30;
+	private static final int CELL_H_MIN = 12;
+	private static final int ROW_GAP = 1;
 
 	private static final int C_CELL_EDGE = 0xFF3A3A3A;
 	private static final int C_SIGNED = 0xFF243026;
@@ -92,20 +94,30 @@ public final class HubCheckinPage {
 		// 星期
 		String[] wd = {"一", "二", "三", "四", "五", "六", "日"};
 		for (int i = 0; i < 7; i++) {
-			dc.drawText(tr, Text.literal(wd[i]), x + i * (CELL_W + ROW_GAP) + 14, y + 18, HubTheme.MUTED, false);
+			int wx = x + i * (CELL_W + ROW_GAP) + (CELL_W - tr.getWidth(wd[i])) / 2;
+			dc.drawText(tr, Text.literal(wd[i]), wx, y + 16, HubTheme.MUTED, false);
 		}
 
-		// 网格
-		int gridY = y + 32;
+		// 布局预算：标题 14 + 星期 12 + 网格 + 底部 34（奖励行 12 + 按钮 20）。
+		// ★以前写死 CELL_H=30，GUI Scale 2（逻辑高 240）时 6 行日历直接顶出面板，
+		// 后半截日历画在按钮和面板外——按可用高度收缩才是对的。
 		LocalDate first = ym.atDay(1);
 		int lead = first.getDayOfWeek().getValue() - 1; // 周一=0
 		int days = ym.lengthOfMonth();
+		int rows = (lead + days + 6) / 7;
+		int gridTop = y + 28;
+		int gridAvail = Math.max(rows * (CELL_H_MIN + ROW_GAP), h - 28 - 46);
+		int cellH = Math.max(CELL_H_MIN,
+				Math.min(CELL_H_MAX, gridAvail / Math.max(1, rows) - ROW_GAP));
+
+		// 网格
+		int gridY = gridTop;
 		for (int day = 1; day <= days; day++) {
 			int idx = lead + day - 1;
 			int col = idx % 7;
 			int row = idx / 7;
 			int cx = x + col * (CELL_W + ROW_GAP);
-			int cy = gridY + row * (CELL_H + ROW_GAP);
+			int cy = gridY + row * (cellH + ROW_GAP);
 			LocalDate d = ym.atDay(day);
 			boolean signed = isSigned(snap, d);
 			boolean isToday = d.equals(today);
@@ -115,35 +127,41 @@ public final class HubCheckinPage {
 			int bg = HubTheme.vanilla
 					? (signed ? 0xFFF4FAF4 : (future ? 0xFFBEBEBE : 0xFFD6D6D6))
 					: (signed ? C_SIGNED : (future ? C_FUTURE : HubTheme.CARD));
-			dc.fill(cx, cy, cx + CELL_W, cy + CELL_H, bg);
+			dc.fill(cx, cy, cx + CELL_W, cy + cellH, bg);
 			int edge = HubTheme.vanilla ? 0xFF8B8B8B : C_CELL_EDGE;
 			dc.fill(cx, cy, cx + CELL_W, cy + 1, edge);
-			dc.fill(cx, cy + CELL_H - 1, cx + CELL_W, cy + CELL_H, edge);
+			dc.fill(cx, cy + cellH - 1, cx + CELL_W, cy + cellH, edge);
 			if (signed) {
 				// 绿色遮罩（半透明），保留下面的白底
-				dc.fill(cx + 1, cy + 1, cx + CELL_W - 1, cy + CELL_H - 1, 0x3350C878);
+				dc.fill(cx + 1, cy + 1, cx + CELL_W - 1, cy + cellH - 1, 0x3350C878);
 			}
 
 			int textColor = HubTheme.vanilla
 					? (future ? 0xFF7A7A7A : (signed ? 0xFF2E7D32 : 0xFF303030))
 					: (future ? 0xFF6A6A6A : HubTheme.TEXT);
-			dc.drawText(tr, Text.literal(String.valueOf(day)), cx + 4, cy + 4, textColor, false);
+			dc.drawText(tr, Text.literal(String.valueOf(day)), cx + 4,
+					cy + Math.max(1, (cellH - 8) / 2), textColor, false);
 
 			if (signed) {
-				dc.drawText(tr, Text.literal("✓"), cx + CELL_W - 12, cy + 4, C_GREEN, false);
+				if (cellH >= 16) {
+				dc.drawText(tr, Text.literal("✓"), cx + CELL_W - 12,
+						cy + Math.max(1, (cellH - 8) / 2), C_GREEN, false);
+			}
 			}
 			if (isToday) {
 				// 金色描边
 				dc.fill(cx, cy, cx + CELL_W, cy + 1, HubTheme.GOLD);
-				dc.fill(cx, cy + CELL_H - 1, cx + CELL_W, cy + CELL_H, HubTheme.GOLD);
-				dc.fill(cx, cy, cx + 1, cy + CELL_H, HubTheme.GOLD);
-				dc.fill(cx + CELL_W - 1, cy, cx + CELL_W, cy + CELL_H, HubTheme.GOLD);
+				dc.fill(cx, cy + cellH - 1, cx + CELL_W, cy + cellH, HubTheme.GOLD);
+				dc.fill(cx, cy, cx + 1, cy + cellH, HubTheme.GOLD);
+				dc.fill(cx + CELL_W - 1, cy, cx + CELL_W, cy + cellH, HubTheme.GOLD);
 			}
 		}
 
-		// 底部：今日奖励 + 按钮
-		int infoY = y + h - 58;
-		dc.fill(x, infoY, x + w, infoY + 26, HubTheme.CARD);
+		// 底部：今日奖励 + 按钮（贴着内容区底边，不随日历行数漂移）
+		int btnH = 20;
+		int btnY = y + h - btnH;
+		int infoY = btnY - 22;
+		dc.fill(x, infoY, x + w, infoY + 20, HubTheme.CARD);
 		long todayMoney = 0;
 		if (snap != null && !snap.points().isEmpty()) {
 			for (CheckinProtocol.Point p : snap.points()) {
@@ -153,12 +171,9 @@ public final class HubCheckinPage {
 				}
 			}
 		}
-		dc.drawText(tr, Text.literal("今日奖励"), x + 6, infoY + 4, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal("今日奖励"), x + 6, infoY + 2, HubTheme.MUTED, false);
 		dc.drawText(tr, Text.literal(todayMoney > 0 ? "+" + todayMoney + " 铜" : "—"),
-				x + 6, infoY + 14, HubTheme.GOLD, false);
-
-		int btnY = infoY + 32 + (HubTheme.vanilla ? 2 : 0);
-		int btnH = HubTheme.vanilla ? 22 : 20;
+				x + 6 + tr.getWidth("今日奖励") + 8, infoY + 2, HubTheme.GOLD, false);
 		drawButton(dc, tr, x, btnY, 96, btnH, "签到", true, mouseX, mouseY,
 				HubWidgets.Variant.PRIMARY);
 		int makeupLeft = snap == null ? 0 : snap.makeupLeft();
@@ -195,8 +210,7 @@ public final class HubCheckinPage {
 			if (mouseX >= x && mouseX <= x + 14) return Action.PREV_MONTH;
 			if (mouseX >= x + w - 14 && mouseX <= x + w) return Action.NEXT_MONTH;
 		}
-		int infoY = y + h - 58;
-		int btnY = infoY + 30;
+		int btnY = y + h - 20;
 		if (mouseY >= btnY && mouseY <= btnY + 20) {
 			if (mouseX >= x && mouseX <= x + 96) return Action.CHECKIN;
 			if (mouseX >= x + 104 && mouseX <= x + 214) return Action.MAKEUP;
