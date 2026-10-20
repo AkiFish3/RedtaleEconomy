@@ -77,8 +77,26 @@ public final class PageCommands {
 				}));
 	}
 
+	/** 页面 id → 所属模块 id；没有对应模块的页面（rank/settings）不在这里。 */
+	private static final Map<String, String> PAGE_MODULE = Map.of(
+			"checkin", "checkin",
+			"shop", "shop",
+			"tasks", "tasks",
+			"storage", "warehouse",
+			"bounty", "bounty",
+			"pass", "battlepass",
+			"guild", "guild",
+			"mail", "mail");
+
 	/** 打开指定页；数据由各页自己的快照包补齐，HUB_OPEN 只负责「切到哪一页」。 */
 	public static int open(ServerPlayerEntity p, String page) {
+		// 模块关掉时页面不应该「打开成空白」——直接告诉玩家为什么（/rt pass 在 battlepass=false 时曾静默空白）
+		String mod = PAGE_MODULE.get(page);
+		if (mod != null && !com.akira.redtale.economy.module.ModuleManager.get().isEnabled(mod)) {
+			p.sendMessage(Text.literal("§e" + PAGES.getOrDefault(page, page) + " 未开启 §8（modules.json "
+					+ mod + "=false）"), true);
+			return 0;
+		}
 		// 任务面板是独立 Screen（U2），不是 Hub 内页；直达后就不再发 HUB_OPEN
 		if ("tasks".equals(page)) {
 			com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
@@ -110,13 +128,15 @@ public final class PageCommands {
 	/**
 	 * 旧命令首次使用时提示一次。{@code page} 为空表示没有对应新页面（不提示）。
 	 *
-	 * <p>走 actionbar：不刷聊天、不占历史；只有玩家主动敲旧命令才会出现。
+	 * <p>走<b>聊天</b>而不是 actionbar：旧命令的输出本身也是 actionbar，
+	 * 同一 tick 内后发的会立刻盖掉提示（实测 2026-10-20：/checkin 的提示玩家完全看不到）。
+	 * 迁移提示是「需要被读到一次」的信息，进历史反而更合适；按玩家只记一次，不刷屏。
 	 */
 	public static void hintLegacy(ServerPlayerEntity p, String legacy, String page) {
 		if (p == null || page == null || page.isEmpty()) return;
 		Set<String> seen = HINTED.computeIfAbsent(p.getUuid(), k -> ConcurrentHashMap.newKeySet());
 		if (!seen.add(legacy)) return;
-		p.sendMessage(Text.literal("§7/" + legacy + " §8→ §f/rt " + page + " §7（旧命令仍可使用）"), true);
+		p.sendMessage(Text.literal("§8[/" + legacy + " §8→ §7/rt " + page + "§8] §7旧命令仍可用，新入口在 §f/rt"));
 	}
 
 	/** 供 {@code /rt help}、日志与自检使用。 */

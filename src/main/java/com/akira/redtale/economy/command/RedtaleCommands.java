@@ -108,7 +108,25 @@ public final class RedtaleCommands {
 		});
 
 		com.mojang.brigadier.tree.LiteralCommandNode<ServerCommandSource> node = dispatcher.register(root);
-		dispatcher.register(CommandManager.literal("rt").redirect(node));
+		// U8b：/rt 是 /redtale 的别名。
+		// 不能用 redirect —— Brigadier 的 redirect 节点自己不执行，裸敲 /rt 会报
+		// 「Unknown or incomplete command」（实测 2026-10-20 17:2x 服务端）。
+		// 所以新建一个字面量节点：先绑 executes（默认签到页），再把 /redtale 的子节点整个挂上来。
+		// Brigadier 的 CommandNode 没有 parent 反向引用，子节点可以同时挂在两棵树上。
+		com.mojang.brigadier.tree.LiteralCommandNode<ServerCommandSource> rtNode =
+				CommandManager.literal("rt")
+						.executes(ctx -> {
+							var p = ctx.getSource().getPlayer();
+							if (p == null) {
+								return help(ctx);
+							}
+							return PageCommands.open(p, "checkin");
+						})
+						.build();
+		for (com.mojang.brigadier.tree.CommandNode<ServerCommandSource> child : node.getChildren()) {
+			rtNode.addChild(child);
+		}
+		dispatcher.getRoot().addChild(rtNode);
 		// FTB Quests 快捷入口（R9）：未装 FTBQ 时不注册，玩家看不到 /quests
 		if (QuestsCommand.available()) {
 			dispatcher.register(QuestsCommand.build(CoreConfig.perm("usePermissionLevel", 0)));

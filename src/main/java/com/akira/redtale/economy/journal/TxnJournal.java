@@ -300,15 +300,29 @@ public final class TxnJournal {
 				RedtaleEconomy.LOGGER.error("[journal] 退还失败，物品已不存在：{} x{}（{}）", id, count, uuid);
 				continue;
 			}
-			boolean ok = false;
-			try {
-				ok = MailService.sendItem(server, uuid, new ItemStack(item, Math.min(count, 64 * 27)), reason);
-			} catch (Exception e) {
-				RedtaleEconomy.LOGGER.error("[journal] 邮件退还失败：{}", e.getMessage());
+			// 按最大堆叠切分：旧实现 Math.min(count, 64*27) 会把超出部分直接吞掉（大额交易退不全）
+			int per = Math.max(1, new ItemStack(item).getMaxCount());
+			int remaining = count;
+			boolean ok = true;
+			while (remaining > 0) {
+				int take = Math.min(remaining, per);
+				boolean accepted;
+				try {
+					accepted = MailService.sendItemOrQueue(server, uuid, new ItemStack(item, take), reason);
+				} catch (Exception e) {
+					RedtaleEconomy.LOGGER.error("[journal] 邮件退还失败：{}", e.getMessage());
+					accepted = false;
+				}
+				if (!accepted) {
+					RedtaleEconomy.LOGGER.error("[journal] 退还 {} x{} 给 {} 未成功，需人工补发（{}，剩余 {}）",
+							id, take, uuid, reason, remaining);
+					ok = false;
+					break;
+				}
+				remaining -= take;
 			}
-			if (!ok) {
-				RedtaleEconomy.LOGGER.error("[journal] 退还 {} x{} 给 {} 未成功，需人工补发（{}）",
-						id, count, uuid, reason);
+			if (ok) {
+				RedtaleEconomy.LOGGER.warn("[journal] 已退回 {} x{}（{}）→ 待领取队列/信箱", id, count, uuid);
 			}
 		}
 	}

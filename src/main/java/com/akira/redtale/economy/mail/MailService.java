@@ -24,7 +24,24 @@ public final class MailService {
 
 	/** 投递物品；返回 true 表示已经进了 Contact 信箱，false 表示进了待领取队列。 */
 	public static boolean sendItem(MinecraftServer server, UUID target, ItemStack stack, String reason) {
-		if (target == null || stack == null || stack.isEmpty()) return false;
+		return Boolean.TRUE.equals(deliverOrQueue(server, target, stack, reason));
+	}
+
+	/**
+	 * 投递物品，语义是「有没有被系统接住」而不是「有没有直接进信箱」。
+	 *
+	 * <p>E2 恢复用：离线玩家的物品进待领取队列也算退成功，
+	 * 旧代码把「已入队」当成失败，日志会报 {@code 退还未成功，需人工补发}（实测 2026-10-20 误报）。
+	 *
+	 * @return true = 已投递或已入队；false = 参数非法
+	 */
+	public static boolean sendItemOrQueue(MinecraftServer server, UUID target, ItemStack stack, String reason) {
+		return deliverOrQueue(server, target, stack, reason) != null;
+	}
+
+	/** @return null=参数非法；TRUE=进 Contact 信箱；FALSE=进待领取队列 */
+	private static Boolean deliverOrQueue(MinecraftServer server, UUID target, ItemStack stack, String reason) {
+		if (target == null || stack == null || stack.isEmpty()) return null;
 		boolean delivered = ContactMail.deliver(server, target, stack, MailConfig.senderName());
 		if (!delivered) {
 			MailQueue q = MailQueue.of(target);
