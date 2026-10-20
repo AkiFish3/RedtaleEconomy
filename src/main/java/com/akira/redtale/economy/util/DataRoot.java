@@ -58,6 +58,12 @@ public final class DataRoot {
 
 	/** 迁移记录文件名（放在新根目录里）。 */
 	public static final String MARKER = ".migration.json";
+	/**
+	 * R36a：旧的全局数据（{@code %server%/redtale-data}）只该迁进「第一次遇到的那个存档」。
+	 * 原来只写 per-world 的 {@code .migration.json} ⇒ 单机每新建一个存档都会再复制一份旧数据，
+	 * 等于新世界继承了上一份余额/签到。这个标记放在 server 根，跨存档唯一。
+	 */
+	public static final String ONCE_MARKER = "redtale-data.migrated";
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 	private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -133,7 +139,14 @@ public final class DataRoot {
 		}
 		// 先迁旧默认目录（有真实数据），再并 pending（只补空位、跳过 0 字节）
 		if (StorageConfig.migrateLegacy()) {
-			mergeOnce(legacyRoot(), dst, "legacy");
+			if (legacyMergeDone()) {
+				RedtaleEconomy.LOGGER.info("[data] 旧全局数据已迁移过（{}），本存档跳过 legacy 合并", ONCE_MARKER);
+			} else {
+				Path src = legacyRoot();
+				mergeOnce(src, dst, "legacy");
+				// 源目录存在就算「尝试过」：防止每建一个新存档都重扫一遍上 GB 的旧数据
+				if (Files.isDirectory(src)) markLegacyMergeDone(dst);
+			}
 		}
 		mergeOnce(pendingRoot(), dst, "pending");
 		rebind();
@@ -288,6 +301,39 @@ public final class DataRoot {
 	}
 
 	// ---------------------------------------------------------------- 标记
+
+	/** R36a：server 级「旧数据已迁过」标记的路径；serverRoot 不可用时返回 null。 */
+	private static Path onceMarkerPath() {
+		try {
+			return PathResolver.serverRoot().resolve(ONCE_MARKER);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	/** R36a：旧全局数据是否已经迁进过某个存档（跨存档唯一）。 */
+	public static boolean legacyMergeDone() {
+		Path p = onceMarkerPath();
+		return p != null && Files.isRegularFile(p);
+	}
+
+	private static void markLegacyMergeDone(Path dst) {
+		Path p = onceMarkerPath();
+		if (p == null) return;
+		try {
+			Files.createDirectories(p.getParent());
+			JsonObject o = new JsonObject();
+			o.addProperty("at", LocalDateTime.now().format(
+					DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+			o.addProperty("into", dst.toString());
+			try (Writer w = Files.newBufferedWriter(p, StandardCharsets.UTF_8)) {
+				GSON.toJson(o, w);
+			}
+			RedtaleEconomy.LOGGER.info("[data] 旧全局数据已迁入 {}（写入一次性标记 {}）", dst, ONCE_MARKER);
+		} catch (IOException e) {
+			RedtaleEconomy.LOGGER.warn("[data] 写一次性迁移标记失败：{}", e.getMessage());
+		}
+	}
 
 	private static Path markerPath(Path dst) {
 		return dst.resolve(MARKER);

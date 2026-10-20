@@ -32,7 +32,7 @@ public final class HubBountyPage {
 		BountyProtocol.Snapshot snap = BountyClientNetworking.LAST;
 		List<BountyProtocol.Entry> list = snap.entries();
 
-		dc.drawText(tr, Text.literal("每日悬赏"), x, y, 0xFFF0E6D2, false);
+		dc.drawText(tr, Text.literal("每日悬赏"), x, y, HubTheme.TITLE, false);
 		dc.drawText(tr, Text.literal("完成后点领取"), x + w - tr.getWidth("完成后点领取"), y, HubTheme.MUTED, false);
 
 		int cy = y + 16;

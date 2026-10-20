@@ -92,7 +92,8 @@ public final class HubMarketPage {
 		String handName = hand.isEmpty() ? "手上没有物品" : hand.getName().getString() + " ×" + hand.getCount();
 		dc.drawText(tr, Text.literal(trim(tr, handName, w - 120)), x + 24, sy + 6, HubTheme.TEXT, false);
 		if (!hand.isEmpty()) {
-			dc.drawText(tr, Text.literal(trim(tr, "/market sell <价格> 等价通道", w - 120)),
+			// 原句「/market sell <价格> 等价通道」读起来像代码片段，改成说人话
+			dc.drawText(tr, Text.literal(trim(tr, "点「挂出」上架，成交后钱自动入账", w - 120)),
 					x + 24, sy + 16, 0xFF6E6E6E, false);
 		}
 		// 价格 chip + 挂出按钮

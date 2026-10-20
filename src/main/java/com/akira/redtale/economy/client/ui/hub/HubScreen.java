@@ -218,7 +218,7 @@ public class HubScreen extends Screen {
 			String sn = sp == null ? "" : sp.shopName();
 			if (sn != null && !sn.isBlank()) head = page.label + " · " + sn;
 		}
-		dc.drawText(textRenderer, Text.literal(head), panelX + 10, panelY + 8, 0xFFF0E6D2, false);
+		dc.drawText(textRenderer, Text.literal(head), panelX + 10, panelY + 8, HubTheme.TITLE, false);
 
 		// 顶部：状态（右）—— §37.3「标题左、状态右，不随内容滚动」
 		// 窄面板/紧凑模式下会挤掉标题，所以只在够宽时画。
@@ -245,7 +245,7 @@ public class HubScreen extends Screen {
 			dc.fill(closeX - 2, closeY - 2, closeX + closeSize + 2, closeY + closeSize + 2,
 					closeHover ? 0xFF7A3A3A : 0xFF000000);
 		}
-		dc.drawText(textRenderer, Text.literal("×"), closeX + 2, closeY, 0xFFE0E0E0, false);
+		dc.drawText(textRenderer, Text.literal("×"), closeX + 2, closeY, HubTheme.TEXT, false);
 
 		// ★顶栏下 / 底栏上 / 侧边栏右 三条分隔线（三主题通用）★
 		dc.fill(panelX, panelY + TOP_BAR - 1, panelX + panelW, panelY + TOP_BAR, HubTheme.OUTLINE);
@@ -693,6 +693,26 @@ public class HubScreen extends Screen {
 		boolean handled = handleClick(mouseX, mouseY, button);
 		if (handled && button == 0) ClientUiConfig.click();
 		return handled;
+	}
+
+	/**
+	 * 仅 dev 截图夹具（{@code client.dev.UiShots}）使用：点侧边栏第 {@code index} 项。
+	 *
+	 * <p>故意走 {@link #mouseClicked} 而不是直接改 {@code page} —— 这样命中判定的坐标换算
+	 * （{@code sidebarScroll}、{@code ROW_H}、裁剪区）才是真被验证的那条代码路径。
+	 *
+	 * @return 是否命中
+	 */
+	public boolean devClickSidebar(int index) {
+		HubPage[] all = HubPage.values();
+		if (index < 0 || index >= all.length) return false;
+		double y = entryTop() - sidebarScroll + index * ROW_H + ROW_H / 2.0;
+		return mouseClicked(panelX + sidebarW() / 2.0, y, 0);
+	}
+
+	/** 仅 dev 夹具使用：当前页 id（写截图日志用）。 */
+	public String devPageId() {
+		return page.id;
 	}
 
 	private boolean handleClick(double mouseX, double mouseY, int button) {
@@ -1328,6 +1348,14 @@ public class HubScreen extends Screen {
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.SLOT_COUNT,
 					storageScroll - (int) Math.signum(amount)));
 			return true;
+		}
+		if (page == HubPage.SETTINGS && mouseX > panelX + sidebarW()) {
+			// U10：Scale 2 下设置页内容区装不下全部行（管理员区会被裁掉），必须能滚
+			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			if (HubSettingsPage.maxScroll(ch) > 0) {
+				HubSettingsPage.scrollBy(-(int) Math.signum(amount) * 20);
+				return true;
+			}
 		}
 		if (page == HubPage.PASS && mouseX > panelX + sidebarW()) {
 			int cw = panelW - sidebarW() - 24;

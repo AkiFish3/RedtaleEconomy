@@ -26,7 +26,10 @@ public final class TitleCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
-		d.register(CommandManager.literal("title")
+		// ★不能叫 "title"★：原版自带 /title（requires 权限等级 2），Brigadier 的 addChild
+		// 只合并子节点与 executor、**不合并 requires** ⇒ 普通玩家看到的是
+		// 「Unknown or incomplete command」（2026-10-21 假人实测）。改名 /titles。
+		d.register(CommandManager.literal("titles")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(TitleCommands::self)
 				.then(CommandManager.literal("list").executes(TitleCommands::list))

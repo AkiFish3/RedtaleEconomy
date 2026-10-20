@@ -35,7 +35,7 @@ public final class HubPassPage {
 			int scroll, double mouseX, double mouseY) {
 		PassProtocol.Snapshot s = PassClientNetworking.LAST;
 
-		dc.drawText(tr, Text.literal(s.season().isEmpty() ? "战令" : s.season()), x, y, 0xFFF0E6D2, false);
+		dc.drawText(tr, Text.literal(s.season().isEmpty() ? "战令" : s.season()), x, y, HubTheme.TITLE, false);
 		String lv = "等级 " + s.level();
 		dc.drawText(tr, Text.literal(lv), x + w - tr.getWidth(lv), y, HubTheme.GOLD, false);
 

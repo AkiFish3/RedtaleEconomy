@@ -20,7 +20,7 @@ public final class HubMailPage {
 
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			double mouseX, double mouseY) {
-		dc.drawText(tr, Text.literal("邮件"), x, y, 0xFFF0E6D2, false);
+		dc.drawText(tr, Text.literal("邮件"), x, y, HubTheme.TITLE, false);
 
 		dc.fill(x, y + 16, x + w, y + 62, HubTheme.CARD);
 		dc.drawText(tr, Text.literal("信件由 Contact 提供"), x + 8, y + 24, HubTheme.TEXT, false);

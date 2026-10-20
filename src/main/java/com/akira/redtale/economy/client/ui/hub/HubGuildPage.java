@@ -21,7 +21,7 @@ public final class HubGuildPage {
 		GuildProtocol.Snapshot s = GuildClientNetworking.LAST;
 
 		String cur = s.currentName().isEmpty() ? "无档位" : s.currentName();
-		dc.drawText(tr, Text.literal(cur), x, y, 0xFFF0E6D2, false);
+		dc.drawText(tr, Text.literal(cur), x, y, HubTheme.TITLE, false);
 		String rep = s.rep() + " 声望";
 		dc.drawText(tr, Text.literal(rep), x + w - tr.getWidth(rep), y, HubTheme.GOLD, false);
 

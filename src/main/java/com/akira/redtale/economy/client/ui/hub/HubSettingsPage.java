@@ -26,12 +26,38 @@ public final class HubSettingsPage {
 	/** 管理员区是否展开（每帧由 HubScreen 传入，这里只存会话内状态）。 */
 	private static boolean adminOpen;
 
+	/** 内容滚动偏移（GUI Scale 2 下内容区装不下 5 行以上，必须能滚）。 */
+	private static int scroll;
+
 	public static void setAdminOpen(boolean v) {
 		adminOpen = v;
 	}
 
 	public static boolean adminOpen() {
 		return adminOpen;
+	}
+
+	/** 滚动上限；{@code h} 是内容区高度。 */
+	public static int maxScroll(int h) {
+		return Math.max(0, contentHeight() - h);
+	}
+
+	public static void scrollBy(int delta) {
+		scroll = Math.max(0, scroll + delta);
+	}
+
+	/** 内容总高（行 + 分组标题 + 底部提示），与 render 的累加口径一致。 */
+	private static int contentHeight() {
+		String lastGroup = "";
+		int total = 0;
+		for (Item it : items()) {
+			if (!it.group.equals(lastGroup)) {
+				lastGroup = it.group;
+				total += 16;
+			}
+			total += 20;
+		}
+		return total + 16;
 	}
 
 	/** 客户端能判定的最高权限等级（OP 4）。服务器侧仍会再判一次。 */
@@ -82,15 +108,22 @@ public final class HubSettingsPage {
 	/** 渲染；返回底部 Y，供点击测试复用同一套布局。 */
 	public static int render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			double mouseX, double mouseY) {
+		int max = maxScroll(h);
+		if (scroll > max) scroll = max;
+		if (scroll < 0) scroll = 0;
+		// 行超出内容区一律裁掉，否则会画到顶栏/底栏上（U10 实测：管理员区在 Scale 2 下整段不可见）
+		dc.enableScissor(x, y, x + w, y + h);
 		String lastGroup = "";
-		int cy = y;
+		int cy = y - scroll;
 		for (Item it : items()) {
 			if (!it.group.equals(lastGroup)) {
 				lastGroup = it.group;
 				dc.drawText(tr, Text.literal(it.group), x, cy + 2, C_GROUP, false);
 				cy += 16;
 			}
-			boolean hover = mouseX >= x && mouseX < x + w && mouseY >= cy && mouseY < cy + 18;
+			boolean inArea = mouseY >= y && mouseY < y + h;
+			boolean hover = inArea && mouseX >= x && mouseX < x + w
+					&& mouseY >= cy && mouseY < cy + 18;
 			dc.fill(x, cy, x + w, cy + 18, hover ? C_ROW_HOVER : HubTheme.CARD);
 			dc.drawText(tr, Text.literal(it.label), x + 6, cy + 5, HubTheme.TEXT, false);
 			int vw = tr.getWidth(it.value);
@@ -98,16 +131,25 @@ public final class HubSettingsPage {
 			dc.drawText(tr, Text.literal(it.value), x + w - 6 - vw, cy + 5,
 					clickable ? HubTheme.GOLD : HubTheme.MUTED, false);
 			cy += 20;
-			if (cy > y + h - 24) break;
 		}
 		dc.drawText(tr, Text.literal("点击右侧即可切换，立即生效"), x, cy + 4, HubTheme.MUTED, false);
+		dc.disableScissor();
+		// 可滚时画一条细滚动条，否则玩家不知道下面还有内容
+		if (max > 0) {
+			int trackH = h;
+			int barH = Math.max(16, (int) ((long) trackH * trackH / (trackH + max)));
+			int barY = y + (int) ((long) (trackH - barH) * scroll / max);
+			dc.fill(x + w - 2, y, x + w, y + trackH, 0xFF151515);
+			dc.fill(x + w - 2, barY, x + w, barY + barH, HubTheme.GOLD);
+		}
 		return cy;
 	}
 
 	/** 命中测试：返回被点的行，没有则 null。 */
 	public static Row click(double mx, double my, int x, int y, int w, int h) {
+		if (my < y || my >= y + h) return null;
 		String lastGroup = "";
-		int cy = y;
+		int cy = y - scroll;
 		for (Item it : items()) {
 			if (!it.group.equals(lastGroup)) {
 				lastGroup = it.group;
@@ -117,7 +159,6 @@ public final class HubSettingsPage {
 				return it.row;
 			}
 			cy += 20;
-			if (cy > y + h - 24) break;
 		}
 		return null;
 	}

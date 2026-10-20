@@ -5,8 +5,11 @@ import com.akira.redtale.economy.client.checkin.CheckinScreen;
 import com.akira.redtale.economy.client.ShopClientState;
 import com.akira.redtale.economy.client.shop.ShopScreen;
 import com.akira.redtale.economy.client.tasks.TaskScreen;
+import com.akira.redtale.economy.client.ui.hub.ClientUiConfig;
 import com.akira.redtale.economy.client.ui.hub.HubPage;
 import com.akira.redtale.economy.client.ui.hub.HubScreen;
+import com.akira.redtale.economy.client.ui.hub.HubSettingsPage;
+import com.akira.redtale.economy.client.ui.hub.HubTheme;
 import com.akira.redtale.economy.net.TaskProtocol;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -40,12 +43,17 @@ public final class UiShots {
 	private static final int JOIN_TIMEOUT = 400;
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
+	/** 最后一个拍照 step（U10/R39/R42 加了三组，U4 又加了侧边栏五步，从 5 扩到 24）。 */
+	private static final int LAST_STEP = 24;
 
 	private static boolean active;
 	private static int tick;
 	private static int step;
 	private static int stepAt;
 	private static boolean inWorld;
+	/** 同一步重试上限（避免界面打不开就死等）。 */
+	private static final int MAX_ATTEMPTS = 12;
+	private static int attempts;
 	private static final List<String> LOG = new ArrayList<>();
 
 	private UiShots() {
@@ -113,6 +121,59 @@ public final class UiShots {
 					mc.player.networkHandler.sendChatCommand("shop");
 				}
 			});
+			// R42：解锁前先拍一张付费轨（画暗），解锁后再拍一张，靠明暗对比判断
+			case 6 -> shot(mc, "u6-06-pass-locked.png", () -> open(mc, HubPage.PASS, "rt pass"));
+			case 7 -> act(mc, () -> {
+				if (mc.player != null) {
+					mc.player.networkHandler.sendChatCommand(
+							"rt admin pass unlock " + mc.player.getGameProfile().getName());
+				}
+			});
+			case 8 -> shot(mc, "u6-07-pass-unlocked.png", () -> open(mc, HubPage.PASS, "rt pass"));
+			// U10：设置页（管理员区默认收起 → 展开 → 滚到底看管理员行）
+			case 9 -> shot(mc, "u6-08-settings.png", () -> open(mc, HubPage.SETTINGS, "rt settings"));
+			case 10 -> act(mc, () -> HubSettingsPage.setAdminOpen(true));
+			case 11 -> shot(mc, "u6-09-settings-admin.png", () -> {
+				HubSettingsPage.setAdminOpen(true);
+				open(mc, HubPage.SETTINGS, "rt settings");
+			});
+			case 12 -> act(mc, () -> HubSettingsPage.scrollBy(400));
+			case 13 -> shot(mc, "u6-10-settings-bottom.png", () -> {
+				HubSettingsPage.setAdminOpen(true);
+				HubSettingsPage.scrollBy(400);
+				open(mc, HubPage.SETTINGS, "rt settings");
+			});
+			// R39：主题切到原版（视觉差异），拍完立刻切回
+			case 14 -> shot(mc, "u6-11-hub-vanilla.png", () -> {
+				ClientUiConfig.theme = "vanilla";
+				ClientUiConfig.save();
+				HubTheme.apply("vanilla");
+				open(mc, HubPage.CHECKIN, "rt checkin");
+			});
+			case 15 -> act(mc, () -> {
+				ClientUiConfig.theme = "dark";
+				ClientUiConfig.save();
+				HubTheme.apply("dark");
+			});
+			// ★U4：侧边栏验收★ —— 宽窗口（1280x720 + guiScale 2 = 640x360 逻辑）下才有
+			// 「图标+文字」；再用真实 mouseClicked 命中路径点三页，证明一个界面能跳到各功能。
+			case 16 -> shotKeep(mc, "u6-12-hub-sidebar-text.png",
+					() -> open(mc, HubPage.CHECKIN, "rt checkin"));
+			case 17 -> act(mc, () -> clickEntry(mc, "市场", 2));
+			case 18 -> shotKeep(mc, "u6-13-hub-click-market.png", () -> { });
+			case 19 -> act(mc, () -> clickEntry(mc, "排行", 8));
+			case 20 -> shotKeep(mc, "u6-14-hub-click-rank.png", () -> { });
+			// showLabels=false ⇒ 侧边栏收成 40px 纯图标（tooltip 要鼠标悬停，截图验不到）
+			case 21 -> act(mc, () -> {
+				ClientUiConfig.showLabels = false;
+				ClientUiConfig.save();
+				LOG.add("showLabels=false, sidebar should be icon-only");
+			});
+			case 22 -> shotKeep(mc, "u6-15-hub-sidebar-icons.png", () -> { });
+			case 23 -> act(mc, () -> {
+				ClientUiConfig.showLabels = true;
+				ClientUiConfig.save();
+			});
 			default -> finish(mc);
 		}
 	}
@@ -133,6 +194,14 @@ public final class UiShots {
 			action.run();
 			stepAt = tick + SETTLE;
 			LOG.add("open for " + name + " at tick " + tick + " (world=" + inWorld + ")");
+			// ★界面迟迟不开（模块被关/权限不足/命令失败）不能死等★：超时跳过并继续下一步，
+			// 否则整个夹具卡在这一步、客户端永远不退出（2026-10-21 实测卡了 4 分钟）。
+			if (++attempts > MAX_ATTEMPTS) {
+				LOG.add("timeout " + name + " after " + attempts + " tries, skip");
+				attempts = 0;
+				mc.setScreen(null);
+				next(step + 1);
+			}
 			return;
 		}
 		// 界面已经在了：拍
@@ -140,7 +209,53 @@ public final class UiShots {
 				text -> LOG.add("saved " + name + " : " + text.getString()));
 		LOG.add("shot " + name + " at tick " + tick + " screen=" + cur.getClass().getSimpleName());
 		// 拍完清屏，下一步必须自己重新打开，否则会重复拍同一屏
+		attempts = 0;
 		mc.setScreen(null);
+		next(step + 1);
+	}
+
+	/**
+	 * 和 {@link #shot} 一样「先开再拍」，但**拍完不清屏** ——
+	 * 连续几步要在同一屏上点侧边栏（U4）时用，否则每步都被迫重新打开、页面状态丢失。
+	 */
+	private static void shotKeep(MinecraftClient mc, String name, Runnable action) {
+		Screen cur = mc.currentScreen;
+		if (cur == null || !isOurs(cur)) {
+			action.run();
+			stepAt = tick + SETTLE;
+			LOG.add("open for " + name + " at tick " + tick + " (world=" + inWorld + ")");
+			if (++attempts > MAX_ATTEMPTS) {
+				LOG.add("timeout " + name + " after " + attempts + " tries, skip");
+				attempts = 0;
+				mc.setScreen(null);
+				next(step + 1);
+			}
+			return;
+		}
+		ScreenshotRecorder.saveScreenshot(mc.runDirectory, name, mc.getFramebuffer(),
+				text -> LOG.add("saved " + name + " : " + text.getString()));
+		String pid = cur instanceof HubScreen h ? " page=" + h.devPageId() : "";
+		LOG.add("shot " + name + " at tick " + tick + " screen=" + cur.getClass().getSimpleName() + pid);
+		attempts = 0;
+		next(step + 1);
+	}
+
+	/** 点侧边栏第 index 项（走 HubScreen 真实 mouseClicked 命中路径），并记录结果。 */
+	private static void clickEntry(MinecraftClient mc, String label, int index) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("click " + label + " skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		boolean hit = hub.devClickSidebar(index);
+		LOG.add("click " + label + " (row " + index + ") hit=" + hit + " page=" + hub.devPageId()
+				+ " at tick " + tick);
+	}
+
+	/** 只执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */
+	private static void act(MinecraftClient mc, Runnable action) {
+		action.run();
+		LOG.add("act step " + step + " at tick " + tick);
 		next(step + 1);
 	}
 
@@ -152,7 +267,7 @@ public final class UiShots {
 	private static void next(int s) {
 		step = s;
 		stepAt = tick + SETTLE;
-		if (s > 5) {
+		if (s > LAST_STEP) {
 			// 拍完再等几 tick 让最后一张落盘
 			stepAt = tick + 10;
 		}

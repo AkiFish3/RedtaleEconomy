@@ -16,7 +16,7 @@ public final class TitleConfig {
 	public static final ConfigSchema SCHEMA = ConfigSchema.obj("称号")
 			.field("enabled", ConfigSchema.bool(true, "是否启用称号"))
 			.field("provider", ConfigSchema.choice("styledchat", List.of("styledchat", "internal"),
-					"styledchat=执行 /styledchat set（推荐）；internal=只在 /title 里显示，不改聊天"))
+					"styledchat=执行 /styledchat set（推荐）；internal=只在 /titles 里显示，不改聊天"))
 			.field("commandTemplate", ConfigSchema.string(
 					"styledchat set {player} display_name {value}",
 					"实际执行的命令（不带斜杠）；{player}=玩家名，{value}=格式化后的 display_name"))
@@ -30,7 +30,7 @@ public final class TitleConfig {
 					"模块关闭/卸载时是否把所有在线玩家的 display_name 还原"))
 			.field("maxLength", ConfigSchema.integer(16, 1, 64, "称号文本最大长度（防刷屏）"))
 			.field("item", ConfigSchema.obj("称号物品（R35）")
-					.field("enabled", ConfigSchema.bool(true, "是否允许 /title give 生成物品"))
+					.field("enabled", ConfigSchema.bool(true, "是否允许 /titles give 生成物品"))
 					.field("itemId", ConfigSchema.string("minecraft:name_tag", "载体物品 id"))
 					.field("namePrefix", ConfigSchema.string("称号：", "物品显示名前缀"))
 					.field("lore", ConfigSchema.stringList(List.of(

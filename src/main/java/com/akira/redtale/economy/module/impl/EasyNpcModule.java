@@ -149,7 +149,7 @@ public final class EasyNpcModule implements RedtaleModule {
 				buttons = new String[][]{
 						{"我要接悬赏", "/bounty"},
 						{"看看我的等级", "/guild"},
-						{"我的称号", "/title"},
+						{"我的称号", "/titles"},
 						{"战令进度", "/pass"},
 				};
 			}

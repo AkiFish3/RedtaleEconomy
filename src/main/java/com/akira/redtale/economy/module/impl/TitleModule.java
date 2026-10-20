@@ -43,7 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ol>
  *   <li>把模板渲染成 display_name，用服务端 4 级权限执行 {@code /styledchat set ...}</li>
  *   <li>把「原始 display_name（我们写入前的值）」和当前称号存到 {@code redtale-data/titles/<uuid>.json}，
- *       随时可以还原（{@code restoreOnDisable} / {@code /title clear}）</li>
+ *       随时可以还原（{@code restoreOnDisable} / {@code /titles clear}）</li>
  *   <li>生成带 {@code ItemCommander} NBT 的物品，点一下就能把称号写到使用者身上</li>
  * </ol>
  *
