@@ -217,6 +217,14 @@ public class LayoutScreen extends Screen {
 		return false;
 	}
 
+	/** R39：音效档由布局的 sound 字段决定，silent 时完全不发声（连资源都不加载）。 */
+	protected void playClick() {
+		if ("silent".equalsIgnoreCase(layout.sound)) return;
+		net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+		if (mc.player == null) return;
+		mc.player.playSound(net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK.value(), 0.35f, 1.0f);
+	}
+
 	@Override
 	public boolean mouseClicked(double mx, double my, int button) {
 		if (button == 0) {
@@ -226,6 +234,7 @@ public class LayoutScreen extends Screen {
 				hit = layout.children.get(i).hit((int) mx, (int) my, ox(), oy());
 			}
 			if (hit != null) {
+				playClick();
 				UiActions.run(hit.action);
 				return true;
 			}

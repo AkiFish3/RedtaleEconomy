@@ -17,6 +17,8 @@ public final class UiLayout {
 	public final int height;
 	public final String background;
 	public final String title;
+	/** 音效档（R39）：vanilla=原版按钮音，silent=静音。可被布局覆盖。 */
+	public final String sound;
 	public List<UiNode> children;
 	/** 原始 JSON（R17 写回时保留未知字段与顺序）。 */
 	public final JsonObject raw;
@@ -28,6 +30,7 @@ public final class UiLayout {
 		this.height = Math.max(48, intOf(o, "height", 220));
 		this.background = strOf(o, "background", "");
 		this.title = strOf(o, "title", "");
+		this.sound = strOf(o, "sound", "vanilla");
 		this.children = o.has("children") && o.get("children").isJsonArray()
 				? new java.util.ArrayList<>(UiNode.parseList(o.getAsJsonArray("children")))
 				: new java.util.ArrayList<>();
@@ -62,6 +65,7 @@ public final class UiLayout {
 		out.addProperty("height", height);
 		if (!title.isBlank()) out.addProperty("title", title);
 		if (!background.isBlank()) out.addProperty("background", background);
+		if (!"vanilla".equals(sound)) out.addProperty("sound", sound);
 		com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
 		children.forEach(n -> arr.add(n.raw));
 		out.add("children", arr);
