@@ -53,6 +53,21 @@ public final class ConfigManager {
 		return instance;
 	}
 
+	/**
+	 * 测试/命令行工具用：绑定任意基目录，不经过 FabricLoader。
+	 *
+	 * <p>正式启动仍走 {@link #create()}；这里只为让集成测试（如 MySQL 后端实连）
+	 * 能在游戏外复现同一套配置加载逻辑。
+	 */
+	public static synchronized ConfigManager createAt(Path dir) {
+		instance = new ConfigManager(dir);
+		return instance;
+	}
+
+	public static synchronized void clearInstance() {
+		instance = null;
+	}
+
 	public Path baseDir() {
 		return baseDir;
 	}

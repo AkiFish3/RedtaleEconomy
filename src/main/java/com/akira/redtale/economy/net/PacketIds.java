@@ -19,6 +19,8 @@ public final class PacketIds {
 	public static final Identifier S2C_CONFIG_RESULT = RedtaleEconomy.id("config/result");
 	public static final Identifier S2C_ACTION = RedtaleEconomy.id("shop/action");
 
+	public static final Identifier S2C_BOUNTY = RedtaleEconomy.id("bounty/snapshot");
+
 	public static final Identifier S2C_TASKS = RedtaleEconomy.id("tasks/snapshot");
 	public static final Identifier S2C_CHECKIN = RedtaleEconomy.id("checkin/snapshot");
 

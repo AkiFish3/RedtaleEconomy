@@ -207,11 +207,24 @@ public final class TaskCommands {
 		Item item = item(itemId);
 		if (item == null) return 0;
 		int n = 0;
+		com.akira.redtale.economy.shop.ContainerScan.Policy policy = containerPolicy();
 		for (int i = 0; i < p.getInventory().size(); i++) {
 			ItemStack st = p.getInventory().getStack(i);
-			if (!st.isEmpty() && st.getItem() == item) n += st.getCount();
+			if (st.isEmpty()) continue;
+			if (st.getItem() == item) {
+				n += st.getCount();
+			} else if (policy != com.akira.redtale.economy.shop.ContainerScan.Policy.IGNORE
+					&& st.getNbt() != null) {
+				// R26：开关打开才解析容器内容（默认 ignore 走不到这里）
+				n += (int) com.akira.redtale.economy.shop.ContainerScan.count(st.getNbt(), itemId, policy);
+			}
 		}
 		return n;
+	}
+
+	private static com.akira.redtale.economy.shop.ContainerScan.Policy containerPolicy() {
+		return com.akira.redtale.economy.shop.ContainerScan.Policy
+				.of(com.akira.redtale.economy.module.impl.TaskModule.containerPolicy());
 	}
 
 	private static void removeFrom(ServerPlayerEntity p, String itemId, int count) {
@@ -225,6 +238,15 @@ public final class TaskCommands {
 			st.decrement(take);
 			left -= take;
 			if (st.isEmpty()) p.getInventory().setStack(i, ItemStack.EMPTY);
+		}
+		// R26：背包格不够时再从容器物品里扣（只在开关打开时）
+		com.akira.redtale.economy.shop.ContainerScan.Policy policy = containerPolicy();
+		if (left > 0 && policy != com.akira.redtale.economy.shop.ContainerScan.Policy.IGNORE) {
+			for (int i = 0; i < p.getInventory().size() && left > 0; i++) {
+				ItemStack st = p.getInventory().getStack(i);
+				if (st.isEmpty() || st.getItem() == item || st.getNbt() == null) continue;
+				left -= com.akira.redtale.economy.shop.ContainerScan.take(st.getNbt(), itemId, left, policy);
+			}
 		}
 		p.getInventory().markDirty();
 	}

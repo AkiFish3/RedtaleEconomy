@@ -104,30 +104,29 @@ public final class TaskScreen extends Screen {
 	@Override
 	public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
 		super.render(ctx, mouseX, mouseY, delta);
-		ctx.fill(left - 2, top - 2, left + PANEL_W + 2, top + panelH() + 2, 0xFF1B1B22);
-		ctx.fill(left, top, left + PANEL_W, top + panelH(), 0xE6101014);
+		com.akira.redtale.economy.client.ui.UiStyle.panel(ctx, left, top, PANEL_W, panelH());
 
-		ctx.drawCenteredTextWithShadow(textRenderer, title, left + PANEL_W / 2, top + 10, 0xFFFFFF);
+		ctx.drawCenteredTextWithShadow(textRenderer, title, left + PANEL_W / 2, top + 10, com.akira.redtale.economy.client.ui.UiStyle.TEXT);
 		ctx.drawTextWithShadow(textRenderer,
 				Text.literal(snap.date() + "   " + Text.translatable("gui.redtale_economy.tasks.refreshes",
 						snap.refreshesLeft()).getString()),
-				left + PAD, top + 26, 0x8A8A96);
+				left + PAD, top + 26, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM);
 
 		List<TaskProtocol.Task> tasks = snap.tasks();
 		if (tasks.isEmpty()) {
 			ctx.drawCenteredTextWithShadow(textRenderer,
-					Text.translatable("gui.redtale_economy.tasks.empty"), left + PANEL_W / 2, top + 70, 0x8A8A96);
+					Text.translatable("gui.redtale_economy.tasks.empty"), left + PANEL_W / 2, top + 70, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM);
 		}
 
 		int shown = 0;
 		for (TaskProtocol.Task t : tasks) {
 			if (shown >= visible()) break;
 			int y = top + 52 + shown * CARD_H;
-			ctx.fill(left + PAD, y, left + PANEL_W - PAD, y + CARD_H - 6, 0x30FFFFFF);
+			ctx.fill(left + PAD, y, left + PANEL_W - PAD, y + CARD_H - 6, com.akira.redtale.economy.client.ui.UiStyle.CARD);
 			ctx.drawTextWithShadow(textRenderer,
 					Text.literal("#" + t.slot() + "  " + (t.claimed() ? "§8✔" : "§a→ ") + format(t.reward())),
-					left + PAD + 4, y + 5, 0xFFE9A0);
-			ctx.drawTextWithShadow(textRenderer, itemLine(t), left + PAD + 4, y + 20, 0xC8C8D2);
+					left + PAD + 4, y + 5, com.akira.redtale.economy.client.ui.UiStyle.ACCENT);
+			ctx.drawTextWithShadow(textRenderer, itemLine(t), left + PAD + 4, y + 20, com.akira.redtale.economy.client.ui.UiStyle.TEXT);
 			shown++;
 		}
 	}

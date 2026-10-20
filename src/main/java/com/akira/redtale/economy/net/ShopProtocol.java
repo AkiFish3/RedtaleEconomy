@@ -23,7 +23,17 @@ public final class ShopProtocol {
 		}
 	}
 
-	public record ActionResult(boolean ok, String messageKey, long balance, long stockRemaining) {
+	/**
+	 * 操作结果。
+	 *
+	 * @param code 稳定机器码（B21）：客户端按它判断分支，语言键只管显示。
+	 *             老构造器签名保留，code 由 {@link com.akira.redtale.economy.shop.ShopErrors#codeOf} 推导。
+	 */
+	public record ActionResult(boolean ok, String messageKey, String code, long balance, long stockRemaining) {
+		public ActionResult(boolean ok, String messageKey, long balance, long stockRemaining) {
+			this(ok, messageKey, com.akira.redtale.economy.shop.ShopErrors.codeOf(messageKey),
+					balance, stockRemaining);
+		}
 	}
 
 	private ShopProtocol() {
@@ -74,12 +84,14 @@ public final class ShopProtocol {
 	public static void writeAction(PacketByteBuf buf, ActionResult r) {
 		buf.writeBoolean(r.ok());
 		buf.writeString(r.messageKey() == null ? "" : r.messageKey(), 96);
+		buf.writeString(r.code() == null ? "" : r.code(), 32);
 		buf.writeLong(r.balance());
 		buf.writeLong(r.stockRemaining());
 	}
 
 	public static ActionResult readAction(PacketByteBuf buf) {
-		return new ActionResult(buf.readBoolean(), buf.readString(96), buf.readLong(), buf.readLong());
+		return new ActionResult(buf.readBoolean(), buf.readString(96), buf.readString(32),
+				buf.readLong(), buf.readLong());
 	}
 
 	/** 分页参数归一化：任何输入都落在一个合法的 [0, totalPages-1]。 */

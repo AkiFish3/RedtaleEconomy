@@ -144,6 +144,9 @@ public final class MysqlBackend {
 		}
 		ALL.clear();
 		pool = null;
+		// 关掉后回到默认前缀：静态字段被测试或多个 init 复用，留着旧值会让 table() 串味
+		prefix = "redtale_";
+		serverId = "local";
 	}
 
 	// ------------------------------------------------------------------ 驱动加载
@@ -497,9 +500,33 @@ public final class MysqlBackend {
 		return ok;
 	}
 
+	/**
+	 * 行数统计（`/redtale migrate storage` dry-run 与自检用）。
+	 *
+	 * @param which 只接受 accounts / ledger / snapshots（白名单，防表名注入）
+	 * @return 行数；后端未启用或参数非法返回 -1
+	 */
+	public static int countRows(String which) {
+		if (!available()) return -1;
+		if (!"accounts".equals(which) && !"ledger".equals(which) && !"snapshots".equals(which)) return -1;
+		Connection c = borrow();
+		if (c == null) return -1;
+		try (PreparedStatement ps = c.prepareStatement(
+				"SELECT COUNT(*) FROM " + table(which) + " WHERE server_id=?")) {
+			ps.setString(1, serverId);
+			try (ResultSet rs = ps.executeQuery()) {
+				return rs.next() ? rs.getInt(1) : -1;
+			}
+		} catch (SQLException e) {
+			RedtaleEconomy.LOGGER.warn("[mysql] 统计 {} 失败：{}", which, e.getMessage());
+			return -1;
+		} finally {
+			give(c);
+		}
+	}
+
 	/** 库内账号数（dry-run / 对账用）。 */
-	public static int countMysqlAccounts() {
-		if (!available()) return 0;
+	public static int countMysqlAccounts() {		if (!available()) return 0;
 		Connection c = borrow();
 		if (c == null) return 0;
 		try (PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM " + table("accounts")

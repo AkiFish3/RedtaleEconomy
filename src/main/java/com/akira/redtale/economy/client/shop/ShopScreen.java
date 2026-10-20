@@ -161,11 +161,10 @@ public final class ShopScreen extends Screen {
 	@Override
 	public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
 		renderBackground(ctx);
-		ctx.fill(left - 1, top - 1, left + PANEL_W + 1, top + panelH() + 1, 0xFF1A1A1A);
-		ctx.fill(left, top, left + PANEL_W, top + panelH(), 0xFF2B2B2B);
+		com.akira.redtale.economy.client.ui.UiStyle.panel(ctx, left, top, PANEL_W, panelH());
 
 		ctx.drawText(textRenderer, Text.translatable("gui.redtale_economy.shop.title").getString()
-				+ " · " + shopId, left + 8, top + 8, 0xFFFFFF, false);
+				+ " · " + shopId, left + 8, top + 8, com.akira.redtale.economy.client.ui.UiStyle.TEXT, false);
 
 		ShopProtocol.Page p = shown;
 		String pageInfo = p == null
@@ -173,12 +172,12 @@ public final class ShopScreen extends Screen {
 				: Text.translatable("gui.redtale_economy.shop.page", p.page() + 1,
 						Math.max(1, p.totalPages()), p.totalItems()).getString();
 		ctx.drawText(textRenderer, pageInfo, left + PANEL_W - 8 - textRenderer.getWidth(pageInfo),
-				top + 8, 0xAAAAAA, false);
+				top + 8, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM, false);
 
 		List<ShopProtocol.Entry> list = p == null ? List.of() : p.entries();
 		if (list.isEmpty()) {
 			ctx.drawText(textRenderer, Text.translatable("gui.redtale_economy.shop.empty").getString(),
-					left + 12, listTop + 6, 0x888888, false);
+					left + 12, listTop + 6, com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT, false);
 		}
 		for (int row = 0; row < rows(); row++) {
 			int idx = scroll + row;
@@ -188,7 +187,7 @@ public final class ShopScreen extends Screen {
 			boolean sel = idx == selected;
 			boolean hover = mouseX >= left + 6 && mouseX <= left + PANEL_W - 6 && mouseY >= y && mouseY < y + ROW_H;
 			ctx.fill(left + 6, y, left + PANEL_W - 6, y + ROW_H - 1,
-					sel ? 0xFF3A5A8A : (hover ? 0xFF3A3A3A : 0xFF232323));
+					sel ? 0xFF3A5A8A : (hover ? com.akira.redtale.economy.client.ui.UiStyle.CARD_HOVER : com.akira.redtale.economy.client.ui.UiStyle.CARD));
 
 			ItemStack stack = stackOf(e.itemId());
 			if (!stack.isEmpty()) ctx.drawItem(stack, left + 8, y + 1);
@@ -197,21 +196,21 @@ public final class ShopScreen extends Screen {
 			if (textRenderer.getWidth(name) > 150) {
 				name = textRenderer.trimToWidth(name, 148) + "…";
 			}
-			ctx.drawText(textRenderer, name, left + 30, y + 5, 0xFFFFFF, false);
+			ctx.drawText(textRenderer, name, left + 30, y + 5, com.akira.redtale.economy.client.ui.UiStyle.TEXT, false);
 
 			String price = Text.translatable("gui.redtale_economy.shop.price",
 					e.canBuy() ? String.valueOf(e.buyPrice()) : "-",
 					e.canSell() ? String.valueOf(e.sellPrice()) : "-").getString();
-			ctx.drawText(textRenderer, price, left + 190, y + 5, e.canBuy() ? 0xE8C567 : 0x888888, false);
+			ctx.drawText(textRenderer, price, left + 190, y + 5, e.canBuy() ? com.akira.redtale.economy.client.ui.UiStyle.ACCENT : com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT, false);
 
 			String stock = e.stock() < 0
 					? Text.translatable("gui.redtale_economy.shop.stockInf").getString()
 					: Text.translatable("gui.redtale_economy.shop.stock", e.stock()).getString();
-			ctx.drawText(textRenderer, stock, left + 292, y + 5, 0x9CC7FF, false);
+			ctx.drawText(textRenderer, stock, left + 292, y + 5, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM, false);
 		}
 
 		if (flash != null) {
-			ctx.drawText(textRenderer, flash, left + 8, top + 24 + rows() * ROW_H - 4, 0xB8E79A, false);
+			ctx.drawText(textRenderer, flash, left + 8, top + 24 + rows() * ROW_H - 4, com.akira.redtale.economy.client.ui.UiStyle.GOOD, false);
 		}
 		super.render(ctx, mouseX, mouseY, delta);
 	}

@@ -254,8 +254,22 @@ public final class ConfigStore {
 		lastError = null;
 	}
 
-	public long getLong(String key, long def) {
+	/**
+	 * 取原始元素：先按平铺键找，找不到再看是不是点号路径。
+	 *
+	 * <p>★ 2026-10-20 修复：配置根是<b>嵌套对象</b>（`mysql.host` 存在 `{mysql:{host:...}}` 里），
+	 * 而各 Config 类一直用 `getString("mysql.host")` 这种点号键。没有这层回退时，
+	 * 所有点号键都会命中 {@code default} ⇒ MySQL 连接参数、权限等级节点、战令赛季、
+	 * 补签物品等配置<b>静默失效</b>（表现为「配了没用、也不报错」）。
+	 */
+	private JsonElement elem(String key) {
 		JsonElement e = root.get(key);
+		if (e != null || key.indexOf('.') < 0) return e;
+		return getPath(key);
+	}
+
+	public long getLong(String key, long def) {
+		JsonElement e = elem(key);
 		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber()) ? e.getAsLong() : def;
 	}
 
@@ -264,17 +278,17 @@ public final class ConfigStore {
 	}
 
 	public double getDouble(String key, double def) {
-		JsonElement e = root.get(key);
+		JsonElement e = elem(key);
 		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber()) ? e.getAsDouble() : def;
 	}
 
 	public boolean getBool(String key, boolean def) {
-		JsonElement e = root.get(key);
+		JsonElement e = elem(key);
 		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isBoolean()) ? e.getAsBoolean() : def;
 	}
 
 	public String getString(String key, String def) {
-		JsonElement e = root.get(key);
+		JsonElement e = elem(key);
 		return (e != null && e.isJsonPrimitive() && e.getAsJsonPrimitive().isString()) ? e.getAsString() : def;
 	}
 

@@ -1,0 +1,21 @@
+// 主入口面板（U4）— 数据驱动版本。改完保存，下次按 K 立刻生效。
+// 坐标相对于面板左上角；面板默认居中。
+{
+  "width": 320,
+  "height": 220,
+  "title": "gui.redtale_economy.menu.title",
+  "children": [
+    { "type": "label", "x": 12, "y": 28, "w": 296, "text": "gui.redtale_economy.menu.hint", "color": "#2B2118" },
+    {
+      "type": "grid",
+      "x": 12, "y": 64, "w": 296, "h": 120,
+      "columns": 3, "rowHeight": 22,
+      "source": "menu.entries",
+      "action": "cmd:%s"
+    },
+    { "type": "button", "x": 12, "y": 190, "w": 96, "h": 20,
+      "text": "gui.redtale_economy.menu.close", "action": "close" },
+    { "type": "button", "x": 212, "y": 190, "w": 96, "h": 20,
+      "text": "gui.redtale_economy.menu.reload", "action": "cmd:redtale reload" }
+  ]
+}

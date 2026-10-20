@@ -76,7 +76,12 @@ public final class ClientKeybinds {
 
 	private static void openMenu(MinecraftClient client) {
 		// 只在游戏内、且没有其它界面时打开，避免和箱子/聊天冲突
-		if (client.player != null && client.currentScreen == null) {
+		if (client.player == null || client.currentScreen != null) return;
+		// R15：布局驱动优先；没有布局文件才回落到写死的旧界面
+		var layout = com.akira.redtale.economy.ui.UiLayouts.get("menu/main");
+		if (layout != null) {
+			client.setScreen(new LayoutScreen(layout));
+		} else {
 			client.setScreen(new MainMenuScreen());
 		}
 	}

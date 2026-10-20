@@ -13,6 +13,7 @@ import com.akira.redtale.economy.config.PremiumConfig;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.lang.Lang;
+import com.akira.redtale.economy.util.DevCommandFile;
 import com.akira.redtale.economy.module.ModuleManager;
 import com.akira.redtale.economy.module.impl.AliasModule;
 import com.akira.redtale.economy.module.impl.BattlePassModule;
@@ -136,6 +137,11 @@ public class RedtaleEconomy implements ModInitializer {
 			modules.registerCommands(dispatcher);
 			com.akira.redtale.economy.shop.TerminalRegistry.registerCommands(dispatcher);
 		});
+
+		// 开发用命令文件通道（config/redtale/devcmd.enabled 存在时才生效）
+		DevCommandFile.init();
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK
+				.register(DevCommandFile::tick);
 
 		ServerLifecycleEvents.SERVER_STARTED.register(s -> server = s);
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register(

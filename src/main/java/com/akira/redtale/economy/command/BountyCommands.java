@@ -27,7 +27,8 @@ public final class BountyCommands {
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
 		d.register(CommandManager.literal("bounty")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
-				.executes(BountyCommands::list)
+				.executes(BountyCommands::open)
+				.then(CommandManager.literal("list").executes(BountyCommands::list))
 				.then(CommandManager.literal("claim")
 						.then(CommandManager.argument("index", IntegerArgumentType.integer(1, Math.max(1, com.akira.redtale.economy.config.GuildConfig.maxBountySlots())))
 								.executes(BountyCommands::claim)))
@@ -35,6 +36,18 @@ public final class BountyCommands {
 				.then(CommandManager.literal("reroll")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.executes(BountyCommands::reroll)));
+	}
+
+	/** U7：列表类信息进 GUI；文本列表保留在 {@code /bounty list}。 */
+	private static int open(CommandContext<ServerCommandSource> ctx) {
+		ServerPlayerEntity p = ctx.getSource().getPlayer();
+		if (p == null) return onlyPlayer(ctx.getSource());
+		if (!BountyModule.enabled()) {
+			ctx.getSource().sendError(Text.literal(Lang.msg("bounty.disabled")));
+			return 0;
+		}
+		com.akira.redtale.economy.net.BountyNetworking.send(p);
+		return 1;
 	}
 
 	private static int list(CommandContext<ServerCommandSource> ctx) {

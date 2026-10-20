@@ -28,6 +28,10 @@ public final class CheckinScreen extends Screen {
 	private final CheckinProtocol.Snapshot snap;
 	private int left;
 	private int top;
+	/** H04：点过签到的时间戳，用于防连点（0 = 没点过）。 */
+	private long claimClickAt;
+	/** H04：点天数格子只做选中，绝不触发签到。 */
+	private int selectedDay;
 
 	public CheckinScreen(CheckinProtocol.Snapshot snap) {
 		super(Text.translatable("gui.redtale_economy.checkin.title"));
@@ -47,10 +51,12 @@ public final class CheckinScreen extends Screen {
 		left = (width - panelW()) / 2;
 		top = (height - panelH()) / 2;
 
-		addDrawableChild(ButtonWidget.builder(
+		ButtonWidget doBtn = ButtonWidget.builder(
 				Text.translatable("gui.redtale_economy.checkin.do"),
-				b -> cmd("checkin", true))
-				.dimensions(left + PAD, top + panelH() - 26, 80, 20).build());
+				b -> claim())
+				.dimensions(left + PAD, top + panelH() - 26, 80, 20).build();
+		doBtn.active = !CheckinGate.alreadySigned(snap.points());
+		addDrawableChild(doBtn);
 
 		ButtonWidget makeup = ButtonWidget.builder(
 				Text.translatable("gui.redtale_economy.checkin.makeup"),
@@ -65,6 +71,19 @@ public final class CheckinScreen extends Screen {
 				.dimensions(left + panelW() - PAD - 70, top + panelH() - 26, 70, 20).build());
 	}
 
+	/**
+	 * 签到点击（H04）：先过闸门再发包，发完立刻关界面。
+	 * 服务端同日幂等仍在（权威），这里只是不让玩家看到「点两次 = 两条提示」。
+	 */
+	private void claim() {
+		if (!CheckinGate.canClaim(CheckinGate.alreadySigned(snap.points()), claimClickAt,
+				System.currentTimeMillis())) {
+			return;
+		}
+		claimClickAt = System.currentTimeMillis();
+		cmd("checkin", true);
+	}
+
 	private void cmd(String command, boolean closeAfter) {
 		MinecraftClient c = MinecraftClient.getInstance();
 		if (c.getNetworkHandler() == null) return;
@@ -75,36 +94,37 @@ public final class CheckinScreen extends Screen {
 	@Override
 	public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
 		super.render(ctx, mouseX, mouseY, delta);
-		ctx.fill(left - 2, top - 2, left + panelW() + 2, top + panelH() + 2, 0xFF1B1B22);
-		ctx.fill(left, top, left + panelW(), top + panelH(), 0xE6101014);
+		com.akira.redtale.economy.client.ui.UiStyle.panel(ctx, left, top, panelW(), panelH());
 
-		ctx.drawCenteredTextWithShadow(textRenderer, title, left + panelW() / 2, top + 8, 0xFFFFFF);
+		ctx.drawCenteredTextWithShadow(textRenderer, title, left + panelW() / 2, top + 8, com.akira.redtale.economy.client.ui.UiStyle.TEXT);
 		ctx.drawTextWithShadow(textRenderer,
 				Text.translatable("gui.redtale_economy.checkin.summary", snap.streak(), snap.totalDays()),
-				left + PAD, top + 24, 0x8A8A96);
+				left + PAD, top + 24, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM);
 
 		int x = left + PAD;
 		for (CheckinProtocol.Point p : snap.points()) {
 			int y = top + 38;
-			int bg = p.current() ? 0x50E9C46A : 0x30FFFFFF;
+			int bg = p.current() ? 0x33E9C46A : 0x22FFFFFF;
+			if (p.day() == selectedDay) bg = 0x44FFFFFF;
+			com.akira.redtale.economy.client.ui.UiStyle.card(ctx, x, y, CELL_W, CELL_H, p.current());
 			ctx.fill(x, y, x + CELL_W, y + CELL_H, bg);
 			if (p.done()) {
-				ctx.fill(x, y, x + CELL_W, y + CELL_H, 0x5000C000);
+				ctx.fill(x, y, x + CELL_W, y + CELL_H, 0x3300C000);
 			}
 			ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("D" + p.day()),
-					x + CELL_W / 2, y + 6, p.done() ? 0x9BE59B : 0xFFFFFF);
+					x + CELL_W / 2, y + 6, p.done() ? 0xFF7BC67E : com.akira.redtale.economy.client.ui.UiStyle.TEXT);
 			ctx.drawCenteredTextWithShadow(textRenderer, Text.literal(fmtShort(p.money())),
-					x + CELL_W / 2, y + 22, 0xFFE9A0);
+					x + CELL_W / 2, y + 22, com.akira.redtale.economy.client.ui.UiStyle.ACCENT);
 			if (p.done()) {
 				ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("✔"),
-						x + CELL_W / 2, y + 34, 0x9BE59B);
+						x + CELL_W / 2, y + 34, 0xFF7BC67E);
 			}
 			x += CELL_W + 6;
 		}
 
 		ctx.drawTextWithShadow(textRenderer,
 				Text.translatable("gui.redtale_economy.checkin.makeupLeft", snap.makeupLeft()),
-				left + PAD + 196, top + panelH() - 20, 0x6E6E7A);
+				left + PAD + 196, top + panelH() - 20, com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT);
 	}
 
 	private static String fmtShort(long raw) {
@@ -114,6 +134,23 @@ public final class CheckinScreen extends Screen {
 		} catch (Throwable e) {
 			return Long.toString(raw);
 		}
+	}
+
+	/** 点天数格子 = 只选中查看，不发任何命令（H04 的直接诱因就是这里会重复签到）。 */
+	@Override
+	public boolean mouseClicked(double mx, double my, int button) {
+		if (button == 0) {
+			int x = left + PAD;
+			for (CheckinProtocol.Point p : snap.points()) {
+				int y = top + 38;
+				if (mx >= x && mx < x + CELL_W && my >= y && my < y + CELL_H) {
+					selectedDay = p.day();
+					return true;
+				}
+				x += CELL_W + 6;
+			}
+		}
+		return super.mouseClicked(mx, my, button);
 	}
 
 	@Override

@@ -53,6 +53,12 @@ dependencies {
 test {
 	useJUnitPlatform()
 	testLogging { events "passed", "failed", "skipped" }
+	// 集成测试开关透传：./gradlew test -Dredtale.it.mysql=1 -Dredtale.it.mysql.port=3307
+	["redtale.it.mysql", "redtale.it.mysql.host", "redtale.it.mysql.port",
+	 "redtale.it.mysql.database", "redtale.it.mysql.user", "redtale.it.mysql.password",
+	 "redtale.it.mysql.driverJar"].each { k ->
+		if (System.getProperty(k) != null) systemProperty k, System.getProperty(k)
+	}
 }
 
 processResources {

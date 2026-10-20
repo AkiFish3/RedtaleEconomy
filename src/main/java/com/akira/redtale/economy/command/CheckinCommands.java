@@ -33,8 +33,8 @@ public final class CheckinCommands {
 		}
 		CheckinModule.Outcome o = CheckinModule.checkin(p.getUuid());
 		switch (o.result()) {
-			case OK -> src.sendFeedback(() -> Text.literal(
-					Lang.msg("checkin.ok", o.streak(), BalanceService.format(o.reward()))), false);
+			case OK -> Feedback.success(src, Text.literal(
+					Lang.msg("checkin.ok", o.streak(), BalanceService.format(o.reward()))));
 			case NO_TIER -> src.sendFeedback(() -> Text.literal(
 					Lang.msg("checkin.noTier", o.streak())), false);
 			case ALREADY -> src.sendFeedback(() -> Text.literal(

@@ -74,6 +74,9 @@ public final class TaskModule implements RedtaleModule {
 					"同 id 任务池冲突策略：outer=路径浅优先，merge=合并物品"))
 			.field("defaultReward", ConfigSchema.obj("默认奖励（模板未指定时用）")
 					.field("money", ConfigSchema.integer(100, 0, 1_000_000_000_000L, "奖励铜币")))
+			.field("containerPolicy", ConfigSchema.choice("ignore", List.of("ignore", "shulker", "all"),
+					"任务缴纳时是否解析容器内容：ignore=只看背包格（默认，零开销）；"
+							+ "shulker=计入潜影盒内容；all=任何带 BlockEntityTag.Items 的容器物品（含旅行背包等）"))
 			.field("refreshTicket", ConfigSchema.obj("刷新券（R29）")
 					.field("item", ConfigSchema.string("redtale_economy:refresh_ticket",
 							"刷新次数用完后自动消耗的物品 id；留空=不启用票据"))
@@ -152,6 +155,11 @@ public final class TaskModule implements RedtaleModule {
 	/** 全局参数（tasks/settings.json）。 */
 	public static ConfigStore settings() {
 		return ConfigManager.get().store(SETTINGS_FILE);
+	}
+
+	/** 容器检测策略（R26，默认 ignore 时完全跳过解析）。 */
+	public static String containerPolicy() {
+		return settings().getString("containerPolicy", "ignore");
 	}
 
 	public static long catalogsLoadedAt() {

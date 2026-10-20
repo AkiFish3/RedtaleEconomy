@@ -79,6 +79,33 @@
 | `sdm_migrate.json` | SDM 余额迁移 | `enabled`、`sourceCurrencyId`、`ratio`、`ledgerRef`、`batchSize` |
 | `modules.json` | 模块开关 | 每个模块一个布尔 |
 
+## 界面（数据驱动）
+
+所有新界面由 `config/redtale/ui/**.json5` 描述，改布局不用重编译。
+首次启动会把内置布局释放到该目录（不覆盖你改过的文件）；以 `_` 开头的文件/目录视为禁用。
+
+```
+config/redtale/ui/
+├─ menu/main.json5     主入口（按 K 打开）
+├─ theme.json5         配色（background/content/border/textDark/textLight/accent/danger）
+└─ <你新建的>.json5    文件名 = 布局 id，如 tasks/screen.json5 ⇒ tasks/screen
+```
+
+控件类型：`label` / `button` / `list` / `grid` / `slot-grid` / `progress` / `image` / `tab`。
+`type` 写错不会崩，只会不渲染（服务端日志会提示解析失败的文件）。
+
+动作（`action` 字段）：`cmd:<命令>` 以玩家身份执行；`ui:<布局id>` 切布局；`close` 关闭。
+`list`/`grid` 的每一行可以用 `标签|参数` 形式，节点的 `action` 里写 `%s` 接收该参数
+（内置主面板就是这样把每个入口变成可点按钮的）。
+
+| 命令 | 作用 |
+|---|---|
+| `/rtui <布局id>` | 打开某份布局（调试 / 服主自测） |
+| `/rtlayout <布局id>` | 拖拽编辑器：拖动移动、右下角缩放、方向键微调、`S` 保存（先备份再原子写） |
+| `/rtedit <商店id>` | 商店表格编辑器：搜索、点表头排序、勾选多行批量改价、取价、上架 |
+
+> 编辑器只改 JSON，不动服务端校验：改价/上架仍然走 `/shop admin ...`，权限与价格上下限照旧生效。
+
 ## 构建
 
 需要 **JDK 17**（Gradle 8.3 / Loom 1.3.7 不支持 JDK 21+）。JDK 路径不要写进仓库，放用户级配置：

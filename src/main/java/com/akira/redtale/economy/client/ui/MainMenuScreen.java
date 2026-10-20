@@ -87,21 +87,20 @@ public final class MainMenuScreen extends Screen {
 	public void renderBackground(DrawContext ctx) {
 		super.renderBackground(ctx);
 		// 面板底：外描边 + 内填充
-		ctx.fill(left - 2, top - 2, left + PANEL_W + 2, top + panelH() + 2, 0xFF1B1B22);
-		ctx.fill(left, top, left + PANEL_W, top + panelH(), 0xE6101014);
-		ctx.fill(left, top, left + PANEL_W, top + 1, 0xFF3A3A46);
+		UiStyle.panel(ctx, left, top, PANEL_W, panelH());
+		UiStyle.divider(ctx, left + 8, top + 22, PANEL_W - 16);
 	}
 
 	@Override
 	public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
 		super.render(ctx, mouseX, mouseY, delta);
-		ctx.drawCenteredTextWithShadow(textRenderer, title, width / 2, top + 14, 0xFFFFFF);
+		ctx.drawCenteredTextWithShadow(textRenderer, title, width / 2, top + 14, UiStyle.TEXT);
 		ctx.drawCenteredTextWithShadow(textRenderer,
 				Text.translatable("gui.redtale_economy.menu.hint"),
-				width / 2, top + 28, 0x8A8A96);
+				width / 2, top + 28, UiStyle.TEXT_DIM);
 		ctx.drawCenteredTextWithShadow(textRenderer,
 				Text.translatable("gui.redtale_economy.menu.footer"),
-				width / 2, top + panelH() - 40, 0x6E6E7A);
+				width / 2, top + panelH() - 40, UiStyle.TEXT_FAINT);
 	}
 
 	@Override
