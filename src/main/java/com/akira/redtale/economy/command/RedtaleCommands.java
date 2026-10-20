@@ -90,7 +90,9 @@ public final class RedtaleCommands {
 																com.mojang.brigadier.arguments.StringArgumentType.word())
 														.executes(ctx -> adminPassUnlock(ctx,
 																com.mojang.brigadier.arguments.StringArgumentType
-																		.getString(ctx, "season"))))))))
+																		.getString(ctx, "season")))))))
+						// R36：数据根目录只读诊断（确认数据确实落在存档里，不用翻文件系统）
+						.then(CommandManager.literal("data").executes(RedtaleCommands::adminData)))
 				.then(CommandManager.literal("lang")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("code", com.mojang.brigadier.arguments.StringArgumentType.word())
@@ -272,8 +274,47 @@ public final class RedtaleCommands {
 		}
 	}
 
-	/** {@code /redtale confirm <code>}：核销票据并执行对应动作（R25）。 */
-	private static int confirmTicket(CommandContext<ServerCommandSource> ctx) {
+	/**
+	 * R36：{@code /rt admin data} —— 只读诊断，用来在游戏里确认「数据真的落在存档目录」，
+	 * 不用去翻文件系统。不改任何数据、不写盘。
+	 */
+	private static int adminData(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			var root = com.akira.redtale.economy.util.DataRoot.resolve();
+			var world = com.akira.redtale.economy.util.PathResolver.worldRoot();
+			boolean scoped = com.akira.redtale.economy.util.DataRoot.worldScoped();
+			int pending = countFiles(com.akira.redtale.economy.util.DataRoot.pendingRoot());
+			int legacy = countFiles(com.akira.redtale.economy.util.DataRoot.legacyRoot());
+			int accounts = countFiles(root.path().resolve("accounts"));
+			String mark = (com.akira.redtale.economy.util.DataRoot.alreadyMigrated(root.path(), "legacy")
+					? "§alegacy ✔" : "§clegacy ✘")
+					+ " §7/" + (com.akira.redtale.economy.util.DataRoot
+					.alreadyMigrated(root.path(), "pending") ? "§apending ✔" : "§cpending ✘");
+			src.sendFeedback(() -> Text.literal("§6[data] §f" + root.path()), false);
+			src.sendFeedback(() -> Text.literal("§7模式 §f"
+					+ (scoped ? "%world%（跟存档）" : "显式配置（不迁移）")
+					+ " §7存档 §f" + (world == null ? "未就绪" : world.toString())), false);
+			src.sendFeedback(() -> Text.literal("§7旧目录 §f" + legacy + " 文件 §7| pending §f" + pending
+					+ " 文件 §7| accounts §f" + accounts + " 文件"), false);
+			src.sendFeedback(() -> Text.literal("§7迁移标记 §f" + mark), false);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c读取失败：" + e.getMessage()));
+			return 0;
+		}
+	}
+
+	private static int countFiles(java.nio.file.Path dir) {
+		if (dir == null || !java.nio.file.Files.isDirectory(dir)) return 0;
+		try (var s = java.nio.file.Files.walk(dir)) {
+			return (int) s.filter(java.nio.file.Files::isRegularFile).count();
+		} catch (Exception e) {
+			return 0;
+		}
+	}
+
+	/** {@code /redtale confirm <code>}：核销票据并执行对应动作（R25）。 */	private static int confirmTicket(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		var player = src.getPlayer();
 		if (player == null) {

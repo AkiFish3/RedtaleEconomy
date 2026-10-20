@@ -15,6 +15,7 @@
 - `RedtaleModule.rebindDataDir()` + `ModuleManager.rebindDataDirs()`：10 个缓存目录的模块开服后重新解析并重读盘；`Ledger/SnapshotService/TxnJournal/ShopTransactions/RankService/BalanceService/DayRollover` 由 `DataRoot.onRebind` 统一重绑。
 - 22 处 `PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data")` 全部收敛为 `DataRoot.resolve()`（闸门 `_econ_guard.py` 新增第 6 条防回退）。
 - 关服清 `worldRoot`：单人「返回主菜单 → 载入另一个存档」不会沿用上一个存档的数据目录。
+- 新增只读诊断 `/rt admin data`（OP4）：一行看解析结果 / 模式 / 存档目录 / 旧目录与 pending 文件数 / 迁移标记。
 
 **测试**
 
