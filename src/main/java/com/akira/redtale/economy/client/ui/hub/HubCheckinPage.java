@@ -155,6 +155,13 @@ public final class HubCheckinPage {
 				dc.fill(cx, cy, cx + 1, cy + cellH, HubTheme.GOLD);
 				dc.fill(cx + CELL_W - 1, cy, cx + CELL_W, cy + cellH, HubTheme.GOLD);
 			}
+			// §48.3 里程碑角标（7/14/28）：右下角小方块。
+			// ★画方块而不是塞「🎁」这类字形★：默认字体没有礼盒 emoji，会渲染成豆腐块。
+			if (miles.contains(day) && cellH >= 14) {
+				int bx2 = cx + CELL_W - 6;
+				int by2 = cy + cellH - 6;
+				dc.fill(bx2, by2, bx2 + 4, by2 + 4, streak >= day ? C_GREEN : HubTheme.GOLD);
+			}
 		}
 
 		// 底部：今日奖励 + 按钮（贴着内容区底边，不随日历行数漂移）
