@@ -97,7 +97,9 @@ public final class ShopNetworking {
 		int offset = page * pageSize;
 		var entries = src.slice(shopId, q, f, offset, pageSize);
 		// facet 永远按「整个商店」下发，不受当前筛选影响 —— 否则筛完 mod 就看不到别的 mod 了
-		sendPage(player, new ShopProtocol.Page(shopId, q, page, totalPages, total, entries,
+		sendPage(player, new ShopProtocol.Page(shopId,
+				com.akira.redtale.economy.shop.ShopCatalog.shopName(shopId),
+				q, page, totalPages, total, entries,
 				src.mods(shopId), src.categories(shopId)));
 	}
 

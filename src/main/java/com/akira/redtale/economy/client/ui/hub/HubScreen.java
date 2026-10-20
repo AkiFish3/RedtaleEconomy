@@ -2,6 +2,7 @@ package com.akira.redtale.economy.client.ui.hub;
 
 import com.akira.redtale.economy.client.ShopClientNetworking;
 import com.akira.redtale.economy.client.ShopClientState;
+import com.akira.redtale.economy.net.ShopProtocol;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -141,7 +142,7 @@ public class HubScreen extends Screen {
 		if (mc.player != null) {
 			switch (p) {
 				case SHOP -> {
-					String sid = ShopClientState.page() == null ? "" : ShopClientState.page().shopId();
+					String sid = ShopClientState.shopIdToRequest();
 					if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
 				}
 				case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request();
@@ -175,6 +176,9 @@ public class HubScreen extends Screen {
 			com.akira.redtale.economy.client.balance.BalanceClientNetworking.request();
 			com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
 		}
+		// 直接以商店页开场时（/rt shop、S2C_OPEN 打开）必须自己拉一次页，
+		// 否则只有侧边栏点击才会请求，页面永远停在上一份空快照。
+		if (page == HubPage.SHOP && !shopRequested) requestShopPage();
 	}
 
 	private int entryTop() {
@@ -203,8 +207,27 @@ public class HubScreen extends Screen {
 			dc.fill(panelX, panelY, panelX + panelW, panelY + panelH, HubTheme.PANEL);
 		}
 
-		// 顶部：当前页名
-		dc.drawText(textRenderer, Text.literal(page.label), panelX + 10, panelY + 8, 0xFFF0E6D2, false);
+		// 顶部：当前页名（左）；商店页带上店名，否则只有「商店」两个字看不出是哪家
+		String head = page.label;
+		if (page == HubPage.SHOP) {
+			ShopProtocol.Page sp = ShopClientState.page();
+			String sn = sp == null ? "" : sp.shopName();
+			if (sn != null && !sn.isBlank()) head = page.label + " · " + sn;
+		}
+		dc.drawText(textRenderer, Text.literal(head), panelX + 10, panelY + 8, 0xFFF0E6D2, false);
+
+		// 顶部：状态（右）—— §37.3「标题左、状态右，不随内容滚动」
+		// 窄面板/紧凑模式下会挤掉标题，所以只在够宽时画。
+		long bal = com.akira.redtale.economy.client.balance.BalanceClientNetworking.RAW;
+		String balText = bal < 0 ? "" : com.akira.redtale.economy.economy.Currency.format(bal);
+		if (!balText.isEmpty()) {
+			int bw = textRenderer.getWidth(balText);
+			int bx = panelX + panelW - 24 - bw;
+			int titleEnd = panelX + 12 + textRenderer.getWidth(head);
+			if (bx > titleEnd + 8) {
+				dc.drawText(textRenderer, Text.literal(balText), bx, panelY + 8, HubTheme.GOLD, false);
+			}
+		}
 
 		// 右上角关闭
 		int closeSize = 12;
@@ -985,6 +1008,13 @@ public class HubScreen extends Screen {
 						setStatus("正在购买 " + e.itemId());
 					}
 				}
+				case SELL -> {
+					if (shopSelected >= 0 && shopSelected < st.entries().size()) {
+						var e = st.entries().get(shopSelected);
+						ShopClientNetworking.sell(st.shopId(), e.itemId(), 1);
+						setStatus("正在出售 " + e.itemId());
+					}
+				}
 				// U11b：筛选变化一律回到第 1 页，条件随请求发服务端
 				case FILTER_MOD -> {
 					cycleFilter(0);
@@ -1075,8 +1105,9 @@ public class HubScreen extends Screen {
 
 	private void requestShopPage() {
 		shopRequested = true;
-		var st = ShopClientState.page();
-		ShopClientNetworking.requestPage(st.shopId(), 0, shopQuery.toString());
+		String sid = ShopClientState.shopIdToRequest();
+		if (sid.isEmpty()) return;   // 还没收到 S2C_OPEN，等它到了再请求，别发空 id 换回空页
+		ShopClientNetworking.requestPage(sid, 0, shopQuery.toString());
 	}
 
 	@Override

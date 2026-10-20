@@ -82,29 +82,28 @@ public final class HubShopPage {
 		// U11b：筛选栏（mod / 类型 / 价格 / 有货）—— 点击循环取值，与搜索词叠加
 		drawFilterBar(dc, tr, x, y + 20, w, page, mouseX, mouseY);
 
-		// 卡片
+		// 卡片：列数按最小宽算，再把每张卡等比拉宽铺满整行（§37.2 对齐网格）
 		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
+		int cw = cardW(w);
 		int startY = y + 38;
 		List<ShopProtocol.Entry> entries = page.entries();
 		for (int i = 0; i < entries.size(); i++) {
 			int col = i % cols;
 			int row = i / cols;
-			int cx = x + col * (CARD_W + GAP);
+			int cx = x + col * (cw + GAP);
 			int cy = startY + row * (CARD_H + GAP);
 			if (cy + CARD_H > y + h - 34) break;
-			drawCard(dc, tr, cx, cy, entries.get(i), i == selected, mouseX, mouseY);
+			drawCard(dc, tr, cx, cy, cw, entries.get(i), i == selected, mouseX, mouseY);
 		}
 		if (entries.isEmpty()) {
 			boolean filtered = !ShopClientState.filter().isEmpty();
 			dc.drawText(tr, Text.literal(filtered ? "没有符合筛选条件的商品" : "暂无商品"),
 					x + 6, startY + 8, HubTheme.MUTED, false);
-			if (filtered) {
-				dc.drawText(tr, Text.literal("点上方筛选项可循环切换 / 清除"),
-						x + 6, startY + 22, 0xFF6A6A6A, false);
-			} else {
-				dc.drawText(tr, Text.literal("这个商店还没有上架商品（管理员：/shop admin add <商店> <物品> <买价> <卖价>）"),
-						x + 6, startY + 22, 0xFF6A6A6A, false);
-			}
+			// ★不许出面板★：这两行以前直接画，长出边界压在边框上（U6 截图可见）
+			String hint = filtered ? "点上方筛选项可循环切换 / 清除"
+					: "管理员：/shop admin add <商店> <物品> <买价> <卖价>";
+			dc.drawText(tr, Text.literal(trim(tr, hint, w - 16)),
+					x + 6, startY + 22, 0xFF6A6A6A, false);
 		}
 
 		// 底部：分页 + 选中项操作
@@ -112,9 +111,10 @@ public final class HubShopPage {
 		dc.fill(x, barY, x + w, barY + 22, 0xFF232323);
 		String pg = "第 " + (page.page() + 1) + " / " + Math.max(1, page.totalPages())
 				+ " 页 · 共 " + page.totalItems() + " 项";
-		dc.drawText(tr, Text.literal(pg), x + 6, barY + 7, HubTheme.MUTED, false);
-		dc.drawText(tr, Text.literal("‹"), x + w - 96, barY + 7, HubTheme.MUTED, false);
-		dc.drawText(tr, Text.literal("›"), x + w - 60, barY + 7, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal(trim(tr, pg, w - 110)), x + 6, barY + 7, HubTheme.MUTED, false);
+		// ‹ › 画在各自 16px 命中框里（-100..-84 / -64..-48），否则看着能点其实点不到
+		dc.drawText(tr, Text.literal("‹"), x + w - 97, barY + 7, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal("›"), x + w - 61, barY + 7, HubTheme.MUTED, false);
 		boolean hasSel = selected >= 0 && selected < entries.size();
 		drawMini(dc, tr, x + w - 40, barY + 4, 18, 14, "买", hasSel, mouseX, mouseY);
 		drawMini(dc, tr, x + w - 20, barY + 4, 18, 14, "卖", hasSel, mouseX, mouseY);
@@ -144,15 +144,21 @@ public final class HubShopPage {
 		}
 	}
 
-	private static void drawCard(DrawContext dc, TextRenderer tr, int x, int y,
+	/** 卡片实际宽度：列数固定后平均分配，保证最右一张顶到内容区右边界。 */
+	private static int cardW(int w) {
+		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
+		return (w - (cols - 1) * GAP) / cols;
+	}
+
+	private static void drawCard(DrawContext dc, TextRenderer tr, int x, int y, int cw,
 			ShopProtocol.Entry e, boolean selected, double mouseX, double mouseY) {
-		boolean hover = mouseX >= x && mouseX < x + CARD_W && mouseY >= y && mouseY < y + CARD_H;
-		dc.fill(x, y, x + CARD_W, y + CARD_H, selected ? C_CARD_SEL : HubTheme.CARD);
+		boolean hover = mouseX >= x && mouseX < x + cw && mouseY >= y && mouseY < y + CARD_H;
+		dc.fill(x, y, x + cw, y + CARD_H, selected ? C_CARD_SEL : HubTheme.CARD);
 		int edge = selected ? HubTheme.GOLD : (hover ? 0xFF5A5A5A : HubTheme.LINE);
-		dc.fill(x, y, x + CARD_W, y + 1, edge);
-		dc.fill(x, y + CARD_H - 1, x + CARD_W, y + CARD_H, edge);
+		dc.fill(x, y, x + cw, y + 1, edge);
+		dc.fill(x, y + CARD_H - 1, x + cw, y + CARD_H, edge);
 		dc.fill(x, y, x + 1, y + CARD_H, edge);
-		dc.fill(x + CARD_W - 1, y, x + CARD_W, y + CARD_H, edge);
+		dc.fill(x + cw - 1, y, x + cw, y + CARD_H, edge);
 
 		ItemStack stack = stackOf(e.itemId());
 		if (!stack.isEmpty()) {
@@ -161,12 +167,12 @@ public final class HubShopPage {
 			dc.fill(x + 4, y + 4, x + 20, y + 20, 0xFF444444);
 		}
 		String name = stack.isEmpty() ? shortId(e.itemId()) : stack.getName().getString();
-		dc.drawText(tr, Text.literal(trim(tr, name, CARD_W - 26)), x + 22, y + 6, HubTheme.TEXT, false);
+		dc.drawText(tr, Text.literal(trim(tr, name, cw - 26)), x + 22, y + 6, HubTheme.TEXT, false);
 		dc.drawText(tr, Text.literal(e.buyPrice() + " 铜"), x + 4, y + 26, HubTheme.GOLD, false);
 
 		String stock = e.stock() < 0 ? "无限" : ("库存 " + e.stock());
 		int color = e.stock() == 0 ? C_RED : HubTheme.MUTED;
-		dc.drawText(tr, Text.literal(trim(tr, stock, CARD_W - 8)), x + 4, y + 40, color, false);
+		dc.drawText(tr, Text.literal(trim(tr, stock, cw - 8)), x + 4, y + 40, color, false);
 	}
 
 	private static void drawMini(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
@@ -223,23 +229,26 @@ public final class HubShopPage {
 			return Action.NONE;
 		}
 		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
+		int cw = cardW(w);
 		int startY = y + 38;
 		List<ShopProtocol.Entry> entries = page.entries();
 		for (int i = 0; i < entries.size(); i++) {
-			int cx = x + (i % cols) * (CARD_W + GAP);
+			int cx = x + (i % cols) * (cw + GAP);
 			int cy = startY + (i / cols) * (CARD_H + GAP);
 			if (cy + CARD_H > y + h - 34) break;
-			if (mx >= cx && mx < cx + CARD_W && my >= cy && my < cy + CARD_H) {
+			if (mx >= cx && mx < cx + cw && my >= cy && my < cy + CARD_H) {
 				outIndex[0] = i;
 				return Action.NONE;
 			}
 		}
+		// 搜索行右端的「同步」（渲染位置 x+w-30 起）
+		if (my >= y && my < y + 18 && mx >= x + w - 40) return Action.SYNC;
 		int barY = y + h - 26;
 		if (my >= barY && my <= barY + 22) {
-			if (mx >= x + w - 34 && mx <= x + w - 20) return Action.SYNC;
-			if (mx >= x + w - 20 && mx <= x + w - 2) {
-				return selected >= 0 && selected < entries.size() ? Action.BUY : Action.NONE;
-			}
+			boolean hasSel = selected >= 0 && selected < entries.size();
+			// 与 drawMini 的坐标一一对应：买 = -40..-22，卖 = -20..-2
+			if (mx >= x + w - 40 && mx <= x + w - 22) return hasSel ? Action.BUY : Action.NONE;
+			if (mx >= x + w - 20 && mx <= x + w - 2) return hasSel ? Action.SELL : Action.NONE;
 			if (mx >= x + w - 100 && mx <= x + w - 84) return Action.PREV;
 			if (mx >= x + w - 64 && mx <= x + w - 48) return Action.NEXT;
 		}

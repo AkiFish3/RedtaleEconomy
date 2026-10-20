@@ -19,7 +19,8 @@ public final class TaskProtocol {
 	public record Item(String id, int need, int have) {
 	}
 
-	public record Task(int slot, long reward, String mode, boolean claimed, List<Item> items) {
+	/** {@code label} 是任务卡标题（池 displayName）；旧版本没有这个字段，客户端为空时退回 #slot。 */
+	public record Task(int slot, long reward, String mode, boolean claimed, List<Item> items, String label) {
 	}
 
 	public record Snapshot(String date, int refreshesLeft, List<Task> tasks) {
@@ -39,6 +40,7 @@ public final class TaskProtocol {
 			buf.writeVarInt(t.slot());
 			buf.writeLong(t.reward());
 			buf.writeString(t.mode() == null ? "submit" : t.mode(), 16);
+			buf.writeString(t.label() == null ? "" : t.label(), 64);
 			buf.writeBoolean(t.claimed());
 			buf.writeVarInt(t.items().size());
 			for (Item i : t.items()) {
@@ -58,6 +60,7 @@ public final class TaskProtocol {
 			int slot = buf.readVarInt();
 			long reward = buf.readLong();
 			String mode = buf.readString(16);
+			String label = buf.readString(64);
 			boolean claimed = buf.readBoolean();
 			int m = Math.min(buf.readVarInt(), 32);
 			List<Item> items = new ArrayList<>();
@@ -67,7 +70,7 @@ public final class TaskProtocol {
 				int have = buf.readVarInt();
 				items.add(new Item(id, need, have));
 			}
-			tasks.add(new Task(slot, reward, mode, claimed, items));
+			tasks.add(new Task(slot, reward, mode, claimed, items, label));
 		}
 		return new Snapshot(date, refreshes, tasks);
 	}

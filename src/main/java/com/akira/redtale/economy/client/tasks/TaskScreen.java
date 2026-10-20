@@ -138,9 +138,14 @@ public final class TaskScreen extends Screen {
 					: (enough(t) ? com.akira.redtale.economy.client.ui.UiStyle.ACCENT
 							: com.akira.redtale.economy.client.ui.UiStyle.BORDER);
 			ctx.fill(left + PAD, y, left + PAD + 2, y + ch, bar);
+			// 标题：池的 displayName；没有就退回 #slot（旧存档 / 池没写 displayName）
+			String title = t.label() == null || t.label().isBlank() ? ("#" + t.slot()) : t.label();
+			String head = title + (t.claimed() ? "   已完成" : "");
 			ctx.drawTextWithShadow(textRenderer,
-					Text.literal("#" + t.slot() + (t.claimed() ? "  已完成" : "")),
-					left + PAD + 8, y + 5, com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT);
+					Text.literal(trim(head, 118)),
+					left + PAD + 8, y + 5,
+					t.claimed() ? com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT
+							: com.akira.redtale.economy.client.ui.UiStyle.TEXT);
 			String reward = format(t.reward());
 			// 右对齐到「缴纳按钮左边缘 - 8」，否则会被按钮盖住
 			ctx.drawTextWithShadow(textRenderer, Text.literal(reward),
@@ -153,6 +158,16 @@ public final class TaskScreen extends Screen {
 
 		// ★按钮最后画★
 		super.render(ctx, mouseX, mouseY, delta);
+	}
+
+	/** 标题按像素宽截断，避免压到右侧奖励数字。 */
+	private String trim(String s, int maxW) {
+		if (textRenderer.getWidth(s) <= maxW) return s;
+		String out = s;
+		while (out.length() > 1 && textRenderer.getWidth(out + "…") > maxW) {
+			out = out.substring(0, out.length() - 1);
+		}
+		return out + "…";
 	}
 
 	/** 物品行：图标 + 「数量 持有/需要」，图标从注册表取，取不到就只画文字。 */
@@ -189,9 +204,24 @@ public final class TaskScreen extends Screen {
 		return Text.literal(String.join("§7, ", parts));
 	}
 
+	/**
+	 * 金额：跳过 0 单位（§37.2 数字右对齐、金额金色）。
+	 * {@code Currency.format} 会输出「0 金 4 银 20 铜」，卡片 118px 宽放不下也没意义。
+	 */
 	private static String format(long raw) {
 		try {
-			return Currency.format(raw);
+			long gc = Math.max(1, Currency.goldInCopper());
+			long sc = Math.max(1, Currency.silverInCopper());
+			long v = Math.max(0, raw);
+			long gold = v / gc;
+			long rest = v % gc;
+			long silver = rest / sc;
+			long copper = rest % sc;
+			StringBuilder sb = new StringBuilder();
+			if (gold > 0) sb.append(gold).append(" 金 ");
+			if (silver > 0) sb.append(silver).append(" 银 ");
+			if (copper > 0 || sb.isEmpty()) sb.append(copper).append(" 铜");
+			return sb.toString().trim();
 		} catch (Throwable e) {
 			return Long.toString(raw);
 		}

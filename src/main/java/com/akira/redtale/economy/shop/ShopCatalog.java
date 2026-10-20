@@ -809,6 +809,14 @@ public final class ShopCatalog implements ShopSource {
 		return new ArrayList<>(SHOPS.keySet());
 	}
 
+	/** 商店显示名（U6：界面上要能看出是哪家店；没有就退回 id）。 */
+	public static String shopName(String shopId) {
+		ShopDef d = SHOPS.get(shopId);
+		if (d == null) return shopId == null ? "" : shopId;
+		String n = d.displayName();
+		return n == null || n.isBlank() ? d.id() : n;
+	}
+
 	public static int pageSize() {
 		return ShopConfig.pageSize();
 	}

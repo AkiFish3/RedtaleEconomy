@@ -53,12 +53,31 @@ public final class ShopScreen extends Screen {
 		this.shopId = shopId == null ? "" : shopId;
 	}
 
+	/**
+	 * 一屏行数：服务端下发值再按窗口高度收一次。
+	 * ★不设上限会整块面板顶出屏幕★（U6 截图：标题栏被切掉、底部按钮看不见）。
+	 * 100 = 标题 20 + 搜索 22 + 底栏 46 + 上下留白。
+	 */
 	private int rows() {
-		return Math.max(1, Math.min(14, rows));
+		int byScreen = Math.max(3, (height - 90) / ROW_H);
+		return Math.max(1, Math.min(Math.min(14, rows), byScreen));
 	}
 
+	/**
+	 * 面板高度 = 标题 20 + 搜索 22 + 列表 rows*18 + 间距 4 + 导航条 18 + 底边 6。
+	 * ★以前少了这 12px：导航条压在最后一行商品上，底部商品被按钮盖住（U6 截图）。
+	 */
 	private int panelH() {
-		return 20 + 22 + rows() * ROW_H + 46;
+		return 46 + rows() * ROW_H + 4 + 18 + 6;
+	}
+
+	/** 列表顶：标题 20 + 搜索 22 + 4。 */
+	private int listTopOf(int top) {
+		return top + 46;
+	}
+
+	private int navYOf(int top) {
+		return listTopOf(top) + rows() * ROW_H + 4;
 	}
 
 	@Override
@@ -66,7 +85,7 @@ public final class ShopScreen extends Screen {
 		rows = ShopClientState.visibleRows();
 		left = (width - PANEL_W) / 2;
 		top = (height - panelH()) / 2;
-		listTop = top + 44;
+		listTop = listTopOf(top);
 
 		search = new TextFieldWidget(textRenderer, left + 8, top + 22, 200, 18,
 				Text.translatable("gui.redtale_economy.shop.search"));
@@ -77,7 +96,7 @@ public final class ShopScreen extends Screen {
 		addDrawableChild(ButtonWidget.builder(Text.translatable("gui.redtale_economy.shop.searchBtn"),
 				b -> applySearch()).dimensions(left + 212, top + 22, 60, 18).build());
 
-		int navY = top + 24 + rows() * ROW_H + 8;
+		int navY = navYOf(top);
 		prev = addDrawableChild(ButtonWidget.builder(Text.literal("<"),
 				b -> changePage(-1)).dimensions(left + 8, navY, 24, 18).build());
 		next = addDrawableChild(ButtonWidget.builder(Text.literal(">"),
@@ -174,8 +193,11 @@ public final class ShopScreen extends Screen {
 				? Text.translatable("gui.redtale_economy.shop.loading").getString()
 				: Text.translatable("gui.redtale_economy.shop.page", p.page() + 1,
 						Math.max(1, p.totalPages()), p.totalItems()).getString();
-		ctx.drawText(textRenderer, pageInfo, left + PANEL_W - 8 - textRenderer.getWidth(pageInfo),
-				top + 8, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM, false);
+		// 标题行右侧：有 flash 就顶掉页码（flash 是刚操作的结果，比页码重要）
+		String rightInfo = flash != null ? flash : pageInfo;
+		ctx.drawText(textRenderer, rightInfo, left + PANEL_W - 8 - textRenderer.getWidth(rightInfo),
+				top + 8, flash != null ? com.akira.redtale.economy.client.ui.UiStyle.GOOD
+						: com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM, false);
 
 		List<ShopProtocol.Entry> list = p == null ? List.of() : p.entries();
 		if (list.isEmpty()) {
@@ -212,9 +234,7 @@ public final class ShopScreen extends Screen {
 			ctx.drawText(textRenderer, stock, left + 292, y + 5, com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM, false);
 		}
 
-		if (flash != null) {
-			ctx.drawText(textRenderer, flash, left + 8, top + 24 + rows() * ROW_H - 4, com.akira.redtale.economy.client.ui.UiStyle.GOOD, false);
-		}
+
 		super.render(ctx, mouseX, mouseY, delta);
 	}
 

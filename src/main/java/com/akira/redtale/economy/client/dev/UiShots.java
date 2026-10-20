@@ -76,13 +76,23 @@ public final class UiShots {
 			}
 			return;
 		}
-		if (tick < stepAt) return;
+		if (tick < stepAt) {
+			// ★清聊天要留出两帧★：截图抓的是已画好的帧，且 /give 的反馈比 clear 晚到；
+			// 在拍照前 2 tick 清一次，画面里才干净（在拍照当 tick 清是无效的）。
+			if (tick == stepAt - 2) mc.inGameHud.getChatHud().clear(true);
+			return;
+		}
 
 		switch (step) {
 			case 1 -> shot(mc, "u6-01-hub-checkin.png", () -> open(mc, HubPage.CHECKIN, "rt checkin"));
 			case 2 -> shot(mc, "u6-02-hub-shop.png", () -> open(mc, HubPage.SHOP, "rt shop"));
 			case 3 -> shot(mc, "u6-03-tasks.png", () -> {
 				if (inWorld) {
+					// 夹具：给点材料，「可缴纳」状态在截图里要能看出来
+					mc.player.networkHandler.sendChatCommand("give @s minecraft:oak_log 16");
+					mc.player.networkHandler.sendChatCommand("give @s minecraft:birch_log 16");
+					mc.player.networkHandler.sendChatCommand("give @s minecraft:coal 16");
+					mc.player.networkHandler.sendChatCommand("give @s minecraft:bread 8");
 					mc.player.networkHandler.sendChatCommand("tasks");
 				} else {
 					mc.setScreen(new TaskScreen(TaskProtocol.Snapshot.empty()));

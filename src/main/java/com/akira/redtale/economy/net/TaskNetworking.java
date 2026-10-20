@@ -36,7 +36,8 @@ public final class TaskNetworking {
 					items.add(new TaskProtocol.Item(ic.id, ic.count, countOf(player, ic.id)));
 				}
 				tasks.add(new TaskProtocol.Task(t.slot, t.reward,
-						t.completion == null ? "submit" : t.completion, t.claimed, items));
+						t.completion == null ? "submit" : t.completion, t.claimed, items,
+						TaskModule.labelOf(t.pool)));
 			}
 			TaskProtocol.Snapshot snap = new TaskProtocol.Snapshot(
 					d.date == null ? "" : d.date, d.refreshesLeft, tasks);

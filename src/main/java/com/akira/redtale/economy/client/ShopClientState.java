@@ -16,8 +16,25 @@ public final class ShopClientState {
 	private static volatile com.akira.redtale.economy.net.ShopFilter filter =
 			com.akira.redtale.economy.net.ShopFilter.NONE;
 	private static volatile long lastActionAt;
+	/** 服务端 S2C_OPEN 指定的当前商店 id —— Hub 模式下 S2C_OPEN 只带 id 不带数据，必须记住它才请求得到页。 */
+	private static volatile String activeShop = "";
 
 	private ShopClientState() {
+	}
+
+	public static String activeShop() {
+		return activeShop;
+	}
+
+	public static void setActiveShop(String id) {
+		activeShop = id == null ? "" : id;
+	}
+
+	/** 当前该向服务端请求哪个商店：优先服务端点名的，其次上一页自带的。 */
+	public static String shopIdToRequest() {
+		if (!activeShop.isEmpty()) return activeShop;
+		ShopProtocol.Page p = page;
+		return p == null ? "" : p.shopId();
 	}
 
 	/** 一屏行数：由服务端 shop/settings.json 的 visibleRows 下发（默认 9）。 */

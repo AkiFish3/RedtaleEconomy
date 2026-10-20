@@ -30,6 +30,9 @@ public final class ShopClientNetworking {
 		ClientPlayNetworking.registerGlobalReceiver(PacketIds.S2C_OPEN, (client, handler, buf, sender) -> {
 			String shopId = buf.readString(64);
 			client.execute(() -> {
+				// ★必须记住 id★：Hub 模式不透传 id 给界面，忘了就请求到空页（2026-10-20 商店页
+				// 一直显示"暂无商品"的真正原因：S2C_OPEN 的 id 被丢掉，Hub 发的是空 shopId）。
+				ShopClientState.setActiveShop(shopId);
 				if (com.akira.redtale.economy.client.ui.hub.ClientUiConfig.useHub) {
 					com.akira.redtale.economy.client.ui.hub.HubScreen.open(com.akira.redtale.economy.client.ui.hub.HubPage.SHOP);
 				} else {

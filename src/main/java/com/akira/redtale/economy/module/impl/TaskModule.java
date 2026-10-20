@@ -87,6 +87,8 @@ public final class TaskModule implements RedtaleModule {
 
 	/** poolId → 物品列表（已合并冲突）。 */
 	private static final Map<String, List<JsonObject>> POOLS = new LinkedHashMap<>();
+	/** poolId → 池显示名（任务卡标题用；没写就退回 poolId）。 */
+	private static final Map<String, String> POOL_LABELS = new LinkedHashMap<>();
 	private static final List<JsonObject> DEFS = new ArrayList<>();
 	private static volatile long catalogsLoadedAt;
 
@@ -108,6 +110,8 @@ public final class TaskModule implements RedtaleModule {
 	public static final class Task {
 		public int slot;
 		public String pool = "";
+		/** 任务卡标题（池的 displayName；旧存档没有这个字段，读取时按 pool 回填）。 */
+		public String label = "";
 		public List<ItemCount> items = new ArrayList<>();
 		public long budget;
 		public long appliedBudget;
@@ -177,6 +181,7 @@ public final class TaskModule implements RedtaleModule {
 	/** 递归扫描 pools/ 与 definitions/（{@code _} 开头跳过），并兼容旧平铺文件。 */
 	private static synchronized void loadCatalogs() {
 		POOLS.clear();
+		POOL_LABELS.clear();
 		DEFS.clear();
 		Path base = ConfigManager.get().baseDir();
 		boolean merge = "merge".equalsIgnoreCase(settings().getString("conflictPolicy", "outer"));
@@ -262,6 +267,8 @@ public final class TaskModule implements RedtaleModule {
 			items = new ArrayList<>();
 			POOLS.put(id, items);
 		}
+		String label = def.has("displayName") ? def.get("displayName").getAsString() : "";
+		if (!label.isBlank()) POOL_LABELS.putIfAbsent(id, label);
 		JsonElement arr = def.get("items");
 		if (arr == null || !arr.isJsonArray()) return;
 		for (JsonElement ie : arr.getAsJsonArray()) {
@@ -319,7 +326,13 @@ public final class TaskModule implements RedtaleModule {
 		if (f != null && Files.isRegularFile(f)) {
 			try (Reader r = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
 				Daily d = GSON.fromJson(r, Daily.class);
-				if (d != null && today.equals(d.date)) return d;
+				if (d != null && today.equals(d.date)) {
+					for (Task t : d.tasks) {
+						// 旧存档没存 label：按池回填，界面才不会只剩 "#0"
+						if (t.label == null || t.label.isBlank()) t.label = labelOf(t.pool);
+					}
+					return d;
+				}
 			} catch (Exception e) {
 				RedtaleEconomy.LOGGER.error("[tasks] 读取 {} 失败：{}", uuid, e.getMessage());
 			}
@@ -383,7 +396,13 @@ public final class TaskModule implements RedtaleModule {
 		return new ArrayList<>(DEFS);
 	}
 
-	/** 按池 id 取物品表；缺池 / 空池返回空列表。 */
+	/** 池显示名：池配置写了 {@code displayName} 就用它，否则退回池 id（不编造中文名）。 */
+	public static String labelOf(String poolId) {
+		if (poolId == null || poolId.isBlank()) return "";
+		String v = POOL_LABELS.get(poolId);
+		return v == null || v.isBlank() ? poolId : v;
+	}
+
 	/** 按池 id 取物品表；缺池 / 空池返回空列表。 */
 	private static List<JsonObject> poolItems(String poolId) {
 		List<JsonObject> items = POOLS.get(poolId);
@@ -442,6 +461,7 @@ public final class TaskModule implements RedtaleModule {
 					Task t = new Task();
 					t.slot = slot;
 					t.pool = poolId;
+					t.label = labelOf(poolId);
 					t.budget = budget;
 					t.appliedBudget = T;
 					t.completion = def.has("completion") ? def.get("completion").getAsString() : "submit";
@@ -464,6 +484,7 @@ public final class TaskModule implements RedtaleModule {
 		Task t = new Task();
 		t.slot = slot;
 		t.pool = poolId;
+		t.label = labelOf(poolId);
 		t.budget = budget;
 		t.completion = def.has("completion") ? def.get("completion").getAsString() : "submit";
 		long applied = 0;

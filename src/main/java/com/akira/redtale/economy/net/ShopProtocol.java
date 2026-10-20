@@ -23,15 +23,15 @@ public final class ShopProtocol {
 	 * <p>{@code mods} / {@code categories} 是 U11b 的筛选维度取值表（当前商店的全量 facet），
 	 * 客户端用它们画分类栏，不用自己再扫一遍商品。
 	 */
-	public record Page(String shopId, String query, int page, int totalPages, int totalItems,
-			List<Entry> entries, List<String> mods, List<String> categories) {
+	public record Page(String shopId, String shopName, String query, int page, int totalPages,
+			int totalItems, List<Entry> entries, List<String> mods, List<String> categories) {
 		public static Page empty(String shopId, String query) {
-			return new Page(shopId, query, 0, 0, 0, List.of(), List.of(), List.of());
+			return new Page(shopId, shopId, query, 0, 0, 0, List.of(), List.of(), List.of());
 		}
 
-		/** 兼容旧构造点（无 facet）。 */
+		/** 兼容旧构造点（无 facet / 无商店名）。 */
 		public Page(String shopId, String query, int page, int totalPages, int totalItems, List<Entry> entries) {
-			this(shopId, query, page, totalPages, totalItems, entries, List.of(), List.of());
+			this(shopId, shopId, query, page, totalPages, totalItems, entries, List.of(), List.of());
 		}
 	}
 
@@ -62,6 +62,7 @@ public final class ShopProtocol {
 
 	public static void writePage(PacketByteBuf buf, Page p) {
 		buf.writeString(p.shopId(), 64);
+		buf.writeString(p.shopName() == null ? p.shopId() : p.shopName(), 64);
 		buf.writeString(p.query() == null ? "" : p.query(), 128);
 		buf.writeVarInt(p.page());
 		buf.writeVarInt(p.totalPages());
@@ -86,6 +87,7 @@ public final class ShopProtocol {
 
 	public static Page readPage(PacketByteBuf buf) {
 		String shopId = buf.readString(64);
+		String shopName = buf.readString(64);
 		String query = buf.readString(128);
 		int page = buf.readVarInt();
 		int totalPages = buf.readVarInt();
@@ -112,7 +114,8 @@ public final class ShopProtocol {
 		if (buf.isReadable()) {
 			lastVisibleRows = Math.max(1, Math.min(54, buf.readVarInt()));
 		}
-		return new Page(shopId, query, page, totalPages, totalItems, list, mods, cats);
+		return new Page(shopId, shopName.isBlank() ? shopId : shopName, query, page, totalPages,
+				totalItems, list, mods, cats);
 	}
 
 	public static void writeAction(PacketByteBuf buf, ActionResult r) {

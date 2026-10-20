@@ -17,9 +17,9 @@ class TaskProtocolTest {
 		return new TaskProtocol.Snapshot("2026-10-20", 2, List.of(
 				new TaskProtocol.Task(0, 500, "submit", false,
 						List.of(new TaskProtocol.Item("minecraft:stone", 16, 7),
-								new TaskProtocol.Item("minecraft:oak_log", 8, 8))),
+								new TaskProtocol.Item("minecraft:oak_log", 8, 8)), "木材采集"),
 				new TaskProtocol.Task(1, 1200, "detect", true,
-						List.of(new TaskProtocol.Item("minecraft:iron_ingot", 3, 3)))));
+						List.of(new TaskProtocol.Item("minecraft:iron_ingot", 3, 3)), "矿物采集")));
 	}
 
 	@Test
@@ -46,6 +46,9 @@ class TaskProtocolTest {
 		assertEquals(1, t1.slot());
 		assertTrue(t1.claimed());
 		assertEquals("detect", t1.mode());
+		// U6：任务卡标题要能过协议（否则界面只剩 "#0"）
+		assertEquals("木材采集", t0.label());
+		assertEquals("矿物采集", t1.label());
 	}
 
 	@Test
@@ -61,7 +64,7 @@ class TaskProtocolTest {
 	void negativeCountsAreClampedToZeroOnWrite() {
 		TaskProtocol.Snapshot s = new TaskProtocol.Snapshot("d", -3, List.of(
 				new TaskProtocol.Task(0, 0, "submit", false,
-						List.of(new TaskProtocol.Item("x", -5, -9)))));
+						List.of(new TaskProtocol.Item("x", -5, -9)), "")));
 		PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
 		TaskProtocol.write(buf, s);
 		TaskProtocol.Snapshot r = TaskProtocol.read(buf);
