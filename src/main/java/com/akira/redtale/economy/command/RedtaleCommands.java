@@ -107,6 +107,8 @@ public final class RedtaleCommands {
 						.then(CommandManager.argument("code", com.mojang.brigadier.arguments.StringArgumentType.word())
 								.executes(RedtaleCommands::lang)));
 
+		// U8 收尾：/rt bal、/rt pay（根命名空间的 /bal /pay 保留）
+		EconomyCommands.attach(root);
 		// U8b：/rt <page> 直达页面（字面量优先，reload/save 等子命令不受影响）
 		PageCommands.attach(root);
 		// 无参 /rt = 打开签到页（最常用入口）

@@ -28,16 +28,34 @@ public final class EconomyCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
-		d.register(CommandManager.literal("bal").requires(src -> Permissions.has(src, Permissions.NODE_USE))
+		d.register(bal());
+		d.register(pay());
+	}
+
+	/**
+	 * U8 收尾：把 {@code bal} / {@code pay} 也挂到 {@code /rt} 下（{@code /rt bal}、{@code /rt pay}）。
+	 *
+	 * <p>根命名空间的 {@code /bal} {@code /pay} 按 spec §7 <b>保留</b>（玩家手里有老快捷键），
+	 * 这里只是让「一个入口」这件事彻底成立。字面量优先于 {@code /rt <page>} 的 page 参数节点，
+	 * 所以不会互相抢。
+	 */
+	public static void attach(com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> root) {
+		root.then(bal()).then(pay());
+	}
+
+	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> bal() {
+		return CommandManager.literal("bal").requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(ctx -> self(ctx))
 				.then(CommandManager.argument("player", StringArgumentType.word()).suggests(Suggest.players())
 						.requires(src -> Permissions.has(src, Permissions.NODE_USE))
-						.executes(EconomyCommands::other)));
+						.executes(EconomyCommands::other));
+	}
 
-		d.register(CommandManager.literal("pay").requires(src -> Permissions.has(src, Permissions.NODE_USE))
+	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> pay() {
+		return CommandManager.literal("pay").requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.then(CommandManager.argument("player", StringArgumentType.word()).suggests(Suggest.players())
 						.then(CommandManager.argument("amount", StringArgumentType.word())
-								.executes(EconomyCommands::pay))));
+								.executes(EconomyCommands::pay)));
 	}
 
 	private static int self(CommandContext<ServerCommandSource> ctx) {
