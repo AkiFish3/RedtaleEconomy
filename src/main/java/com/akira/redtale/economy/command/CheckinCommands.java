@@ -27,6 +27,7 @@ public final class CheckinCommands {
 	private static int doCheckin(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
+		PageCommands.hintLegacy(p, "checkin", "checkin");
 		if (p == null) {
 			src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
 			return 0;
@@ -35,10 +36,10 @@ public final class CheckinCommands {
 		switch (o.result()) {
 			case OK -> Feedback.success(src, Text.literal(
 					Lang.msg("checkin.ok", o.streak(), BalanceService.format(o.reward()))));
-			case NO_TIER -> src.sendFeedback(() -> Text.literal(
-					Lang.msg("checkin.noTier", o.streak())), false);
-			case ALREADY -> src.sendFeedback(() -> Text.literal(
-					Lang.msg("checkin.already", o.streak())), false);
+			case NO_TIER -> p.sendMessage(Text.literal(
+					Lang.msg("checkin.noTier", o.streak())), true);
+			case ALREADY -> p.sendMessage(Text.literal(
+					Lang.msg("checkin.already", o.streak())), true);
 			default -> src.sendError(Text.literal(Lang.msg("checkin.disabled")));
 		}
 		// U3：同步刷新可视化面板
@@ -67,7 +68,9 @@ public final class CheckinCommands {
 		long price = CheckinModule.store().getPathLong("makeup.price", 500);
 		String cost = ticket == null || ticket.isBlank()
 				? BalanceService.format(price) : ticket;
-		Text msg = Text.literal(Lang.msg(key, cost));
+		Text msg = Text.literal(Lang.msg(key, cost)
+				+ (r == CheckinModule.MakeupResult.OK
+						? " · " + CheckinModule.LAST_MAKEUP_DATE : ""));
 		if (r == CheckinModule.MakeupResult.OK) {
 			src.sendFeedback(() -> msg, false);
 			com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);
@@ -84,11 +87,8 @@ public final class CheckinCommands {
 			src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
 			return 0;
 		}
-		CheckinModule.State s = CheckinModule.state(p.getUuid());
-		String today = com.akira.redtale.economy.util.TimeUtil.today(CheckinModule.resetHour());
-		boolean signedToday = today.equals(s.lastDate);
-		src.sendFeedback(() -> Text.literal(Lang.msg("checkin.status", s.streak, s.totalDays,
-				Lang.t(signedToday ? "checkin.status.signed" : "checkin.status.notSigned"))), false);
+		// ★只下发快照，不往聊天里写东西★
+		// Hub 打开时会调用本命令拉数据，若在这里 sendFeedback，玩家每开一次界面就被刷一条"已签到"。
 		com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);
 		return 1;
 	}

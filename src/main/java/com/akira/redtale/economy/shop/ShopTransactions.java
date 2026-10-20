@@ -67,7 +67,9 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			RedtaleEconomy.LOGGER.error("[shop] 限购目录不可用：{}", e.getMessage());
 		}
 		CompensationQueue.init(r.path());
-		limitDate = TimeUtil.today();
+		limitDate = businessDay();
+		// R38b：跨天时清掉限购缓存（定时器 + 登录兜底都会触发，同一天只跑一次）
+		com.akira.redtale.economy.util.DayRollover.addListener((srv, day) -> onDayRollover());
 		LIMITS.clear();
 		ShopStock.init();
 	}
@@ -76,7 +78,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 	public static void reloadState() {
 		ShopStock.init();
 		LIMITS.clear();
-		limitDate = TimeUtil.today();
+		limitDate = businessDay();
 	}
 
 	@Override
@@ -116,7 +118,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 				return new ShopProtocol.ActionResult(false, "shop.premiumInsufficient", balance, stock);
 			}
 		} else if (balance < price) {
-			return new ShopProtocol.ActionResult(false, "cmd.pay.insufficient", balance, stock);
+			return new ShopProtocol.ActionResult(false, "shop.notEnoughMoney", balance, stock);
 		}
 
 		Item item = item(itemId);
@@ -124,15 +126,28 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			return new ShopProtocol.ActionResult(false, "shop.notFound", balance, 0);
 		}
 
+		// E2：钱先扣、货后发 —— 写前日志保证「扣了钱没发货」在崩溃后可退
+		com.google.gson.JsonObject payload = new com.google.gson.JsonObject();
+		payload.addProperty("shopId", shopId);
+		payload.addProperty("itemId", itemId);
+		payload.addProperty("count", count);
+		payload.addProperty("price", price);
+		com.akira.redtale.economy.journal.TxnJournal.Txn txn =
+				com.akira.redtale.economy.journal.TxnJournal.begin(
+						com.akira.redtale.economy.journal.TxnJournal.SHOP_BUY, player.getUuid(), payload);
+
 		// 1) 预占余额/高级币
 		final String ref = shopId + "/" + itemId + "x" + count;
 		if (premium) {
 			if (!PremiumModule.take(player.getUuid(), price)) {
+				txn.dismiss();
 				return new ShopProtocol.ActionResult(false, "shop.premiumInsufficient", balance, stock);
 			}
 		} else if (!BalanceService.take(player.getUuid(), price, Ledger.TYPE_SHOP_BUY, ref)) {
-			return new ShopProtocol.ActionResult(false, "cmd.pay.insufficient", balance, stock);
+			txn.dismiss();
+			return new ShopProtocol.ActionResult(false, "shop.notEnoughMoney", balance, stock);
 		}
+		txn.state("charged");
 		// R20：商店消费换战令经验（按实际扣掉的铜币算，赞助点消费不计）
 		if (!premium) {
 			try {
@@ -158,11 +173,14 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 				left = stock - count;
 				ShopStock.set(shopId, itemId, left);
 			}
+			txn.state("delivered");
+			txn.commit();
 
 			long after = BalanceService.get(player.getUuid());
 			return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
 		} catch (Throwable t) {
 			refundBuy(player, premium, price, ref, t);
+			txn.dismiss();
 			return new ShopProtocol.ActionResult(false, "shop.giveFailed",
 					BalanceService.get(player.getUuid()), stock);
 		}
@@ -198,7 +216,18 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 		}
 
 		// 先扣物品，再入账；入账失败要把物品还回去（Q2）
+		// E2：写前日志 —— 崩溃后能按 taken 状态把物品退回来
+		com.google.gson.JsonObject sellPayload = new com.google.gson.JsonObject();
+		sellPayload.addProperty("shopId", shopId);
+		sellPayload.addProperty("itemId", itemId);
+		sellPayload.addProperty("count", count);
+		sellPayload.addProperty("income", income);
+		com.akira.redtale.economy.journal.TxnJournal.Txn txn =
+				com.akira.redtale.economy.journal.TxnJournal.begin(
+						com.akira.redtale.economy.journal.TxnJournal.SHOP_SELL, player.getUuid(), sellPayload);
+
 		remove(player, item, count);
+		txn.state("taken");
 		try {
 			BalanceService.add(player.getUuid(), income, Ledger.TYPE_SHOP_SELL,
 					shopId + "/" + itemId + "x" + count);
@@ -206,6 +235,8 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			l.sold.merge(k, count, Integer::sum);
 			l.soldTotal += income;
 			save(player.getUuid(), l);
+			txn.state("paid");
+			txn.commit();
 
 			long after = BalanceService.get(player.getUuid());
 			return new ShopProtocol.ActionResult(true, "shop.sellOk", after, -1);
@@ -213,6 +244,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			ItemStack back = new ItemStack(item, count);
 			player.getInventory().insertStack(back);
 			if (!back.isEmpty()) player.dropItem(back, false);
+			txn.dismiss();
 			CompensationQueue.enqueue(new CompensationQueue.Entry(
 					java.time.LocalDateTime.now().format(TS), player.getUuid().toString(),
 					shopId, itemId, count, income, "sell-add-failed: " + t.getMessage()));
@@ -243,6 +275,17 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 				(refunded ? "refunded: " : "REFUND-FAILED: ") + cause.getMessage()));
 		RedtaleEconomy.LOGGER.error("[shop] 购买发货失败（{}），已{} {}：{}",
 				ref, refunded ? "退款" : "未能退款", price, cause.getMessage());
+	}
+
+	/** R38b：新业务日 → 清空限购缓存（下一次访问按新日期重新读盘）。 */
+	public static void onDayRollover() {
+		LIMITS.clear();
+		limitDate = businessDay();
+	}
+
+	/** 业务日（含 core.resetHour，之前用裸 today() 导致 resetHour 对商店不生效）。 */
+	private static String businessDay() {
+		return TimeUtil.today(com.akira.redtale.economy.config.CoreConfig.resetHour());
 	}
 
 	// ---------------------------------------------------------------- 辅助
@@ -327,7 +370,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 	}
 
 	private static Limit limit(UUID uuid) {
-		String today = TimeUtil.today();
+		String today = businessDay();
 		if (!today.equals(limitDate)) {
 			LIMITS.clear();
 			limitDate = today;

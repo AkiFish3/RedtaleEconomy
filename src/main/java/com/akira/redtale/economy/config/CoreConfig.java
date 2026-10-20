@@ -18,6 +18,8 @@ public final class CoreConfig {
 					"时区：server=跟随服务器系统时区，或填 IANA 名字（Asia/Shanghai）"))
 			.field("dateFormat", ConfigSchema.string("yyyy-MM-dd",
 					"日期字符串格式（签到/任务/流水分文件都用它）"))
+			.field("resetHour", ConfigSchema.integer(0, 0, 23,
+					"跨天重置时刻（0-23）：R38b 的定时器与登录兜底都按它判定新的一天"))
 			.field("debug", ConfigSchema.bool(false, "调试日志：打印每次余额变动与包收发"))
 			.field("commands", ConfigSchema.obj("命令权限")
 					.field("reloadPermissionLevel", ConfigSchema.integer(4, 0, 4,
@@ -72,6 +74,11 @@ public final class CoreConfig {
 
 	public static String dateFormat() {
 		return store().getString("dateFormat", "yyyy-MM-dd");
+	}
+
+	/** R38b：业务日切换时刻（0-23）。 */
+	public static int resetHour() {
+		return (int) store().getLong("resetHour", 0);
 	}
 
 	public static boolean debug() {

@@ -3,6 +3,7 @@ package com.akira.redtale.economy.shop;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.ShopConfig;
+import com.akira.redtale.economy.net.ShopFilter;
 import com.akira.redtale.economy.net.ShopProtocol;
 import com.akira.redtale.economy.net.ShopSource;
 import com.google.gson.Gson;
@@ -105,6 +106,9 @@ public final class ShopCatalog implements ShopSource {
 	private static final Map<String, ShopDef> SHOPS = new LinkedHashMap<>();
 	private static volatile boolean ready;
 	private static volatile long loadedAt;
+	/** E1：加载时被钳制的商品数 + 首个样例（只读，供 /shop admin priceguard 展示）。 */
+	private static volatile int priceViolations;
+	private static volatile String priceViolationSample = "";
 
 	private ShopCatalog() {
 	}
@@ -128,6 +132,8 @@ public final class ShopCatalog implements ShopSource {
 
 	public static synchronized void reload() {
 		SHOPS.clear();
+		priceViolations = 0;
+		priceViolationSample = "";
 		ready = false;
 		Path base = ConfigManager.get().baseDir().resolve(SHOPS_DIR);
 		if (!Files.isDirectory(base)) {
@@ -233,6 +239,34 @@ public final class ShopCatalog implements ShopSource {
 					(int) num(it, "dailyBuyLimit", -1),
 					bool(it, "enabled", true)));
 		}
+		// E1：历史文件里可能已经写了 sell>=buy —— 不拒绝加载（会导致商品消失），
+		// 只在内存里钳制并汇总一条日志，便于运营按 id 去改文件。
+		int violations = 0;
+		String sample = "";
+		for (ItemDef it : def.items.values()) {
+			if (!it.enabled()) continue;
+			if (PricePolicy.check(it.buy(), it.sell()) != null) {
+				if (violations == 0) sample = it.id() + "(buy=" + it.buy() + ",sell=" + it.sell() + ")";
+				violations++;
+			}
+		}
+		if (violations > 0) {
+			priceViolations += violations;
+			if (priceViolationSample.isEmpty()) priceViolationSample = shopId + "/" + sample;
+			RedtaleEconomy.LOGGER.warn("[shop] {} 有 {} 件商品卖价不低于买价，已在内存中钳制（例：{}），"
+					+ "建议改文件；关闭校验见 shop/settings.json limits.enforceSellBelowBuy",
+					shopId, violations, sample);
+		}
+	}
+
+	/** E1：本次加载被钳制的商品数（文件里 sell ≥ 允许上限）。0 = 干净。 */
+	public static int priceViolations() {
+		return priceViolations;
+	}
+
+	/** E1：首个违规样例 {@code shopId/itemId(buy=..,sell=..)}；无违规时为空串。 */
+	public static String priceViolationSample() {
+		return priceViolationSample;
 	}
 
 	private static String str(JsonObject o, String k, String def) {
@@ -259,24 +293,25 @@ public final class ShopCatalog implements ShopSource {
 	 * @param sell    {@code null}=不改
 	 * @param stock   {@code null}=不改（同时清掉库存覆盖值）
 	 * @param enabled {@code null}=不改
+	 * @return {@code null}=成功；否则为拒绝原因（E1 价格护栏 / 文件错误），可直接展示给管理员
 	 */
-	public static synchronized boolean updateItem(String shopId, String itemId, Long buy, Long sell,
+	public static synchronized String updateItem(String shopId, String itemId, Long buy, Long sell,
 			Long stock, Boolean enabled) {
 		ShopDef def = SHOPS.get(shopId);
-		if (def == null || def.file() == null) return false;
+		if (def == null || def.file() == null) return "商店不存在或没有归属文件";
 		Path file = def.file();
 		JsonObject root;
 		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
 			root = GSON.fromJson(r, JsonObject.class);
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.error("[shop] 回写前读取 {} 失败：{}", file.getFileName(), e.getMessage());
-			return false;
+			return "读取 " + file.getFileName() + " 失败";
 		}
-		if (root == null || !root.has("shops")) return false;
+		if (root == null || !root.has("shops")) return "商店文件结构异常";
 		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
-		if (shopEl == null || !shopEl.isJsonObject()) return false;
+		if (shopEl == null || !shopEl.isJsonObject()) return "商店不在该文件中";
 		JsonElement itemsEl = shopEl.getAsJsonObject().get("items");
-		if (itemsEl == null || !itemsEl.isJsonArray()) return false;
+		if (itemsEl == null || !itemsEl.isJsonArray()) return "商品数组缺失";
 
 		JsonObject target = null;
 		for (JsonElement el : itemsEl.getAsJsonArray()) {
@@ -285,23 +320,23 @@ public final class ShopCatalog implements ShopSource {
 				break;
 			}
 		}
-		if (target == null) return false;
+		if (target == null) return "商品不在该商店中";
 		String bad = checkPrice(shopId, itemId, target, buy, sell);
 		if (bad != null) {
 			RedtaleEconomy.LOGGER.warn("[shop] 拒绝改价 {}/{}：{}", shopId, itemId, bad);
-			return false;
+			return bad;
 		}
 		if (buy != null) target.addProperty("buy", buy);
 		if (sell != null) target.addProperty("sell", sell);
 		if (stock != null) target.addProperty("stock", stock);
 		if (enabled != null) target.addProperty("enabled", enabled);
 
-		if (!writeWithBackup(file, root)) return false;
+		if (!writeWithBackup(file, root)) return "写入 " + file.getFileName() + " 失败（详见日志）";
 		reload();
 		if (stock != null) ShopStock.set(shopId, itemId, stock);
 		ConfigManager.logEdit("shop/" + file.getFileName(), "admin update " + shopId + "/" + itemId,
 				"buy=" + buy + " sell=" + sell + " stock=" + stock + " enabled=" + enabled);
-		return true;
+		return null;
 	}
 
 	/**
@@ -318,6 +353,12 @@ public final class ShopCatalog implements ShopSource {
 		if (r == null) r = checkOne(item, "sell", sell, min, max, maxPct);
 		if (r == null) r = checkDaily(shopId, itemId, item, "buy", buy, dayPct);
 		if (r == null) r = checkDaily(shopId, itemId, item, "sell", sell, dayPct);
+		// E1：按「改完之后」的这一对价格判定，只改一边也要能拦住
+		if (r == null) {
+			long effBuy = buy != null ? buy : num(item, "buy", 0);
+			long effSell = sell != null ? sell : num(item, "sell", 0);
+			r = PricePolicy.check(effBuy, effSell);
+		}
 		return r;
 	}
 
@@ -519,23 +560,32 @@ public final class ShopCatalog implements ShopSource {
 		return true;
 	}
 
-	/** 往已有商店追加商品（默认无限库存、不限购）。 */
-	public static synchronized boolean addItem(String shopId, String itemId, long buy, long sell,
+	/**
+	 * 往已有商店追加商品（默认无限库存、不限购）。
+	 *
+	 * @return {@code null}=成功；否则为拒绝原因（含 E1 价格护栏）
+	 */
+	public static synchronized String addItem(String shopId, String itemId, long buy, long sell,
 			int dailyBuyLimit) {
 		ShopDef def = SHOPS.get(shopId);
-		if (def == null || def.file() == null) return false;
-		if (itemId.indexOf(':') < 0) return false;
+		if (def == null || def.file() == null) return "商店不存在";
+		if (itemId.indexOf(':') < 0) return "商品 id 缺命名空间：" + itemId;
+		String priceError = PricePolicy.check(buy, sell);
+		if (priceError != null) {
+			RedtaleEconomy.LOGGER.warn("[shop] 拒绝新增 {}/{}：{}", shopId, itemId, priceError);
+			return priceError;
+		}
 		Path file = def.file();
 		JsonObject root;
 		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
 			root = GSON.fromJson(r, JsonObject.class);
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.error("[shop] 追加商品前读取 {} 失败：{}", file.getFileName(), e.getMessage());
-			return false;
+			return "读取商店文件失败";
 		}
-		if (root == null || !root.has("shops")) return false;
+		if (root == null || !root.has("shops")) return "商店文件结构异常";
 		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
-		if (shopEl == null || !shopEl.isJsonObject()) return false;
+		if (shopEl == null || !shopEl.isJsonObject()) return "商店不在该文件中";
 		JsonObject shop = shopEl.getAsJsonObject();
 		JsonElement itemsEl = shop.get("items");
 		JsonArray items;
@@ -546,7 +596,9 @@ public final class ShopCatalog implements ShopSource {
 			shop.add("items", items);
 		}
 		for (JsonElement el : items) {
-			if (el.isJsonObject() && itemId.equals(str(el.getAsJsonObject(), "id", ""))) return false;
+			if (el.isJsonObject() && itemId.equals(str(el.getAsJsonObject(), "id", ""))) {
+				return "商品已存在：" + itemId;
+			}
 		}
 		JsonObject it = new JsonObject();
 		it.addProperty("id", itemId);
@@ -556,11 +608,11 @@ public final class ShopCatalog implements ShopSource {
 		it.addProperty("stock", -1);
 		it.addProperty("dailyBuyLimit", dailyBuyLimit);
 		items.add(it);
-		if (!writeWithBackup(file, root)) return false;
+		if (!writeWithBackup(file, root)) return "写入商店文件失败";
 		reload();
 		ConfigManager.logEdit("shop/" + file.getFileName(), "admin add " + shopId + "/" + itemId,
 				"buy=" + buy + " sell=" + sell);
-		return true;
+		return null;
 	}
 
 	private static boolean writeWithBackup(Path file, JsonObject root) {
@@ -613,33 +665,92 @@ public final class ShopCatalog implements ShopSource {
 
 	@Override
 	public int count(String shopId, String query) {
-		return filtered(shopId, query).size();
+		return filtered(shopId, query, ShopFilter.NONE).size();
 	}
 
 	@Override
 	public List<ShopProtocol.Entry> slice(String shopId, String query, int offset, int limit) {
-		List<ShopProtocol.Entry> all = filtered(shopId, query);
+		return slice(shopId, query, ShopFilter.NONE, offset, limit);
+	}
+
+	// ---------------------------------------------------------------- U11b：多维筛选
+
+	@Override
+	public int count(String shopId, String query, ShopFilter filter) {
+		return filtered(shopId, query, filter == null ? ShopFilter.NONE : filter).size();
+	}
+
+	@Override
+	public List<ShopProtocol.Entry> slice(String shopId, String query, ShopFilter filter,
+			int offset, int limit) {
+		List<ShopProtocol.Entry> all = filtered(shopId, query, filter == null ? ShopFilter.NONE : filter);
 		if (offset < 0 || offset >= all.size()) return List.of();
 		int to = Math.min(all.size(), offset + Math.max(0, limit));
 		return all.subList(offset, to);
 	}
 
-	private List<ShopProtocol.Entry> filtered(String shopId, String query) {
+	@Override
+	public List<String> mods(String shopId) {
 		ShopDef def = SHOPS.get(shopId);
 		if (def == null) return List.of();
-		boolean q = query != null && !query.isBlank();
-		String ql = q ? query.toLowerCase(Locale.ROOT) : "";
+		java.util.TreeSet<String> set = new java.util.TreeSet<>();
+		for (ItemDef it : def.items.values()) {
+			if (it.enabled()) set.add(namespaceOf(it.id()));
+		}
+		return new ArrayList<>(set);
+	}
+
+	@Override
+	public List<String> categories(String shopId) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null) return List.of();
+		java.util.TreeSet<String> set = new java.util.TreeSet<>();
+		for (ItemDef it : def.items.values()) {
+			if (it.enabled() && !it.category().isBlank()) set.add(it.category());
+		}
+		return new ArrayList<>(set);
+	}
+
+	private static String namespaceOf(String itemId) {
+		int i = itemId.indexOf(':');
+		return i < 0 ? "minecraft" : itemId.substring(0, i);
+	}
+
+	/** 搜索（空格分词 AND）+ 筛选（mod / 类型 / 价格 / 库存）叠加。 */
+	private List<ShopProtocol.Entry> filtered(String shopId, String query, ShopFilter f) {
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null) return List.of();
+		ShopFilter filter = f == null ? ShopFilter.NONE : f;
+		// 多关键词 AND：「木头 台阶」= 两个词都要命中（id 或 category）
+		String[] tokens = query == null || query.isBlank()
+				? new String[0]
+				: query.trim().toLowerCase(Locale.ROOT).split("\\s+");
+		String mod = filter.modOrEmpty().toLowerCase(Locale.ROOT);
+		String cat = filter.categoryOrEmpty().toLowerCase(Locale.ROOT);
 		List<ShopProtocol.Entry> out = new ArrayList<>();
 		for (ItemDef it : def.items.values()) {
 			if (!it.enabled()) continue;
-			if (q && !it.id().toLowerCase(Locale.ROOT).contains(ql)
-					&& !it.category().toLowerCase(Locale.ROOT).contains(ql)) {
-				continue;
-			}
-			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
+			if (!mod.isEmpty() && !namespaceOf(it.id()).toLowerCase(Locale.ROOT).equals(mod)) continue;
+			if (!cat.isEmpty() && !it.category().toLowerCase(Locale.ROOT).equals(cat)) continue;
 			long sell = sellPrice(it);
-			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock,
-					it.buy() > 0, sell > 0));
+			// 价格按「能成交的价格」判断：能买看买价，只能卖看卖价
+			long price = it.buy() > 0 ? it.buy() : sell;
+			if (filter.minPrice() > 0 && price < filter.minPrice()) continue;
+			if (filter.maxPrice() > 0 && price > filter.maxPrice()) continue;
+			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
+			if (filter.inStockOnly() && stock == 0) continue;
+			if (tokens.length > 0) {
+				String hay = (it.id() + " " + it.category()).toLowerCase(Locale.ROOT);
+				boolean all = true;
+				for (String t : tokens) {
+					if (!hay.contains(t)) {
+						all = false;
+						break;
+					}
+				}
+				if (!all) continue;
+			}
+			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock, it.buy() > 0, sell > 0));
 		}
 		return out;
 	}
@@ -675,12 +786,18 @@ public final class ShopCatalog implements ShopSource {
 		return new ShopProtocol.Entry(it.id(), it.buy(), sell, stock, it.buy() > 0, sell > 0);
 	}
 
-	/** 卖出价：文件里 sell>0 用它，否则按 buy × sellPriceRatio 兜底。 */
+	/**
+	 * 卖出价：文件里 sell>0 用它，否则按 buy × sellPriceRatio 兜底。
+	 *
+	 * <p>E1：两条路都过 {@link PricePolicy#clampSell}，历史文件里写错的
+	 * （sell ≥ buy、ratio ≥ 1）在<b>读取时</b>就被压到合法区间，不写回文件。
+	 */
 	public static long sellPrice(ItemDef it) {
-		if (it.sell() > 0) return it.sell();
-		double ratio = ShopConfig.sellPriceRatio();
+		if (it.sell() > 0) return PricePolicy.clampSell(it.buy(), it.sell());
+		double ratio = PricePolicy.clampRatio(ShopConfig.sellPriceRatio());
 		if (ratio <= 0 || it.buy() <= 0) return 0L;
-		return (long) Math.floor(it.buy() * ratio);
+		long v = (long) Math.floor(it.buy() * ratio);
+		return PricePolicy.clampSell(it.buy(), v);
 	}
 
 	public static int dailyLimitOf(String shopId, String itemId) {

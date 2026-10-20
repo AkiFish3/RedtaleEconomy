@@ -55,6 +55,7 @@ public final class BoardCommands {
 	private static int list(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
+  PageCommands.hintLegacy(p, "board", null);
 		if (p == null) return onlyPlayer(src);
 		if (!BoardModule.enabled()) {
 			src.sendError(Text.literal(Lang.msg("board.disabled")));

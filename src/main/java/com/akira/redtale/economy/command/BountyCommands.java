@@ -41,6 +41,7 @@ public final class BountyCommands {
 	/** U7：列表类信息进 GUI；文本列表保留在 {@code /bounty list}。 */
 	private static int open(CommandContext<ServerCommandSource> ctx) {
 		ServerPlayerEntity p = ctx.getSource().getPlayer();
+  PageCommands.hintLegacy(p, "bounty", "bounty");
 		if (p == null) return onlyPlayer(ctx.getSource());
 		if (!BountyModule.enabled()) {
 			ctx.getSource().sendError(Text.literal(Lang.msg("bounty.disabled")));
@@ -58,23 +59,8 @@ public final class BountyCommands {
 			src.sendError(Text.literal(Lang.msg("bounty.disabled")));
 			return 0;
 		}
-		var slots = BountyModule.slots(p.getUuid());
-		src.sendFeedback(() -> Text.literal(Lang.msg("bounty.header")), false);
-		if (slots.isEmpty()) {
-			src.sendFeedback(() -> Text.literal(Lang.msg("bounty.empty")), false);
-			return 1;
-		}
-		for (int i = 0; i < slots.size(); i++) {
-			BountyState.Slot s = slots.get(i);
-			BountyConfig.Def d = BountyModule.definition(s.id);
-			if (d == null) continue;
-			boolean done = s.progress >= d.count();
-			String line = Lang.msg("bounty.line", i + 1, d.id(), s.progress, d.count(),
-					BalanceService.format(d.money()))
-					+ (s.claimed ? Lang.t("bounty.claimed") : done ? Lang.t("bounty.ready") : "");
-			src.sendFeedback(() -> Text.literal(line), false);
-		}
-		src.sendFeedback(() -> Text.literal(Lang.t("bounty.hint")), false);
+		// 只下发快照（Hub 用它画卡片），不刷聊天
+		com.akira.redtale.economy.net.BountyNetworking.send(p);
 		return 1;
 	}
 
@@ -85,10 +71,9 @@ public final class BountyCommands {
 		int index = IntegerArgumentType.getInteger(ctx, "index") - 1;
 		long reward = BountyModule.claim(p.getUuid(), index);
 		if (reward < 0) {
-			src.sendError(Text.literal(Lang.msg("bounty.notReady")));
+			p.sendMessage(Text.literal(Lang.msg("bounty.notReady")), true);
 			return 0;
 		}
-		src.sendFeedback(() -> Text.literal(Lang.msg("bounty.claimedOk", BalanceService.format(reward))), false);
 		return 1;
 	}
 
@@ -106,12 +91,11 @@ public final class BountyCommands {
 			}
 		}
 		if (n == 0) {
-			src.sendError(Text.literal(Lang.msg("bounty.notReady")));
+			p.sendMessage(Text.literal(Lang.msg("bounty.notReady")), true);
 			return 0;
 		}
 		final int count = n;
 		final long sum = total;
-		src.sendFeedback(() -> Text.literal(Lang.msg("bounty.claimedAll", count, BalanceService.format(sum))), false);
 		return 1;
 	}
 
@@ -120,7 +104,6 @@ public final class BountyCommands {
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
 		BountyModule.reroll(p.getUuid());
-		src.sendFeedback(() -> Text.literal(Lang.msg("bounty.rerolled")), false);
 		return list(ctx);
 	}
 

@@ -1,0 +1,206 @@
+package com.akira.redtale.economy.client.ui.hub;
+
+import com.akira.redtale.economy.net.CheckinProtocol;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.text.Text;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
+
+/**
+ * Hub 内的签到日历页（U3，按 spec §48.3 / §49.1）。
+ *
+ * <p>月历 7 列、周一开头；已签日由 {@code lastDate + streak} 反推（无需协议扩展），
+ * 档位日（7/14/21/28）画礼盒角标，今天金色描边。
+ *
+ * <p>纯静态绘制 + 命中测试，不持有状态；月份偏移与快照由 {@link HubScreen} 保存。
+ */
+public final class HubCheckinPage {
+
+	private static final int CELL_W = 42;
+	private static final int CELL_H = 30;
+	private static final int ROW_GAP = 2;
+
+	private static final int C_CELL_EDGE = 0xFF3A3A3A;
+	private static final int C_SIGNED = 0xFF243026;
+	private static final int C_FUTURE = 0xFF1C1C1C;
+	private static final int C_GREEN = 0xFF6BD46B;
+
+	private HubCheckinPage() {
+	}
+
+	/** 命中结果。 */
+	public enum Action {
+		NONE, PREV_MONTH, NEXT_MONTH, CHECKIN, MAKEUP
+	}
+
+	private static LocalDate lastSignedDate(CheckinProtocol.Snapshot s) {
+		if (s == null || s.lastDate() == null || s.lastDate().isEmpty()) return null;
+		try {
+			return LocalDate.parse(s.lastDate());
+		} catch (DateTimeParseException ex) {
+			return null;
+		}
+	}
+
+	private static boolean isSigned(CheckinProtocol.Snapshot s, LocalDate d) {
+		LocalDate last = lastSignedDate(s);
+		if (last == null || s.streak() <= 0) return false;
+		LocalDate from = last.minusDays(s.streak() - 1L);
+		return !d.isBefore(from) && !d.isAfter(last);
+	}
+
+	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
+			CheckinProtocol.Snapshot snap, int monthOffset, double mouseX, double mouseY) {
+		YearMonth ym = YearMonth.now().plusMonths(monthOffset);
+		LocalDate today = LocalDate.now();
+
+		// 标题行
+		dc.drawText(tr, Text.literal(ym.getYear() + " 年 " + ym.getMonthValue() + " 月"),
+				x + 18, y + 2, HubTheme.TEXT, false);
+		// 连登里程碑进度条（7 / 14 / 28 天），替代原来错误的「7 的倍数」黄点
+		int streak = snap == null ? 0 : snap.streak();
+		List<Integer> miles = snap == null || snap.milestones().isEmpty()
+				? List.of(7, 14, 28) : snap.milestones();
+		int next = miles.get(miles.size() - 1);
+		for (int m : miles) {
+			if (streak < m) {
+				next = m;
+				break;
+			}
+		}
+		int barW = 64;
+		int barX = x + w - barW - 34;
+		int barY = y + 4;
+		dc.fill(barX, barY, barX + barW, barY + 4, HubTheme.OUTLINE);
+		int fillW = (int) (barW * Math.min(1.0, streak / (double) Math.max(1, next)));
+		dc.fill(barX, barY, barX + fillW, barY + 4, HubTheme.PRIMARY);
+		// 里程碑刻点
+		for (int m : miles) {
+			int mx = barX + (int) (barW * Math.min(1.0, m / (double) Math.max(1, next)));
+			dc.fill(mx - 1, barY - 2, mx + 1, barY + 6, streak >= m ? HubTheme.PRIMARY : HubTheme.OUTLINE);
+		}
+		String label = streak + "/" + next;
+		dc.drawText(tr, Text.literal(label), barX + barW + 4, y + 1, HubTheme.GOLD, false);
+		// 左右箭头
+		dc.drawText(tr, Text.literal("◀"), x + 2, y + 2, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal("▶"), x + w - 10, y + 2, HubTheme.MUTED, false);
+
+		// 星期
+		String[] wd = {"一", "二", "三", "四", "五", "六", "日"};
+		for (int i = 0; i < 7; i++) {
+			dc.drawText(tr, Text.literal(wd[i]), x + i * (CELL_W + ROW_GAP) + 14, y + 18, HubTheme.MUTED, false);
+		}
+
+		// 网格
+		int gridY = y + 32;
+		LocalDate first = ym.atDay(1);
+		int lead = first.getDayOfWeek().getValue() - 1; // 周一=0
+		int days = ym.lengthOfMonth();
+		for (int day = 1; day <= days; day++) {
+			int idx = lead + day - 1;
+			int col = idx % 7;
+			int row = idx / 7;
+			int cx = x + col * (CELL_W + ROW_GAP);
+			int cy = gridY + row * (CELL_H + ROW_GAP);
+			LocalDate d = ym.atDay(day);
+			boolean signed = isSigned(snap, d);
+			boolean isToday = d.equals(today);
+			boolean future = d.isAfter(today);
+
+			// 原版主题：未来日浅灰、已签白底+绿罩；其它主题保持深色
+			int bg = HubTheme.vanilla
+					? (signed ? 0xFFF4FAF4 : (future ? 0xFFBEBEBE : 0xFFD6D6D6))
+					: (signed ? C_SIGNED : (future ? C_FUTURE : HubTheme.CARD));
+			dc.fill(cx, cy, cx + CELL_W, cy + CELL_H, bg);
+			int edge = HubTheme.vanilla ? 0xFF8B8B8B : C_CELL_EDGE;
+			dc.fill(cx, cy, cx + CELL_W, cy + 1, edge);
+			dc.fill(cx, cy + CELL_H - 1, cx + CELL_W, cy + CELL_H, edge);
+			if (signed) {
+				// 绿色遮罩（半透明），保留下面的白底
+				dc.fill(cx + 1, cy + 1, cx + CELL_W - 1, cy + CELL_H - 1, 0x3350C878);
+			}
+
+			int textColor = HubTheme.vanilla
+					? (future ? 0xFF7A7A7A : (signed ? 0xFF2E7D32 : 0xFF303030))
+					: (future ? 0xFF6A6A6A : HubTheme.TEXT);
+			dc.drawText(tr, Text.literal(String.valueOf(day)), cx + 4, cy + 4, textColor, false);
+
+			if (signed) {
+				dc.drawText(tr, Text.literal("✓"), cx + CELL_W - 12, cy + 4, C_GREEN, false);
+			}
+			if (isToday) {
+				// 金色描边
+				dc.fill(cx, cy, cx + CELL_W, cy + 1, HubTheme.GOLD);
+				dc.fill(cx, cy + CELL_H - 1, cx + CELL_W, cy + CELL_H, HubTheme.GOLD);
+				dc.fill(cx, cy, cx + 1, cy + CELL_H, HubTheme.GOLD);
+				dc.fill(cx + CELL_W - 1, cy, cx + CELL_W, cy + CELL_H, HubTheme.GOLD);
+			}
+		}
+
+		// 底部：今日奖励 + 按钮
+		int infoY = y + h - 58;
+		dc.fill(x, infoY, x + w, infoY + 26, HubTheme.CARD);
+		long todayMoney = 0;
+		if (snap != null && !snap.points().isEmpty()) {
+			for (CheckinProtocol.Point p : snap.points()) {
+				if (p.current()) {
+					todayMoney = p.money();
+					break;
+				}
+			}
+		}
+		dc.drawText(tr, Text.literal("今日奖励"), x + 6, infoY + 4, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal(todayMoney > 0 ? "+" + todayMoney + " 铜" : "—"),
+				x + 6, infoY + 14, HubTheme.GOLD, false);
+
+		int btnY = infoY + 32 + (HubTheme.vanilla ? 2 : 0);
+		int btnH = HubTheme.vanilla ? 22 : 20;
+		drawButton(dc, tr, x, btnY, 96, btnH, "签到", true, mouseX, mouseY,
+				HubWidgets.Variant.PRIMARY);
+		int makeupLeft = snap == null ? 0 : snap.makeupLeft();
+		drawButton(dc, tr, x + 104, btnY, 110, btnH,
+				"补签（剩 " + makeupLeft + " 次）", makeupLeft > 0, mouseX, mouseY,
+				HubWidgets.Variant.SECONDARY);
+	}
+
+	private static void drawButton(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
+			String label, boolean enabled, double mouseX, double mouseY,
+			HubWidgets.Variant variant) {
+		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+		HubWidgets.button(dc, tr, x, y, w, h, label, variant, hover, false, enabled);
+	}
+
+	private static void drawButtonOld(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
+			String label, boolean enabled, double mouseX, double mouseY) {
+		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+		int bg = enabled ? (hover ? 0xFF4A3F22 : 0xFF3A3020) : 0xFF242424;
+		int edge = enabled ? HubTheme.GOLD : 0xFF3A3A3A;
+		dc.fill(x, y, x + w, y + h, bg);
+		dc.fill(x, y, x + w, y + 1, edge);
+		dc.fill(x, y + h - 1, x + w, y + h, edge);
+		dc.fill(x, y, x + 1, y + h, edge);
+		dc.fill(x + w - 1, y, x + w, y + h, edge);
+		int color = enabled ? 0xFFFFE9A8 : 0xFF6A6A6A;
+		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 6, color, false);
+	}
+
+	public static Action click(double mouseX, double mouseY, int x, int y, int w, int h,
+			CheckinProtocol.Snapshot snap, int monthOffset) {
+		// 月份箭头
+		if (mouseY >= y && mouseY <= y + 14) {
+			if (mouseX >= x && mouseX <= x + 14) return Action.PREV_MONTH;
+			if (mouseX >= x + w - 14 && mouseX <= x + w) return Action.NEXT_MONTH;
+		}
+		int infoY = y + h - 58;
+		int btnY = infoY + 30;
+		if (mouseY >= btnY && mouseY <= btnY + 20) {
+			if (mouseX >= x && mouseX <= x + 96) return Action.CHECKIN;
+			if (mouseX >= x + 104 && mouseX <= x + 214) return Action.MAKEUP;
+		}
+		return Action.NONE;
+	}
+}

@@ -42,30 +42,15 @@ public final class PassCommands {
 	private static int info(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
+  PageCommands.hintLegacy(p, "pass", "pass");
 		if (p == null) return onlyPlayer(src);
 		if (!BattlePassModule.enabled()) {
 			src.sendError(Text.literal(Lang.msg("pass.disabled")));
 			return 0;
 		}
-		BattlePassModule.PassData d = BattlePassModule.snapshot(p.getUuid());
-		int level = BattlePassModule.levelFor(d.xp);
-		int pct = (int) Math.round(BattlePassModule.progress(d.xp) * 100);
-		src.sendFeedback(() -> Text.literal(Lang.msg("pass.header",
-				BattlePassConfig.seasonName(), level, BattlePassConfig.maxLevel())), false);
-		src.sendFeedback(() -> Text.literal(Lang.msg("pass.bar", pct, d.xp,
-				BattlePassModule.xpForLevel(Math.min(BattlePassConfig.maxLevel(), level + 1)))), false);
-		src.sendFeedback(() -> Text.literal(Lang.msg("pass.track",
-				d.premium ? Lang.t("pass.unlocked") : Lang.t("pass.locked"))), false);
-		src.sendFeedback(() -> Text.literal(Lang.msg("pass.free", freeCount(d), BattlePassConfig.track("free").size())), false);
-		src.sendFeedback(() -> Text.literal(Lang.msg("pass.premiumTrack",
-			 d.claimedPremium.size(), BattlePassConfig.track("premium").size())), false);
-		src.sendFeedback(() -> Text.literal(Lang.msg("pass.hint",
-				StringArgumentType.escapeIfRequired("pass claim <level>"))), false);
+		// 只下发快照，界面自己渲染；聊天框保持干净
+		com.akira.redtale.economy.net.PassNetworking.send(p);
 		return 1;
-	}
-
-	private static int freeCount(BattlePassModule.PassData d) {
-		return d.claimedFree.size();
 	}
 
 	private static int claim(CommandContext<ServerCommandSource> ctx, String track) {
@@ -76,23 +61,22 @@ public final class PassCommands {
 		BattlePassModule.ClaimResult r = BattlePassModule.claim(p.getUuid(), track, level);
 		switch (r) {
 			case OK -> {
-				src.sendFeedback(() -> Text.literal(Lang.msg("pass.claimed", track, level)), false);
 				return 1;
 			}
 			case LOCKED -> {
-				src.sendError(Text.literal(Lang.msg("pass.needUnlock")));
+				p.sendMessage(Text.literal(Lang.msg("pass.needUnlock")), true);
 				return 0;
 			}
 			case NOT_REACHED -> {
-				src.sendError(Text.literal(Lang.msg("pass.notReached", level)));
+				p.sendMessage(Text.literal(Lang.msg("pass.notReached", level)), true);
 				return 0;
 			}
 			case ALREADY -> {
-				src.sendError(Text.literal(Lang.msg("pass.already")));
+				p.sendMessage(Text.literal(Lang.msg("pass.already")), true);
 				return 0;
 			}
 			default -> {
-				src.sendError(Text.literal(Lang.msg("pass.disabled")));
+				p.sendMessage(Text.literal(Lang.msg("pass.disabled")), true);
 				return 0;
 			}
 		}
@@ -105,6 +89,7 @@ public final class PassCommands {
 		if (BattlePassModule.unlockPremium(p.getUuid())) {
 			src.sendFeedback(() -> Text.literal(Lang.msg("pass.unlockOk",
 					BattlePassConfig.unlockAmount(), BattlePassConfig.unlockCurrency())), false);
+			com.akira.redtale.economy.net.PassNetworking.send(p);
 			return 1;
 		}
 		src.sendError(Text.literal(Lang.msg("pass.unlockFail")));

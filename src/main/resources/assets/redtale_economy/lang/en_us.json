@@ -275,5 +275,11 @@
   "gui.redtale_economy.bounty.claimAll": "Claim all",
   "gui.redtale_economy.bounty.close": "Close",
   "gui.redtale_economy.bounty.empty": "No bounties today (or module disabled)",
-  "gui.redtale_economy.bounty.claimed": "Claimed"
+  "gui.redtale_economy.bounty.claimed": "Claimed",
+  "shop.notEnoughMoney": "Not enough coins",
+  "shop.priceGuardOn": "§ePrice guard on: sell price must stay below buy price (min margin %s%%)",
+  "shop.priceGuardOff": "§cPrice guard off: sell price may exceed buy price (money-dupe risk)",
+  "shop.priceGuardHint": "§7e.g. buy 100 ⇒ sell at most §f%s§7",
+  "shop.sellAboveBuy": "§cSell price %s is not below buy price %s (min margin %s%%), rejected",
+  "chat.prefix": "§7[§6Redtale§7] §r"
 }

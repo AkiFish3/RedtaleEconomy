@@ -43,9 +43,22 @@ public final class CheckinNetworking {
 			int maxPerMonth = (int) CheckinModule.store().getPathLong("makeup.maxPerMonth", 0);
 			int left = Math.max(0, maxPerMonth - st.makeupUsedMonth);
 
+			List<Integer> miles = new ArrayList<>();
+			try {
+				var arr = CheckinModule.store().root().has("milestones")
+						? CheckinModule.store().root().getAsJsonArray("milestones") : null;
+				if (arr != null) for (var e : arr) if (e.isJsonPrimitive()) miles.add(e.getAsInt());
+			} catch (Exception ignored) {
+				// 配置缺失用默认
+			}
+			if (miles.isEmpty()) {
+				miles.add(7);
+				miles.add(14);
+				miles.add(28);
+			}
 			CheckinProtocol.Snapshot snap = new CheckinProtocol.Snapshot(
 					st.lastDate == null ? "" : st.lastDate, st.streak, loop, idx,
-					st.totalDays, left, cost, points);
+					st.totalDays, left, cost, points, miles);
 
 			PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 			CheckinProtocol.write(buf, snap);

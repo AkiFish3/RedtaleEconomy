@@ -152,6 +152,9 @@ public final class ShopScreen extends Screen {
 		ShopProtocol.ActionResult r = ShopClientState.lastAction();
 		if (r != null && ShopClientState.lastActionAt() >= issuedAt) {
 			flash = Text.translatable(r.ok() ? "gui.redtale_economy.shop.ok" : r.messageKey()).getString();
+			if (!r.ok() && "shop.notEnoughMoney".equals(r.messageKey())) {
+				flash = flash + "（当前 " + r.balance() + " 铜 / 需要 " + r.stockRemaining() + " 铜）";
+			}
 			if (r.ok()) request(); // 成功后刷新当前页（库存/余额都变了）
 		}
 	}

@@ -140,10 +140,44 @@ public class RedtaleEconomy implements ModInitializer {
 
 		// 开发用命令文件通道（config/redtale/devcmd.enabled 存在时才生效）
 		DevCommandFile.init();
+		// E2：写前日志目录（数据根目录要等模块加载后才可用，这里只确保 state 为空）
+		com.akira.redtale.economy.journal.TxnJournal.init();
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK
 				.register(DevCommandFile::tick);
 
-		ServerLifecycleEvents.SERVER_STARTED.register(s -> server = s);
+		com.akira.redtale.economy.net.BalanceNetworking.register();
+		com.akira.redtale.economy.net.WarehouseNetworking.register();
+		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
+			server = s;
+			// E2：先补完上次崩在半路的事务（退物品/退钱），再让玩家进来
+			try {
+				com.akira.redtale.economy.journal.TxnJournal.recover(s);
+			} catch (Exception e) {
+				LOGGER.error("[journal] 恢复失败：{}", e.getMessage());
+			}
+			// R38b：一次性定时跨天重置（不是轮询）
+			try {
+				com.akira.redtale.economy.util.DayRollover.start(s);
+			} catch (Exception e) {
+				LOGGER.error("[day] 跨天定时器启动失败：{}", e.getMessage());
+			}
+			// U9b：排行榜每 60 秒重算一次（独立定时器，不在 tick 里轮询）
+			try {
+				com.akira.redtale.economy.rank.RankService.init();
+				com.akira.redtale.economy.rank.RankService.start(s);
+			} catch (Exception e) {
+				LOGGER.error("[rank] 排行定时器启动失败：{}", e.getMessage());
+			}
+		});
+		// R38b：登录兜底 —— 停机跨天 / 定时器被跳过时，玩家一进来就补重置
+		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register(
+				(handler, sender, s) -> {
+					try {
+						com.akira.redtale.economy.util.DayRollover.onPlayerJoin(handler.getPlayer());
+					} catch (Exception e) {
+						LOGGER.warn("[day] 登录兜底失败：{}", e.getMessage());
+					}
+				});
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register(
 				(handler, s) -> ShopNetworking.forget(handler.getPlayer().getUuid()));
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
@@ -169,6 +203,8 @@ public class RedtaleEconomy implements ModInitializer {
 			com.akira.redtale.economy.storage.SnapshotService.flushOnline(s);
 			StorageModule.shutdown();
 			BalanceService.shutdown();
+			com.akira.redtale.economy.util.DayRollover.stop();
+			com.akira.redtale.economy.rank.RankService.stop();
 			server = null;
 		});
 

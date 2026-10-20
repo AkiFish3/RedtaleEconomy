@@ -12,6 +12,9 @@ public final class ShopClientState {
 	private static volatile ShopProtocol.Page page = ShopProtocol.Page.empty("", "");
 	private static volatile ShopProtocol.ActionResult lastAction;
 	private static volatile int visibleRows = 9;
+	/** U11b：当前筛选条件（mod/类型/价格/库存），随请求一起发给服务端 */
+	private static volatile com.akira.redtale.economy.net.ShopFilter filter =
+			com.akira.redtale.economy.net.ShopFilter.NONE;
 	private static volatile long lastActionAt;
 
 	private ShopClientState() {
@@ -24,6 +27,14 @@ public final class ShopClientState {
 
 	public static void setVisibleRows(int rows) {
 		visibleRows = rows;
+	}
+
+	public static com.akira.redtale.economy.net.ShopFilter filter() {
+		return filter;
+	}
+
+	public static void setFilter(com.akira.redtale.economy.net.ShopFilter f) {
+		filter = f == null ? com.akira.redtale.economy.net.ShopFilter.NONE : f;
 	}
 
 	public static ShopProtocol.Page page() {
@@ -49,6 +60,7 @@ public final class ShopClientState {
 
 	public static void clear() {
 		page = ShopProtocol.Page.empty("", "");
+		filter = com.akira.redtale.economy.net.ShopFilter.NONE;
 		lastAction = null;
 	}
 }

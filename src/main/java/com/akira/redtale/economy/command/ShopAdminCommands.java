@@ -94,6 +94,13 @@ public final class ShopAdminCommands {
 																.executes(ShopAdminCommands::addItem))))))
 						.then(CommandManager.literal("resetstock")
 								.executes(ShopAdminCommands::resetStock))
+						// E1：查看/切换价格护栏（卖价必须低于买价）
+						.then(CommandManager.literal("priceguard")
+								.executes(ShopAdminCommands::priceGuard)
+								.then(CommandManager.literal("on")
+										.executes(ctx -> setGuard(ctx, true)))
+								.then(CommandManager.literal("off")
+										.executes(ctx -> setGuard(ctx, false))))
 						.then(CommandManager.literal("remove")
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
@@ -273,8 +280,10 @@ public final class ShopAdminCommands {
 			ctx.getSource().sendError(Text.literal(Lang.msg("shop.notFoundItem", itemId)));
 			return 0;
 		}
-		if (!ShopCatalog.updateItem(shopId, itemId, buy, sell, null, null)) {
-			ctx.getSource().sendError(Text.literal("§c写入失败，详见日志"));
+		String bad = ShopCatalog.updateItem(shopId, itemId, buy, sell, null, null);
+		if (bad != null) {
+			// E1：价格护栏拒绝时把「为什么」直接说清楚，不要只说写入失败
+			ctx.getSource().sendError(Text.literal("§c已拒绝：" + bad));
 			return 0;
 		}
 		ctx.getSource().sendFeedback(() -> Text.literal("§a已改价：§f" + shopId + "/" + itemId
@@ -291,8 +300,9 @@ public final class ShopAdminCommands {
 			return 0;
 		}
 		boolean next = !it.enabled();
-		if (!ShopCatalog.updateItem(shopId, itemId, null, null, null, next)) {
-			ctx.getSource().sendError(Text.literal("§c写入失败，详见日志"));
+		String bad = ShopCatalog.updateItem(shopId, itemId, null, null, null, next);
+		if (bad != null) {
+			ctx.getSource().sendError(Text.literal("§c已拒绝：" + bad));
 			return 0;
 		}
 		ctx.getSource().sendFeedback(() -> Text.literal("§a" + itemId + " → "
@@ -309,8 +319,9 @@ public final class ShopAdminCommands {
 			ctx.getSource().sendError(Text.literal(Lang.msg("shop.notFoundItem", itemId)));
 			return 0;
 		}
-		if (!ShopCatalog.updateItem(shopId, itemId, null, null, (long) count, null)) {
-			ctx.getSource().sendError(Text.literal("§c写入失败，详见日志"));
+		String bad = ShopCatalog.updateItem(shopId, itemId, null, null, (long) count, null);
+		if (bad != null) {
+			ctx.getSource().sendError(Text.literal("§c已拒绝：" + bad));
 			return 0;
 		}
 		ctx.getSource().sendFeedback(() -> Text.literal("§a库存已设为 " + (count < 0 ? "无限" : String.valueOf(count))
@@ -334,12 +345,45 @@ public final class ShopAdminCommands {
 		String itemId = StringArgumentType.getString(ctx, "itemId");
 		long buy = LongArgumentType.getLong(ctx, "buy");
 		long sell = LongArgumentType.getLong(ctx, "sell");
-		if (!ShopCatalog.addItem(shopId, itemId, buy, sell, -1)) {
-			ctx.getSource().sendError(Text.literal("§c添加失败：商店不存在、商品已存在或 id 非法"));
+		String bad = ShopCatalog.addItem(shopId, itemId, buy, sell, -1);
+		if (bad != null) {
+			ctx.getSource().sendError(Text.literal("§c已拒绝：" + bad));
 			return 0;
 		}
 		ctx.getSource().sendFeedback(() -> Text.literal("§a已添加 §f" + itemId + " §7→ §f" + shopId
 				+ " §7(买 " + buy + " / 卖 " + sell + "，无限库存)"), true);
+		return 1;
+	}
+
+	/** E1：打印护栏状态 + 当前 100 铜买价对应的最高卖价。 */
+	private static int priceGuard(CommandContext<ServerCommandSource> ctx) {
+		boolean on = com.akira.redtale.economy.shop.PricePolicy.enabled();
+		int margin = com.akira.redtale.economy.shop.PricePolicy.marginPercent();
+		ctx.getSource().sendFeedback(() -> Text.literal(on
+				? Lang.t("shop.priceGuardOn", margin)
+				: Lang.t("shop.priceGuardOff")), false);
+		if (on) {
+			long sample = com.akira.redtale.economy.shop.PricePolicy.maxSellFor(100);
+			ctx.getSource().sendFeedback(() -> Text.literal(
+					Lang.t("shop.priceGuardHint", sample)), false);
+			// 文件里已经写错的（加载时被内存钳制）—— 运维要知道有几件、先改哪个
+			int bad = ShopCatalog.priceViolations();
+			String one = ShopCatalog.priceViolationSample();
+			ctx.getSource().sendFeedback(() -> Text.literal(bad == 0
+					? "§a本次加载无价格违规"
+					: "§e本次加载钳制 §f" + bad + " §e件（例：§f" + one + "§e），建议直接改文件"), false);
+		}
+		return 1;
+	}
+
+	/** 切换护栏（写 shop/settings.json，立即生效）。 */
+	private static int setGuard(CommandContext<ServerCommandSource> ctx, boolean on) {
+		var st = com.akira.redtale.economy.config.ShopConfig.store();
+		st.setPath("limits.enforceSellBelowBuy", on);
+		st.save(true);
+		ctx.getSource().sendFeedback(() -> Text.literal(on
+				? Lang.t("shop.priceGuardOn", com.akira.redtale.economy.shop.PricePolicy.marginPercent())
+				: Lang.t("shop.priceGuardOff")), true);
 		return 1;
 	}
 

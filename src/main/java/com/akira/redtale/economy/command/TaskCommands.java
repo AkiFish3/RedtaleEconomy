@@ -54,6 +54,7 @@ public final class TaskCommands {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
+		PageCommands.hintLegacy(p, "tasks", "tasks");
 
 		TaskModule.Daily d = TaskModule.load(p.getUuid());
 		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.header", d.date, d.refreshesLeft)), false);
@@ -122,18 +123,45 @@ public final class TaskCommands {
 				return 0;
 			}
 		}
+
+		// E2：扣物品与记进度必须一次落盘。先写 intent（同步 fsync），
+		// 每扣完一条就把 taken=true 刷下去；崩溃重启时按 taken 逐条退还，
+		// 不会出现「物品扣了、任务没完成」又无人知道的情况。
+		com.google.gson.JsonObject payload = new com.google.gson.JsonObject();
+		payload.addProperty("slot", slot);
+		com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
 		for (TaskModule.ItemCount ic : t.items) {
+			com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+			o.addProperty("id", ic.id);
+			o.addProperty("count", ic.count);
+			o.addProperty("taken", false);
+			arr.add(o);
+		}
+		payload.add("items", arr);
+		com.akira.redtale.economy.journal.TxnJournal.Txn txn =
+				com.akira.redtale.economy.journal.TxnJournal.begin(
+						com.akira.redtale.economy.journal.TxnJournal.TASK_SUBMIT, p.getUuid(), payload);
+
+		for (int i = 0; i < t.items.size(); i++) {
+			TaskModule.ItemCount ic = t.items.get(i);
 			// R27：先扣仓库，不够的部分再扣背包
 			int fromWarehouse = WarehouseModule.takeFor(p.getUuid(), ic.id, ic.count);
 			int rest = ic.count - fromWarehouse;
 			if (rest > 0) removeFrom(p, ic.id, rest);
+			arr.get(i).getAsJsonObject().addProperty("taken", true);
+			txn.flush();
 		}
 
 		long reward = TaskModule.claimAndSave(p.getUuid(), slot);
 		if (reward < 0) {
+			// 进度没写成：把刚扣的物品原样还回去（物品已离开背包，直接 insert）
+			for (TaskModule.ItemCount ic : t.items) giveBack(p, ic);
+			txn.dismiss();
 			src.sendError(Text.literal(Lang.msg("tasks.already")));
 			return 0;
 		}
+		txn.state("claimed");
+		txn.commit();
 		// R20：领任务给战令经验
 		BattlePassModule.addXp(p.getUuid(), "taskClaim");
 		// R31：submit 类悬赏跟着缴纳一起推进（按实际缴纳的物品算）
@@ -188,6 +216,16 @@ public final class TaskCommands {
 	/** 背包 + 仓库的可用总量（R27 缴纳校验用）。 */
 	private static int countAvailable(ServerPlayerEntity p, String itemId) {
 		return countOf(p, itemId) + WarehouseModule.countFor(p.getUuid(), itemId);
+	}
+
+	/** E2 回滚：把已扣的物品塞回背包，塞不下就丢在脚下（不能凭空消失）。 */
+	private static void giveBack(ServerPlayerEntity p, TaskModule.ItemCount ic) {
+		Item item = item(ic.id);
+		if (item == null || ic.count <= 0) return;
+		ItemStack back = new ItemStack(item, ic.count);
+		p.getInventory().insertStack(back);
+		if (!back.isEmpty()) p.dropItem(back, false);
+		p.getInventory().markDirty();
 	}
 
 	/** R29：消耗 1 张刷新券；背包优先，其次仓库。 */

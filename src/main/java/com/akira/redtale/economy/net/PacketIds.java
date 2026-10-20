@@ -23,6 +23,28 @@ public final class PacketIds {
 
 	public static final Identifier S2C_TASKS = RedtaleEconomy.id("tasks/snapshot");
 	public static final Identifier S2C_CHECKIN = RedtaleEconomy.id("checkin/snapshot");
+	public static final Identifier S2C_PASS = RedtaleEconomy.id("pass/snapshot");
+	public static final Identifier S2C_GUILD = RedtaleEconomy.id("guild/snapshot");
+	public static final Identifier S2C_BALANCE = RedtaleEconomy.id("balance/snapshot");
+	// U8b：/rt <page> 直达；U9b：排行榜快照
+	public static final Identifier S2C_HUB_OPEN = RedtaleEconomy.id("hub/open");
+	public static final Identifier S2C_RANK = RedtaleEconomy.id("rank/snapshot");	public static final Identifier S2C_WAREHOUSE = RedtaleEconomy.id("warehouse/snapshot");
+	public static final Identifier C2S_WAREHOUSE_REQ = RedtaleEconomy.id("warehouse/request");
+	public static final Identifier C2S_WAREHOUSE_TAKE = RedtaleEconomy.id("warehouse/take");
+	public static final Identifier C2S_WAREHOUSE_PUT = RedtaleEconomy.id("warehouse/put");
+	public static final Identifier C2S_WAREHOUSE_SORT = RedtaleEconomy.id("warehouse/sort");
+	public static final Identifier C2S_WAREHOUSE_UPGRADE = RedtaleEconomy.id("warehouse/upgrade");
+	public static final Identifier C2S_WAREHOUSE_PICK = RedtaleEconomy.id("warehouse/pick");
+	public static final Identifier C2S_WAREHOUSE_PLACE = RedtaleEconomy.id("warehouse/place");
+	public static final Identifier C2S_WAREHOUSE_QUICK = RedtaleEconomy.id("warehouse/quick");
+	public static final Identifier C2S_WAREHOUSE_QUICK_INV = RedtaleEconomy.id("warehouse/quickinv");
+	public static final Identifier C2S_WAREHOUSE_HOTBAR = RedtaleEconomy.id("warehouse/hotbar");
+	public static final Identifier C2S_WAREHOUSE_PLACE_INV = RedtaleEconomy.id("warehouse/placeinv");
+	public static final Identifier C2S_WAREHOUSE_SPREAD = RedtaleEconomy.id("warehouse/spread");
+	public static final Identifier C2S_WAREHOUSE_COLLECT = RedtaleEconomy.id("warehouse/collect");
+	public static final Identifier C2S_WAREHOUSE_INV_PICK = RedtaleEconomy.id("warehouse/invpick");
+	public static final Identifier C2S_WAREHOUSE_DROP = RedtaleEconomy.id("warehouse/drop");
+	public static final Identifier C2S_BALANCE_REQ = RedtaleEconomy.id("balance/request");
 
 	private PacketIds() {
 	}

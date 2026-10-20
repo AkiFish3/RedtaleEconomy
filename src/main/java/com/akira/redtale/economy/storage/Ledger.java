@@ -37,6 +37,8 @@ public final class Ledger {
 	public static final String TYPE_WAREHOUSE = "warehouse.upgrade";
 	public static final String TYPE_BOUNTY = "bounty";
 	public static final String TYPE_PASS = "battlepass";
+	/** R42：管理员手动解锁付费轨（不走扣费，必须留流水）。 */
+	public static final String TYPE_PASS_ADMIN = "battlepass.admin.unlock";
 	public static final String TYPE_BOARD = "board";
 	public static final String TYPE_MAIL = "mail";
 	public static final String TYPE_MIGRATE = "migrate";

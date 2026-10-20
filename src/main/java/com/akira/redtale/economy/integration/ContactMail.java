@@ -25,8 +25,26 @@ public final class ContactMail {
 	private ContactMail() {
 	}
 
+	private static Boolean apiOk;
+
+	/**
+	 * Contact 是否可用：不仅要装了 mod，还要有 1.2.1+ 的 API 类。
+	 *
+	 * <p>线上服装的是 1.2.0-Beta，包名还是 {@code cloud.lemonslice.contact}，
+	 * 没有 {@code com.flechazo.contact.common.storage.MailboxDataManager}；
+	 * 直接调用会抛 NoClassDefFoundError（HMCL 会误判成崩溃）。所以先探测类是否存在。
+	 */
 	public static boolean available() {
-		return FabricLoader.getInstance().isModLoaded("contact");
+		if (apiOk != null) return apiOk;
+		apiOk = false;
+		if (!FabricLoader.getInstance().isModLoaded("contact")) return false;
+		try {
+			Class.forName("com.flechazo.contact.common.storage.MailboxDataManager");
+			apiOk = true;
+		} catch (Throwable t) {
+			RedtaleEconomy.LOGGER.info("[mail] Contact 已安装但 API 不匹配（需 1.2.1+，当前疑似 1.2.0），邮件改走待领取队列");
+		}
+		return apiOk;
 	}
 
 	/**

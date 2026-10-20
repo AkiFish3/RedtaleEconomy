@@ -20,7 +20,11 @@ public final class ShopConfig {
 					.field("maxChangePercentPerEdit", ConfigSchema.integer(0, 0, 100,
 							"单次改价相对原价的最大变动百分比，0=不限（防止手滑多打个 0）"))
 					.field("maxChangePercentPerDay", ConfigSchema.integer(0, 0, 1000,
-							"同一商品当天累计改价相对当日基准价的最大变动百分比，0=不限")))
+							"同一商品当天累计改价相对当日基准价的最大变动百分比，0=不限"))
+					.field("enforceSellBelowBuy", ConfigSchema.bool(true,
+							"强制卖价低于买价（E1）：防止买低卖高刷钱；关闭后只保留上下限校验"))
+					.field("minSellMarginPercent", ConfigSchema.integer(5, 0, 95,
+							"买卖最小价差（%）：卖价 ≤ 买价×(100-该值)%；0=只要求卖价严格低于买价")))
 			.field("pageSize", ConfigSchema.integer(40, 5, 200,
 					"每页条数；服务端只下发这一页，绝不全量推送"))
 			.field("visibleRows", ConfigSchema.integer(10, 1, 40,
@@ -66,6 +70,16 @@ public final class ShopConfig {
 
 	public static int maxChangePercentPerEdit() {
 		return (int) store().getPathLong("limits.maxChangePercentPerEdit", 0);
+	}
+
+	/** E1：卖价必须低于买价（防买低卖高刷钱）。 */
+	public static boolean enforceSellBelowBuy() {
+		return store().getPathBool("limits.enforceSellBelowBuy", true);
+	}
+
+	/** E1：最小价差百分比，卖价 ≤ 买价×(100-n)%。 */
+	public static int minSellMarginPercent() {
+		return (int) store().getPathLong("limits.minSellMarginPercent", 5);
 	}
 
 	public static int pageSize() {

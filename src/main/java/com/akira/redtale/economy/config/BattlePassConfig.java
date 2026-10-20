@@ -18,9 +18,18 @@ public final class BattlePassConfig {
 
 	private static JsonArray freeTrack() {
 		JsonArray a = new JsonArray();
-		a.add(levelReward(1, 100));
-		a.add(levelReward(2, 200));
-		a.add(levelReward(3, 300));
+		for (int lv = 1; lv <= 30; lv++) {
+			JsonObject r = levelReward(lv, 100 + (lv - 1) * 60L);
+			if (lv % 10 == 0) {
+				JsonArray items = new JsonArray();
+				JsonObject d = new JsonObject();
+				d.addProperty("id", "minecraft:diamond");
+				d.addProperty("count", lv / 10 + 1);
+				items.add(d);
+				r.getAsJsonObject("reward").add("items", items);
+			}
+			a.add(r);
+		}
 		return a;
 	}
 
@@ -51,13 +60,15 @@ public final class BattlePassConfig {
 
 	public static final ConfigSchema SCHEMA = ConfigSchema.obj("战令")
 			.field("enabled", ConfigSchema.bool(false, "是否启用战令（默认关，赛季开始时打开）"))
+			.field("adminUnlockWhitelist", ConfigSchema.stringList(java.util.List.of(),
+					"R42：允许 /rt admin pass unlock 的玩家名白名单（空=只认服主权限，仍会记日志）"))
 			.field("season", ConfigSchema.obj("赛季")
 					.field("id", ConfigSchema.string("S1", "赛季 id（数据目录名）"))
 					.field("name", ConfigSchema.string("第一赛季", "显示名"))
 					.field("start", ConfigSchema.string("2026-11-01", "开始日期 yyyy-MM-dd"))
 					.field("end", ConfigSchema.string("2026-12-31", "结束日期 yyyy-MM-dd")))
 			.field("levels", ConfigSchema.obj("等级曲线")
-					.field("max", ConfigSchema.integer(50, 1, 500, "等级上限"))
+					.field("max", ConfigSchema.integer(30, 1, 500, "等级上限"))
 					.field("xpPerLevel", ConfigSchema.integer(1000, 1, 10_000_000, "每级经验基数"))
 					.field("curve", ConfigSchema.choice("linear", List.of("linear", "exp"),
 							"linear=每级固定；exp=每级需求递增（l(l+1)/2）")))
@@ -115,7 +126,7 @@ public final class BattlePassConfig {
 	}
 
 	public static int maxLevel() {
-		return (int) store().getLong("levels.max", 50);
+		return (int) store().getLong("levels.max", 30);
 	}
 
 	public static long xpPerLevel() {
@@ -165,6 +176,18 @@ public final class BattlePassConfig {
 
 	public static long unlockAmount() {
 		return store().getPathLong("unlock.amount", 10);
+	}
+
+	/** R42：手动解锁白名单（玩家名，大小写不敏感）。 */
+	public static java.util.List<String> adminUnlockWhitelist() {
+		var root = store().root();
+		java.util.List<String> out = new java.util.ArrayList<>();
+		if (root.has("adminUnlockWhitelist") && root.get("adminUnlockWhitelist").isJsonArray()) {
+			for (var el : root.getAsJsonArray("adminUnlockWhitelist")) {
+				if (el.isJsonPrimitive()) out.add(el.getAsString());
+			}
+		}
+		return out;
 	}
 
 	public static boolean perSeason() {

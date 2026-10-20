@@ -42,6 +42,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class CheckinModule implements RedtaleModule {
 
+	/** 最近一次补签补的是哪一天（给命令回显用）。 */
+	public static volatile String LAST_MAKEUP_DATE = "";
+
 	public static final String FILE = "checkin.json";
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
@@ -405,17 +408,27 @@ public final class CheckinModule implements RedtaleModule {
 		int reset = resetHour();
 		String today = TimeUtil.today(reset);
 		java.time.LocalDate todayDate = TimeUtil.businessDate(reset);
-		java.time.LocalDate yesterday = todayDate.minusDays(1);
 
 		State s = state(uuid);
-		if (today.equals(s.lastDate)) return MakeupResult.NOT_NEEDED; // 今天已签，昨天的缺失补不了
-
 		java.time.LocalDate last = TimeUtil.parseDate(s.lastDate);
-		if (last.equals(yesterday)) return MakeupResult.NOT_NEEDED;
-		if (!last.equals(java.time.LocalDate.MIN) && last.isAfter(yesterday)) return MakeupResult.NOT_NEEDED;
-
 		int lookback = (int) cfg.getPathLong("makeup.allowBackfillDays", 7);
-		if (!last.equals(java.time.LocalDate.MIN) && last.isBefore(yesterday.minusDays(lookback))) {
+		int streak = Math.max(0, s.streak);
+
+		// ★找最近一个"缺失日"★（不再只认昨天）
+		// 已签区间是 [last - (streak-1), last]；从昨天往前扫，第一个不在区间内的就是缺口。
+		java.time.LocalDate target = null;
+		for (int i = 1; i <= lookback; i++) {
+			java.time.LocalDate d = todayDate.minusDays(i);
+			if (!last.equals(java.time.LocalDate.MIN) && d.isAfter(last)) continue;
+			boolean signed = !last.equals(java.time.LocalDate.MIN)
+					&& !d.isBefore(last.minusDays(streak - 1));
+			if (!signed) {
+				target = d;
+				break;
+			}
+		}
+		if (target == null) return MakeupResult.NOT_NEEDED;
+		if (!last.equals(java.time.LocalDate.MIN) && target.isBefore(todayDate.minusDays(lookback))) {
 			return MakeupResult.TOO_OLD;
 		}
 
@@ -433,13 +446,25 @@ public final class CheckinModule implements RedtaleModule {
 			if (price > 0 && !BalanceService.take(uuid, price)) return MakeupResult.NO_FUNDS;
 		}
 
-		// 只接链，不发奖
-		s.lastDate = yesterday.toString();
+		// 只有补的是昨天、且原链到前天，才把它接回链上；其它缺口只计总天数
+		if (target.equals(todayDate.minusDays(1))
+				&& (last.equals(java.time.LocalDate.MIN) || last.equals(todayDate.minusDays(2)))) {
+			s.lastDate = target.toString();
+			s.streak = streak + 1;
+		}
 		s.makeupDate = today;
 		s.makeupMonth = month;
 		s.makeupUsedMonth = usedMonth + 1;
-		if (s.streak < 1) s.streak = 1;
+		s.totalDays += 1;
+		// 补签照常发奖（按当前档位算，和正常签到一致）
+		Tier tier = tierOf(s.streak);
+		long reward = tier == null ? 0L : tier.money();
 		saveState(uuid, s);
+		if (reward > 0) {
+			BalanceService.add(uuid, reward, com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN,
+					"makeup:" + target);
+		}
+		LAST_MAKEUP_DATE = target.toString();
 		return MakeupResult.OK;
 	}
 

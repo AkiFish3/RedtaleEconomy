@@ -147,12 +147,12 @@ public final class MailModule implements RedtaleModule {
 			return 0;
 		}
 		MailQueue q = MailQueue.of(p.getUuid());
-		src.sendFeedback(() -> Text.literal(Lang.msg("mail.info",
+		p.sendMessage(Text.literal(Lang.msg("mail.info",
 				BalanceService.format(q.pendingMoney), q.items.size())), false);
-		src.sendFeedback(() -> Text.literal(Lang.msg("mail.provider",
+		p.sendMessage(Text.literal(Lang.msg("mail.provider",
 				ContactMail.available() ? Lang.t("mail.provider.contact") : Lang.t("mail.provider.queue"))), false);
 		if (q.pendingMoney > 0) {
-			src.sendFeedback(() -> Text.literal(Lang.t("mail.claimHint")), false);
+			// 提示不刷聊天：界面上已有按钮
 		}
 		return 1;
 	}
@@ -166,7 +166,7 @@ public final class MailModule implements RedtaleModule {
 			src.sendError(Text.literal(Lang.msg("mail.nothing")));
 			return 0;
 		}
-		src.sendFeedback(() -> Text.literal(Lang.msg("mail.claimed", BalanceService.format(amount))), false);
+		p.sendMessage(Text.literal(Lang.msg("mail.claimed", BalanceService.format(amount))), true);
 		return 1;
 	}
 

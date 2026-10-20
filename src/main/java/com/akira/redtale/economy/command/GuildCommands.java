@@ -37,28 +37,14 @@ public final class GuildCommands {
 	private static int info(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
+  PageCommands.hintLegacy(p, "guild", "guild");
 		if (p == null) return onlyPlayer(src);
 		if (!GuildModule.enabled()) {
 			src.sendError(Text.literal(Lang.msg("guild.disabled")));
 			return 0;
 		}
-		GuildConfig.Rank cur = GuildModule.rankOf(p.getUuid());
-		if (cur == null) {
-			src.sendError(Text.literal(Lang.msg("guild.noRanks")));
-			return 0;
-		}
-		long rep = GuildModule.rep(p.getUuid());
-		GuildConfig.Rank next = GuildModule.nextRank(p.getUuid());
-		src.sendFeedback(() -> Text.literal(Lang.msg("guild.info", cur.id(), cur.name(), rep)), false);
-		if (next == null) {
-			src.sendFeedback(() -> Text.literal(Lang.t("guild.maxRank")), false);
-		} else {
-			long need = Math.max(0, next.rep() - rep);
-			src.sendFeedback(() -> Text.literal(Lang.msg("guild.next", next.id(), next.name(), need)), false);
-		}
-		int pct = (int) Math.round(GuildModule.shopMultiplier(p.getUuid()) * 100);
-		src.sendFeedback(() -> Text.literal(Lang.msg("guild.perks", 100 - pct,
-				GuildModule.bonusBountySlots(p.getUuid()))), false);
+		// 只下发快照，不往聊天里写（Hub 每次切页都会调用）
+		com.akira.redtale.economy.net.GuildNetworking.send(p);
 		return 1;
 	}
 
@@ -68,7 +54,7 @@ public final class GuildCommands {
 			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
 			long amount = LongArgumentType.getLong(ctx, "amount");
 			GuildModule.addRep(target.getUuid(), "admin", amount);
-			src.sendFeedback(() -> Text.literal(Lang.msg("guild.addOk",
+			src.sendFeedback(() -> Text.literal(Lang.msg("guild.added",
 					target.getName().getString(), amount, GuildModule.rep(target.getUuid()))), true);
 			return 1;
 		} catch (Exception e) {

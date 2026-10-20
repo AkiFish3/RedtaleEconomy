@@ -78,14 +78,37 @@ public final class RedtaleCommands {
 								.suggests((ctx, b) -> net.minecraft.command.CommandSource.suggestMatching(
 										ConfigManager.get().definedFiles(), b))
 								.executes(RedtaleCommands::edit)))
+				// R42：手动解锁战令付费轨（/rt admin pass unlock <玩家> [赛季]）
+				.then(CommandManager.literal("admin")
+						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
+						.then(CommandManager.literal("pass")
+								.then(CommandManager.literal("unlock")
+										.then(CommandManager.argument("player",
+														net.minecraft.command.argument.EntityArgumentType.player())
+												.executes(ctx -> adminPassUnlock(ctx, null))
+												.then(CommandManager.argument("season",
+																com.mojang.brigadier.arguments.StringArgumentType.word())
+														.executes(ctx -> adminPassUnlock(ctx,
+																com.mojang.brigadier.arguments.StringArgumentType
+																		.getString(ctx, "season"))))))))
 				.then(CommandManager.literal("lang")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("code", com.mojang.brigadier.arguments.StringArgumentType.word())
 								.executes(RedtaleCommands::lang)));
 
+		// U8b：/rt <page> 直达页面（字面量优先，reload/save 等子命令不受影响）
+		PageCommands.attach(root);
+		// 无参 /rt = 打开签到页（最常用入口）
+		root.executes(ctx -> {
+			var p = ctx.getSource().getPlayer();
+			if (p == null) {
+				return help(ctx);
+			}
+			return PageCommands.open(p, "checkin");
+		});
+
 		com.mojang.brigadier.tree.LiteralCommandNode<ServerCommandSource> node = dispatcher.register(root);
 		dispatcher.register(CommandManager.literal("rt").redirect(node));
-
 		// FTB Quests 快捷入口（R9）：未装 FTBQ 时不注册，玩家看不到 /quests
 		if (QuestsCommand.available()) {
 			dispatcher.register(QuestsCommand.build(CoreConfig.perm("usePermissionLevel", 0)));
@@ -189,6 +212,48 @@ public final class RedtaleCommands {
 	}
 
 	/** B12：一条命令看懂全部入口（文案走 Lang，运营可改）。 */
+	/**
+	 * R42：{@code /rt admin pass unlock <玩家> [赛季]}。
+	 *
+	 * <p>两道门：① 服主权限（NODE_OWNER，默认 OP4）；② {@code pass/settings.json → adminUnlockWhitelist}
+	 * 白名单（配置为空时只认权限，但会记一条 WARN 说明「未设白名单」）。执行不改余额，只写
+	 * {@code battlepass.admin.unlock} 流水，便于事后对账。
+	 */
+	private static int adminPassUnlock(CommandContext<ServerCommandSource> ctx, String season) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			net.minecraft.server.network.ServerPlayerEntity target =
+					net.minecraft.command.argument.EntityArgumentType.getPlayer(ctx, "player");
+			String opName = src.getName();
+			var white = com.akira.redtale.economy.config.BattlePassConfig.adminUnlockWhitelist();
+			if (!white.isEmpty()) {
+				boolean listed = white.stream().anyMatch(n -> n.equalsIgnoreCase(opName));
+				if (!listed) {
+					src.sendError(Text.literal("§c你不在 pass/settings.json 的 adminUnlockWhitelist 里，拒绝执行"));
+					return 0;
+				}
+			} else {
+				RedtaleEconomy.LOGGER.warn("[pass] {} 执行 admin pass unlock 时白名单为空（只按权限放行）", opName);
+			}
+			String seasonId = season == null || season.isBlank()
+					? com.akira.redtale.economy.module.impl.BattlePassModule.currentSeasonId() : season;
+			boolean ok = com.akira.redtale.economy.module.impl.BattlePassModule
+					.adminUnlock(target.getUuid(), opName, seasonId);
+			if (!ok) {
+				src.sendError(Text.literal("§c解锁失败：战令未启用，或该玩家已解锁本赛季付费轨"));
+				return 0;
+			}
+			// 立刻刷新目标玩家的界面（如果开着）
+			com.akira.redtale.economy.net.PassNetworking.send(target);
+			src.sendFeedback(() -> Text.literal("§a已为 §f" + target.getGameProfile().getName()
+					+ " §a解锁战令付费轨 §7(" + seasonId + "，未扣任何货币，已记流水)"), true);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c执行失败：" + e.getMessage()));
+			return 0;
+		}
+	}
+
 	/** {@code /redtale confirm <code>}：核销票据并执行对应动作（R25）。 */
 	private static int confirmTicket(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();

@@ -17,9 +17,21 @@ public final class ShopProtocol {
 	public record Entry(String itemId, long buyPrice, long sellPrice, long stock, boolean canBuy, boolean canSell) {
 	}
 
-	public record Page(String shopId, String query, int page, int totalPages, int totalItems, List<Entry> entries) {
+	/**
+	 * 一页结果。
+	 *
+	 * <p>{@code mods} / {@code categories} 是 U11b 的筛选维度取值表（当前商店的全量 facet），
+	 * 客户端用它们画分类栏，不用自己再扫一遍商品。
+	 */
+	public record Page(String shopId, String query, int page, int totalPages, int totalItems,
+			List<Entry> entries, List<String> mods, List<String> categories) {
 		public static Page empty(String shopId, String query) {
-			return new Page(shopId, query, 0, 0, 0, List.of());
+			return new Page(shopId, query, 0, 0, 0, List.of(), List.of(), List.of());
+		}
+
+		/** 兼容旧构造点（无 facet）。 */
+		public Page(String shopId, String query, int page, int totalPages, int totalItems, List<Entry> entries) {
+			this(shopId, query, page, totalPages, totalItems, entries, List.of(), List.of());
 		}
 	}
 
@@ -36,7 +48,14 @@ public final class ShopProtocol {
 		}
 	}
 
+	/** readPage 顺带读到的「一屏行数」；客户端接收方用 {@link #lastVisibleRows()} 取。 */
+	private static volatile int lastVisibleRows = 9;
+
 	private ShopProtocol() {
+	}
+
+	public static int lastVisibleRows() {
+		return lastVisibleRows;
 	}
 
 	// ---------------------------------------------------------------- 编码
@@ -56,7 +75,12 @@ public final class ShopProtocol {
 			buf.writeBoolean(e.canBuy());
 			buf.writeBoolean(e.canSell());
 		}
-		// 追加在尾部：GUI 一屏行数（服务端 shop/settings.json 的 visibleRows）
+		// U11b：筛选维度（facet），客户端拿去画分类栏；必须紧跟 entries，readPage 按此顺序读
+		buf.writeVarInt(p.mods().size());
+		for (String m : p.mods()) buf.writeString(m, 48);
+		buf.writeVarInt(p.categories().size());
+		for (String c : p.categories()) buf.writeString(c, 64);
+		// 最后：GUI 一屏行数（服务端 shop/settings.json 的 visibleRows），接收方在 readPage 之后读
 		buf.writeVarInt(com.akira.redtale.economy.config.ShopConfig.visibleRows());
 	}
 
@@ -78,7 +102,17 @@ public final class ShopProtocol {
 			boolean canSell = buf.readBoolean();
 			if (i < max) list.add(new Entry(id, buy, sell, stock, canBuy, canSell));
 		}
-		return new Page(shopId, query, page, totalPages, totalItems, list);
+		List<String> mods = new ArrayList<>();
+		int mn = Math.min(buf.readVarInt(), 200);
+		for (int i = 0; i < mn; i++) mods.add(buf.readString(48));
+		List<String> cats = new ArrayList<>();
+		int cn = Math.min(buf.readVarInt(), 400);
+		for (int i = 0; i < cn; i++) cats.add(buf.readString(64));
+		// 尾部：visibleRows（服务端 visibleRows，客户端一屏几行）；读完协议才算对称
+		if (buf.isReadable()) {
+			lastVisibleRows = Math.max(1, Math.min(54, buf.readVarInt()));
+		}
+		return new Page(shopId, query, page, totalPages, totalItems, list, mods, cats);
 	}
 
 	public static void writeAction(PacketByteBuf buf, ActionResult r) {

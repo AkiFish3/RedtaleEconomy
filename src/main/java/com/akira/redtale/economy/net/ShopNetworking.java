@@ -47,7 +47,9 @@ public final class ShopNetworking {
 			String shopId = buf.readString(64);
 			int page = buf.readVarInt();
 			String query = buf.readString(128);
-			server.execute(() -> handleRequestPage(player, shopId, page, query));
+			// U11b：筛选条件追加在尾部；老客户端不发就按「不筛选」处理
+			ShopFilter filter = buf.readableBytes() > 0 ? ShopFilter.read(buf) : ShopFilter.NONE;
+			server.execute(() -> handleRequestPage(player, shopId, page, query, filter));
 		});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_BUY, (server, player, h, buf, sender) -> {
@@ -65,7 +67,8 @@ public final class ShopNetworking {
 		});
 	}
 
-	private static void handleRequestPage(ServerPlayerEntity player, String shopId, int requestedPage, String query) {
+	private static void handleRequestPage(ServerPlayerEntity player, String shopId, int requestedPage,
+			String query, ShopFilter filter) {
 		long now = System.currentTimeMillis();
 		int cd = ShopConfig.pageRequestCooldownMs();
 		if (cd > 0) {
@@ -87,12 +90,15 @@ public final class ShopNetworking {
 		}
 
 		int pageSize = ShopConfig.pageSize();
-		int total = Math.max(0, src.count(shopId, q));
+		ShopFilter f = filter == null ? ShopFilter.NONE : filter;
+		int total = Math.max(0, src.count(shopId, q, f));
 		int totalPages = ShopProtocol.totalPages(total, pageSize);
 		int page = ShopProtocol.clampPage(requestedPage, total, pageSize);
 		int offset = page * pageSize;
-		var entries = src.slice(shopId, q, offset, pageSize);
-		sendPage(player, new ShopProtocol.Page(shopId, q, page, totalPages, total, entries));
+		var entries = src.slice(shopId, q, f, offset, pageSize);
+		// facet 永远按「整个商店」下发，不受当前筛选影响 —— 否则筛完 mod 就看不到别的 mod 了
+		sendPage(player, new ShopProtocol.Page(shopId, q, page, totalPages, total, entries,
+				src.mods(shopId), src.categories(shopId)));
 	}
 
 	private static void handleTrade(ServerPlayerEntity player, String shopId, String itemId, int count, boolean buy) {

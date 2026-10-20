@@ -124,6 +124,9 @@ public final class Lang {
 	}
 
 	public static String prefix() {
+		// 优先用 lang 里的 chat.prefix；没配再退回 core.json
+		String v = VALUES.get("chat.prefix");
+		if (v != null && !v.isBlank()) return v;
 		return CoreConfig.prefix();
 	}
 

@@ -385,6 +385,29 @@ public final class BattlePassModule implements RedtaleModule {
 		return true;
 	}
 
+	/**
+	 * R42：管理员手动解锁付费轨 —— <b>不扣任何货币</b>，写一条 {@code battlepass.admin.unlock} 流水。
+	 *
+	 * <p>已解锁返回 false（幂等，不重复记流水）。
+	 */
+	public static synchronized boolean adminUnlock(UUID uuid, String operator, String season) {
+		if (!enabled()) return false;
+		PassData d = data(uuid);
+		if (d.premium) return false;
+		d.premium = true;
+		d.dirty = true;
+		save(uuid, d);
+		com.akira.redtale.economy.storage.Ledger.record(uuid, 0, BalanceService.get(uuid),
+				com.akira.redtale.economy.storage.Ledger.TYPE_PASS_ADMIN,
+				"by:" + operator + "/season:" + (season == null || season.isBlank() ? currentSeasonId() : season));
+		return true;
+	}
+
+	/** 当前赛季 id（配置 season.id）。 */
+	public static String currentSeasonId() {
+		return BattlePassConfig.store().getPathString("season.id", "S1");
+	}
+
 	public static List<BattlePassConfig.Reward> track(String name) {
 		return BattlePassConfig.track(name);
 	}

@@ -19,9 +19,10 @@ public final class CheckinProtocol {
 	}
 
 	public record Snapshot(String lastDate, int streak, int loopDays, int loopIndex,
-			int totalDays, int makeupLeft, long makeupCost, List<Point> points) {
+			int totalDays, int makeupLeft, long makeupCost, List<Point> points,
+			List<Integer> milestones) {
 		public static Snapshot empty() {
-			return new Snapshot("", 0, 7, 1, 0, 0, 0, List.of());
+			return new Snapshot("", 0, 7, 1, 0, 0, 0, List.of(), List.of(7, 14, 28));
 		}
 	}
 
@@ -36,6 +37,10 @@ public final class CheckinProtocol {
 		buf.writeVarInt(Math.max(0, s.totalDays()));
 		buf.writeVarInt(Math.max(0, s.makeupLeft()));
 		buf.writeLong(Math.max(0, s.makeupCost()));
+		buf.writeVarInt(s.milestones() == null ? 0 : s.milestones().size());
+		for (int m : (s.milestones() == null ? List.<Integer>of() : s.milestones())) {
+			buf.writeVarInt(m);
+		}
 		buf.writeVarInt(s.points().size());
 		for (Point p : s.points()) {
 			buf.writeVarInt(p.day());
@@ -53,11 +58,15 @@ public final class CheckinProtocol {
 		int totalDays = buf.readVarInt();
 		int makeupLeft = buf.readVarInt();
 		long makeupCost = buf.readLong();
+		int mc = Math.min(buf.readVarInt(), 32);
+		List<Integer> miles = new ArrayList<>();
+		for (int i = 0; i < mc; i++) miles.add(buf.readVarInt());
 		int n = Math.min(buf.readVarInt(), 64);
 		List<Point> points = new ArrayList<>();
 		for (int i = 0; i < n; i++) {
 			points.add(new Point(buf.readVarInt(), buf.readLong(), buf.readBoolean(), buf.readBoolean()));
 		}
-		return new Snapshot(lastDate, streak, loopDays, loopIndex, totalDays, makeupLeft, makeupCost, points);
+		return new Snapshot(lastDate, streak, loopDays, loopIndex, totalDays, makeupLeft, makeupCost,
+				points, miles);
 	}
 }

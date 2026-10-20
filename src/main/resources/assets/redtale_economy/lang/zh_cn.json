@@ -275,5 +275,11 @@
   "gui.redtale_economy.bounty.claimAll": "一键领取",
   "gui.redtale_economy.bounty.close": "关闭",
   "gui.redtale_economy.bounty.empty": "今天没有悬赏（或模块未启用）",
-  "gui.redtale_economy.bounty.claimed": "已领取"
+  "gui.redtale_economy.bounty.claimed": "已领取",
+  "shop.notEnoughMoney": "余额不足",
+  "shop.priceGuardOn": "§e价格护栏已开启：卖价必须低于买价（最少价差 %s%%）",
+  "shop.priceGuardOff": "§c价格护栏已关闭：卖价可以高于买价（有刷钱风险）",
+  "shop.priceGuardHint": "§7例：买价 100 时卖价最多 §f%s§7（更低才安全）",
+  "shop.sellAboveBuy": "§c卖出价 %s 不低于买入价 %s（最少价差 %s%%），已拒绝保存",
+  "chat.prefix": "§7[§6Redtale§7] §r"
 }
