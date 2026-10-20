@@ -31,9 +31,7 @@ public final class HubShopPage {
 	private static final int TREE_HEAD = 17;
 	private static final int TREE_ROW = 14;
 
-	private static final int C_CARD_SEL = 0xFF332B18;
-	private static final int C_RED = 0xFFC0605A;
-
+		
 	private HubShopPage() {
 	}
 
@@ -102,11 +100,11 @@ public final class HubShopPage {
 		ShopProtocol.Page page = ShopClientState.page();
 
 		// 搜索框
-		dc.fill(x, y, x + w - 40, y + 18, 0xFF151515);
+		dc.fill(x, y, x + w - 40, y + 18, HubTheme.FIELD);
 		dc.fill(x, y + 17, x + w - 40, y + 18, HubTheme.LINE);
 		String shown = query.isEmpty() ? "搜索：id 或名称（空格分隔）" : query;
 		dc.drawText(tr, Text.literal(shown), x + 4, y + 5,
-				query.isEmpty() ? 0xFF7A7A7A : HubTheme.TEXT, false);
+				query.isEmpty() ? HubTheme.HINT : HubTheme.FIELD_TEXT, false);
 		dc.drawText(tr, Text.literal("同步"), x + w - 30, y + 5, HubTheme.MUTED, false);
 
 		// U11b：筛选栏（mod / 类型 / 价格 / 有货）—— 点击循环取值，与搜索词叠加
@@ -140,12 +138,12 @@ public final class HubShopPage {
 			String hint = filtered ? "点上方筛选项可循环切换 / 清除"
 					: "管理员：/shop admin add <商店> <物品> <买价> <卖价>";
 			dc.drawText(tr, Text.literal(trim(tr, hint, gw - 16)),
-					gx + 6, startY + 22, 0xFF6A6A6A, false);
+					gx + 6, startY + 22, HubTheme.HINT, false);
 		}
 
 		// 底部：分页 + 选中项操作
 		int barY = y + h - 26;
-		dc.fill(x, barY, x + w, barY + 22, 0xFF232323);
+		dc.fill(x, barY, x + w, barY + 22, HubTheme.BAR_SUB);
 		String pg = "第 " + (page.page() + 1) + " / " + Math.max(1, page.totalPages())
 				+ " 页 · 共 " + page.totalItems() + " 项";
 		dc.drawText(tr, Text.literal(trim(tr, pg, w - 110)), x + 6, barY + 7, HubTheme.MUTED, false);
@@ -172,11 +170,11 @@ public final class HubShopPage {
 				default -> f.inStockOnly();
 			};
 			boolean hover = mouseX >= cx && mouseX < cx + widths[i] && mouseY >= y && mouseY < y + 14;
-			int bg = active ? 0xFF3A3020 : (hover ? 0xFF2E2E2E : 0xFF232323);
+			int bg = active ? HubTheme.PRIMARY_SOFT : (hover ? HubTheme.INNER_HOVER : HubTheme.BAR_SUB);
 			dc.fill(cx, y, cx + widths[i], y + 14, bg);
 			dc.fill(cx, y, cx + widths[i], y + 1, active ? HubTheme.GOLD : HubTheme.LINE);
 			dc.drawText(tr, Text.literal(labels[i]), cx + 5, y + 3,
-					active ? 0xFFFFE9A8 : HubTheme.MUTED, false);
+					active ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
 			cx += widths[i] + 4;
 		}
 	}
@@ -186,13 +184,13 @@ public final class HubShopPage {
 			ShopProtocol.Page page, double mouseX, double mouseY) {
 		String path = treePath();
 		List<String> cats = page.categories();
-		dc.fill(x, y, x + w, y + h, 0xFF1C1C1C);
+		dc.fill(x, y, x + w, y + h, HubTheme.INNER);
 		dc.fill(x + w - 1, y, x + w, y + h, HubTheme.LINE);
 
 		// 面包屑：显示当前路径，非根时可点（点它 = 回上一级）
 		boolean upHover = !path.isEmpty()
 				&& mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + TREE_HEAD;
-		dc.fill(x, y, x + w, y + TREE_HEAD, upHover ? 0xFF35302A : 0xFF232323);
+		dc.fill(x, y, x + w, y + TREE_HEAD, upHover ? HubTheme.PRIMARY_SOFT : HubTheme.BAR_SUB);
 		dc.fill(x, y + TREE_HEAD - 1, x + w, y + TREE_HEAD, HubTheme.LINE);
 		String crumb = path.isEmpty() ? "全部分类" : breadcrumbText(path);
 		String shown = (path.isEmpty() ? "" : "‹ ") + crumb;
@@ -202,7 +200,7 @@ public final class HubShopPage {
 		List<String> kids = ShopTree.children(cats, path);
 		if (kids.isEmpty()) {
 			dc.drawText(tr, Text.literal(path.isEmpty() ? "（无分类）" : "（无下级）"),
-					x + 4, y + TREE_HEAD + 4, 0xFF6A6A6A, false);
+					x + 4, y + TREE_HEAD + 4, HubTheme.HINT, false);
 			return;
 		}
 		for (int i = 0; i < kids.size(); i++) {
@@ -212,7 +210,7 @@ public final class HubShopPage {
 			String child = ShopTree.join(path, name);
 			boolean hasKid = ShopTree.hasChildren(cats, child);
 			boolean hover = mouseX >= x && mouseX < x + w && mouseY >= ry && mouseY < ry + TREE_ROW;
-			if (hover) dc.fill(x + 1, ry, x + w - 2, ry + TREE_ROW, 0xFF2E2E2E);
+			if (hover) dc.fill(x + 1, ry, x + w - 2, ry + TREE_ROW, HubTheme.INNER_HOVER);
 			// ★用 › 而不是 ▸★：默认字体没有 ▸，会渲染成豆腐块（u6-02 截图可见）
 			String line = (hasKid ? "› " : "· ") + name;
 			dc.drawText(tr, Text.literal(trim(tr, line, w - 8)), x + 4, ry + 3,
@@ -233,8 +231,8 @@ public final class HubShopPage {
 	private static void drawCard(DrawContext dc, TextRenderer tr, int x, int y, int cw,
 			ShopProtocol.Entry e, boolean selected, double mouseX, double mouseY) {
 		boolean hover = mouseX >= x && mouseX < x + cw && mouseY >= y && mouseY < y + CARD_H;
-		dc.fill(x, y, x + cw, y + CARD_H, selected ? C_CARD_SEL : HubTheme.CARD);
-		int edge = selected ? HubTheme.GOLD : (hover ? 0xFF5A5A5A : HubTheme.LINE);
+		dc.fill(x, y, x + cw, y + CARD_H, selected ? HubTheme.SELECT : HubTheme.CARD);
+		int edge = selected ? HubTheme.GOLD : (hover ? HubTheme.EDGE_HOVER : HubTheme.LINE);
 		dc.fill(x, y, x + cw, y + 1, edge);
 		dc.fill(x, y + CARD_H - 1, x + cw, y + CARD_H, edge);
 		dc.fill(x, y, x + 1, y + CARD_H, edge);
@@ -244,25 +242,25 @@ public final class HubShopPage {
 		if (!stack.isEmpty()) {
 			dc.drawItem(stack, x + 4, y + 4);
 		} else {
-			dc.fill(x + 4, y + 4, x + 20, y + 20, 0xFF444444);
+			dc.fill(x + 4, y + 4, x + 20, y + 20, HubTheme.SLOT);
 		}
 		String name = stack.isEmpty() ? shortId(e.itemId()) : stack.getName().getString();
 		dc.drawText(tr, Text.literal(trim(tr, name, cw - 26)), x + 22, y + 6, HubTheme.TEXT, false);
 		dc.drawText(tr, Text.literal(e.buyPrice() + " 铜"), x + 4, y + 26, HubTheme.GOLD, false);
 
 		String stock = e.stock() < 0 ? "无限" : ("库存 " + e.stock());
-		int color = e.stock() == 0 ? C_RED : HubTheme.MUTED;
+		int color = e.stock() == 0 ? HubTheme.DANGER : HubTheme.MUTED;
 		dc.drawText(tr, Text.literal(trim(tr, stock, cw - 8)), x + 4, y + 40, color, false);
 	}
 
 	private static void drawMini(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			String label, boolean enabled, double mouseX, double mouseY) {
 		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		dc.fill(x, y, x + w, y + h, enabled ? (hover ? 0xFF4A3F22 : 0xFF3A3020) : 0xFF2A2A2A);
+		dc.fill(x, y, x + w, y + h, enabled ? (hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.PRIMARY_SOFT) : HubTheme.DISABLED_BG);
 		dc.fill(x, y, x + w, y + 1, enabled ? HubTheme.GOLD : HubTheme.LINE);
 		dc.fill(x, y + h - 1, x + w, y + h, enabled ? HubTheme.GOLD : HubTheme.LINE);
 		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 3,
-				enabled ? 0xFFFFE9A8 : 0xFF6A6A6A, false);
+				enabled ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.DISABLED_TEXT, false);
 	}
 
 	private static ItemStack stackOf(String itemId) {

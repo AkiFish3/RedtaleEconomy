@@ -26,10 +26,6 @@ public final class HubCheckinPage {
 	private static final int CELL_H_MIN = 12;
 	private static final int ROW_GAP = 1;
 
-	private static final int C_CELL_EDGE = 0xFF3A3A3A;
-	private static final int C_SIGNED = 0xFF243026;
-	private static final int C_FUTURE = 0xFF1C1C1C;
-	private static final int C_GREEN = 0xFF6BD46B;
 
 	private HubCheckinPage() {
 	}
@@ -124,11 +120,9 @@ public final class HubCheckinPage {
 			boolean future = d.isAfter(today);
 
 			// 原版主题：未来日浅灰、已签白底+绿罩；其它主题保持深色
-			int bg = HubTheme.vanilla
-					? (signed ? 0xFFF4FAF4 : (future ? 0xFFBEBEBE : 0xFFD6D6D6))
-					: (signed ? C_SIGNED : (future ? C_FUTURE : HubTheme.CARD));
+			int bg = signed ? HubTheme.CARD_OK : (future ? HubTheme.INNER : HubTheme.CARD);
 			dc.fill(cx, cy, cx + CELL_W, cy + cellH, bg);
-			int edge = HubTheme.vanilla ? 0xFF8B8B8B : C_CELL_EDGE;
+			int edge = HubTheme.LINE;
 			dc.fill(cx, cy, cx + CELL_W, cy + 1, edge);
 			dc.fill(cx, cy + cellH - 1, cx + CELL_W, cy + cellH, edge);
 			if (signed) {
@@ -136,16 +130,15 @@ public final class HubCheckinPage {
 				dc.fill(cx + 1, cy + 1, cx + CELL_W - 1, cy + cellH - 1, 0x3350C878);
 			}
 
-			int textColor = HubTheme.vanilla
-					? (future ? 0xFF7A7A7A : (signed ? 0xFF2E7D32 : 0xFF303030))
-					: (future ? 0xFF6A6A6A : HubTheme.TEXT);
+			int textColor = future ? HubTheme.MUTED
+					: (signed ? (HubTheme.vanilla ? HubTheme.OK : HubTheme.TEXT) : HubTheme.TEXT);
 			dc.drawText(tr, Text.literal(String.valueOf(day)), cx + 4,
 					cy + Math.max(1, (cellH - 8) / 2), textColor, false);
 
 			if (signed) {
 				if (cellH >= 16) {
 				dc.drawText(tr, Text.literal("✓"), cx + CELL_W - 12,
-						cy + Math.max(1, (cellH - 8) / 2), C_GREEN, false);
+						cy + Math.max(1, (cellH - 8) / 2), HubTheme.OK, false);
 			}
 			}
 			if (isToday) {
@@ -160,7 +153,7 @@ public final class HubCheckinPage {
 			if (miles.contains(day) && cellH >= 14) {
 				int bx2 = cx + CELL_W - 6;
 				int by2 = cy + cellH - 6;
-				dc.fill(bx2, by2, bx2 + 4, by2 + 4, streak >= day ? C_GREEN : HubTheme.GOLD);
+				dc.fill(bx2, by2, bx2 + 4, by2 + 4, streak >= day ? HubTheme.OK : HubTheme.GOLD);
 			}
 		}
 
@@ -199,14 +192,14 @@ public final class HubCheckinPage {
 	private static void drawButtonOld(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			String label, boolean enabled, double mouseX, double mouseY) {
 		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		int bg = enabled ? (hover ? 0xFF4A3F22 : 0xFF3A3020) : 0xFF242424;
-		int edge = enabled ? HubTheme.GOLD : 0xFF3A3A3A;
+		int bg = enabled ? (hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.PRIMARY_SOFT) : HubTheme.DISABLED_BG;
+		int edge = enabled ? HubTheme.GOLD : HubTheme.LINE;
 		dc.fill(x, y, x + w, y + h, bg);
 		dc.fill(x, y, x + w, y + 1, edge);
 		dc.fill(x, y + h - 1, x + w, y + h, edge);
 		dc.fill(x, y, x + 1, y + h, edge);
 		dc.fill(x + w - 1, y, x + w, y + h, edge);
-		int color = enabled ? 0xFFFFE9A8 : 0xFF6A6A6A;
+		int color = enabled ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.DISABLED_TEXT;
 		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 6, color, false);
 	}
 

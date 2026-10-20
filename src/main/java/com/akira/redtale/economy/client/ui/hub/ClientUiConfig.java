@@ -26,6 +26,8 @@ public final class ClientUiConfig {
 	public static boolean showLabels = true;     // 侧边栏是否显示文字
 	public static boolean tipsEnabled = true;    // 底部 tip 轮播
 	public static boolean useHub = true;         // 命令打开界面时走 Hub（而不是旧界面）
+	/** §43.6：排行页「同步」按钮的冷却秒数（0 = 不限）。客户端本地可改。 */
+	public static int rankSyncCooldownSeconds = 60;
 
 	private static Path file;
 
@@ -45,6 +47,8 @@ public final class ClientUiConfig {
 			showLabels = !o.has("showLabels") || o.get("showLabels").getAsBoolean();
 			tipsEnabled = !o.has("tipsEnabled") || o.get("tipsEnabled").getAsBoolean();
 			useHub = !o.has("useHub") || o.get("useHub").getAsBoolean();
+			rankSyncCooldownSeconds = o.has("rankSyncCooldownSeconds")
+					? Math.max(0, o.get("rankSyncCooldownSeconds").getAsInt()) : rankSyncCooldownSeconds;
 		} catch (Exception ignored) {
 			// 配置坏了就用默认值，不阻塞界面
 		}
@@ -62,6 +66,7 @@ public final class ClientUiConfig {
 			o.addProperty("showLabels", showLabels);
 			o.addProperty("tipsEnabled", tipsEnabled);
 			o.addProperty("useHub", useHub);
+			o.addProperty("rankSyncCooldownSeconds", rankSyncCooldownSeconds);
 			try (Writer w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
 				w.write(o.toString());
 			}
@@ -72,9 +77,25 @@ public final class ClientUiConfig {
 
 	/** 播放按钮点击音（sound=silent 时不播）。 */
 	public static void click() {
+		devRequestedSound = false;
 		if ("silent".equals(sound)) return;
 		MinecraftClient mc = MinecraftClient.getInstance();
+		devRequestedSound = true;
 		mc.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+	}
+
+	/**
+	 * 仅 dev 截图夹具使用：上一次 {@link #click()} 是否真的向声音系统请求了播放。
+	 *
+	 * <p>「静音后没有按钮音」原本只能靠耳朵判定（截图拍不到声音）。
+	 * 这里把判定点前移到「有没有调用 {@code SoundManager.play}」——
+	 * 静音时不调用就是真的不响，剩下的音量/听感属于原版职责，不是本模组的逻辑。
+	 */
+	private static boolean devRequestedSound;
+
+	/** 仅 dev 夹具：读上一行的观测值。 */
+	public static boolean devLastClickRequestedSound() {
+		return devRequestedSound;
 	}
 
 	public static String themeLabel() {

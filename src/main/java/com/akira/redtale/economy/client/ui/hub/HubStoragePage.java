@@ -142,13 +142,13 @@ public final class HubStoragePage {
 		// 高亮要在物品**之上**（原版鼠标悬停是白色覆盖层）
 		// ★高亮在物品之上、光标之下★：半透明白罩 + 1px 白框
 		if (hover) {
-			dc.fill(cx + 1, cy + 1, cx + CELL - 1, cy + CELL - 1, 0x66FFFFFF);
-			dc.fill(cx, cy, cx + CELL, cy + 1, 0xFFFFFFFF);
-			dc.fill(cx, cy + CELL - 1, cx + CELL, cy + CELL, 0xFFFFFFFF);
-			dc.fill(cx, cy, cx + 1, cy + CELL, 0xFFFFFFFF);
-			dc.fill(cx + CELL - 1, cy, cx + CELL, cy + CELL, 0xFFFFFFFF);
+			dc.fill(cx + 1, cy + 1, cx + CELL - 1, cy + CELL - 1, HubTheme.SLOT_HILITE);
+			dc.fill(cx, cy, cx + CELL, cy + 1, HubTheme.SLOT_EDGE);
+			dc.fill(cx, cy + CELL - 1, cx + CELL, cy + CELL, HubTheme.SLOT_EDGE);
+			dc.fill(cx, cy, cx + 1, cy + CELL, HubTheme.SLOT_EDGE);
+			dc.fill(cx + CELL - 1, cy, cx + CELL, cy + CELL, HubTheme.SLOT_EDGE);
 		}
-		if (dim) dc.fill(cx + 1, cy + 1, cx + CELL - 1, cy + CELL - 1, 0x88000000);
+		if (dim) dc.fill(cx + 1, cy + 1, cx + CELL - 1, cy + CELL - 1, HubTheme.SLOT_DIM);
 		if (hover) hovered = st.copy();
 	}
 

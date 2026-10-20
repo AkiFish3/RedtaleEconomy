@@ -88,21 +88,21 @@ public final class HubMarketPage {
 		var mc = MinecraftClient.getInstance();
 		ItemStack hand = mc.player == null ? ItemStack.EMPTY : mc.player.getMainHandStack();
 		if (!hand.isEmpty()) dc.drawItem(hand, x + 4, sy + 5);
-		else dc.fill(x + 4, sy + 5, x + 20, sy + 21, 0xFF3A3A3A);
+		else dc.fill(x + 4, sy + 5, x + 20, sy + 21, HubTheme.SLOT);
 		String handName = hand.isEmpty() ? "手上没有物品" : hand.getName().getString() + " ×" + hand.getCount();
 		dc.drawText(tr, Text.literal(trim(tr, handName, w - 120)), x + 24, sy + 6, HubTheme.TEXT, false);
 		if (!hand.isEmpty()) {
 			// 原句「/market sell <价格> 等价通道」读起来像代码片段，改成说人话
 			dc.drawText(tr, Text.literal(trim(tr, "点「挂出」上架，成交后钱自动入账", w - 120)),
-					x + 24, sy + 16, 0xFF6E6E6E, false);
+					x + 24, sy + 16, HubTheme.HINT, false);
 		}
 		// 价格 chip + 挂出按钮
 		String priceLabel = "价:" + price();
 		int pw = tr.getWidth(priceLabel) + 10;
 		int px = x + w - 62 - pw;
-		dc.fill(px, sy + 6, px + pw, sy + 20, 0xFF232323);
+		dc.fill(px, sy + 6, px + pw, sy + 20, HubTheme.BAR_SUB);
 		dc.fill(px, sy + 6, px + pw, sy + 7, HubTheme.GOLD);
-		dc.drawText(tr, Text.literal(priceLabel), px + 5, sy + 9, 0xFFFFE9A8, false);
+		dc.drawText(tr, Text.literal(priceLabel), px + 5, sy + 9, HubTheme.PRIMARY_SOFT_TEXT, false);
 		boolean canSell = !hand.isEmpty();
 		mini(dc, tr, x + w - 58, sy + 6, 52, 14, "挂出", canSell, mouseX, mouseY, HubTheme.GOLD);
 
@@ -119,12 +119,12 @@ public final class HubMarketPage {
 			dc.drawText(tr, Text.literal(snap.mineOnly() ? "你还没有挂单" : "市场里暂时没有货"),
 					x + 6, top + 6, HubTheme.MUTED, false);
 			dc.drawText(tr, Text.literal(trim(tr, "拿着物品 → 填价格 → 点「挂出」；也可以 /market sell <价格>",
-					w - 12)), x + 6, top + 20, 0xFF6A6A6A, false);
+					w - 12)), x + 6, top + 20, HubTheme.HINT, false);
 		}
 
 		// 底栏
 		int barY = y + h - 24;
-		dc.fill(x, barY, x + w, barY + 20, 0xFF232323);
+		dc.fill(x, barY, x + w, barY + 20, HubTheme.BAR_SUB);
 		String pg = "第 " + (snap.totalPages() <= 0 ? 0 : snap.page() + 1) + " / " + Math.max(0, snap.totalPages())
 				+ " 页";
 		dc.drawText(tr, Text.literal(trim(tr, pg, w - 120)), x + 5, barY + 6, HubTheme.MUTED, false);
@@ -145,7 +145,7 @@ public final class HubMarketPage {
 		if (!st.isEmpty()) {
 			dc.drawItem(st, x + 3, ry + 2);
 		} else {
-			dc.fill(x + 3, ry + 2, x + 19, ry + 18, 0xFF444444);
+			dc.fill(x + 3, ry + 2, x + 19, ry + 18, HubTheme.SLOT);
 		}
 		String name = st.isEmpty() ? o.itemId() : st.getName().getString();
 		dc.drawText(tr, Text.literal(trim(tr, name + " ×" + o.count(), w - 190)), x + 23, ry + 2, HubTheme.TEXT, false);
@@ -153,7 +153,7 @@ public final class HubMarketPage {
 		String price = o.price() + " 铜";
 		dc.drawText(tr, Text.literal(price), x + w - 92, ry + 2, HubTheme.GOLD, false);
 		String remain = o.remainingMs() < 0 ? "永久" : MarketRules.remainingText(o.remainingMs()) + "后下架";
-		dc.drawText(tr, Text.literal(trim(tr, remain, 84)), x + w - 92, ry + 12, 0xFF6E6E6E, false);
+		dc.drawText(tr, Text.literal(trim(tr, remain, 84)), x + w - 92, ry + 12, HubTheme.HINT, false);
 		if (o.mine()) {
 			dc.drawText(tr, Text.literal("我的"), x + w - 22, ry + 6, HubTheme.PRIMARY, false);
 		}
@@ -223,20 +223,20 @@ public final class HubMarketPage {
 			double mouseX, double mouseY) {
 		int w = tr.getWidth(label) + 10;
 		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + FILTER_H;
-		dc.fill(x, y, x + w, y + FILTER_H, active ? 0xFF3A3020 : (hover ? 0xFF2E2E2E : 0xFF232323));
+		dc.fill(x, y, x + w, y + FILTER_H, active ? HubTheme.PRIMARY_SOFT : (hover ? HubTheme.INNER_HOVER : HubTheme.BAR_SUB));
 		dc.fill(x, y, x + w, y + 1, active ? HubTheme.GOLD : HubTheme.LINE);
-		dc.drawText(tr, Text.literal(label), x + 5, y + 3, active ? 0xFFFFE9A8 : HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal(label), x + 5, y + 3, active ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
 		return w;
 	}
 
 	private static void mini(DrawContext dc, TextRenderer tr, int x, int y, int w, int h, String label,
 			boolean enabled, double mouseX, double mouseY, int accent) {
 		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		dc.fill(x, y, x + w, y + h, enabled ? (hover ? 0xFF4A3F22 : 0xFF3A3020) : 0xFF2A2A2A);
+		dc.fill(x, y, x + w, y + h, enabled ? (hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.PRIMARY_SOFT) : HubTheme.DISABLED_BG);
 		dc.fill(x, y, x + w, y + 1, enabled ? accent : HubTheme.LINE);
 		dc.fill(x, y + h - 1, x + w, y + h, enabled ? accent : HubTheme.LINE);
 		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 3,
-				enabled ? 0xFFFFE9A8 : 0xFF6A6A6A, false);
+				enabled ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.DISABLED_TEXT, false);
 	}
 
 	private static String trim(TextRenderer tr, String s, int maxW) {

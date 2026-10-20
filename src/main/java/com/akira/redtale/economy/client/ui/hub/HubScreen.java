@@ -110,10 +110,18 @@ public class HubScreen extends Screen {
 	private double rippleX, rippleY;
 	private long lastShopActionAt;
 	private long lastMarketActionAt;
+	/** §43.6：排行榜「同步」按钮 60 秒冷却（只读缓存，防刷）。 */
+	private long lastRankSyncAt;
 	private Object lastShopPage;
 	private int lastDragSlot = -1;
 	private int rankBoard;
-	private boolean rankActiveOnly;
+	/**
+	 * 「只看活跃」开关。**默认 true**（spec §43.6：排行榜默认只统计 lastSeen 在 activeDays 内的人）。
+	 *
+	 * <p>曾经默认 false ⇒ 首次打开看到的是「含长期未上线」的全量榜，
+	 * 而 {@code /rt rank} 推下来的是活跃榜、复选框却画成未勾 ⇒ 界面状态和数据对不上。
+	 */
+	private boolean rankActiveOnly = true;
 	private boolean rankDropdown;
 	private int tipIndex;
 	private long tipSwitchAt;
@@ -243,7 +251,7 @@ public class HubScreen extends Screen {
 			HubVanilla.button(dc, closeX - 3, closeY - 3, closeSize + 6, 20, closeHover, false);
 		} else {
 			dc.fill(closeX - 2, closeY - 2, closeX + closeSize + 2, closeY + closeSize + 2,
-					closeHover ? 0xFF7A3A3A : 0xFF000000);
+					closeHover ? HubTheme.DANGER_HOVER : HubTheme.INNER);
 		}
 		dc.drawText(textRenderer, Text.literal("×"), closeX + 2, closeY, HubTheme.TEXT, false);
 
@@ -309,6 +317,7 @@ public class HubScreen extends Screen {
 		} else if (page == HubPage.PASS) {
 			HubPassPage.render(dc, textRenderer, cx, cy, cw, ch, passScroll, mouseX, mouseY);
 		} else if (page == HubPage.RANK) {
+			HubRankPage.setSyncCooldownSeconds(rankSyncCooldownLeft());
 			HubRankPage.render(dc, textRenderer, cx, cy, cw, ch, rankBoard, rankActiveOnly,
 					rankDropdown, mouseX, mouseY);
 		} else if (page == HubPage.MARKET) {
@@ -405,13 +414,13 @@ public class HubScreen extends Screen {
 		int x = panelX;
 		int y = panelY + TOP_BAR;
 		dc.fill(x, y, x + sidebarW(), y + PROFILE_H,
-				isVanilla() ? 0xFFC6C6C6 : 0xFF1B1B1B);
+				HubTheme.vanilla ? HubTheme.PANEL : HubTheme.BAR);
 		boolean withText = ClientUiConfig.showLabels && !autoCompact;
 		int headSize = withText ? 32 : 26;
 		int headX = withText ? x + 6 : x + (sidebarW() - headSize) / 2;
 		int headY = withText ? y + 6 : y + 8;
 		dc.fill(headX - 1, headY - 1, headX + headSize + 1, headY + headSize + 1,
-				isVanilla() ? 0xFF8B8B8B : 0xFF3B3226);
+				HubTheme.vanilla ? HubTheme.LINE : HubTheme.SLOT);
 		drawHead(dc, headX, headY, headSize);
 		if (withText) {
 			MinecraftClient mc = MinecraftClient.getInstance();
@@ -533,7 +542,7 @@ public class HubScreen extends Screen {
 			dc.drawTexture(tex, 0, 0, 40, 8, 8, 8, 64, 64);
 			m.pop();
 		} catch (Exception ex) {
-			dc.fill(x, y, x + size, y + size, 0xFF3B3226);
+			dc.fill(x, y, x + size, y + size, HubTheme.SLOT);
 		}
 	}
 
@@ -570,7 +579,7 @@ public class HubScreen extends Screen {
 				} else if (hovered) {
 					HubWidgets.roundRect(dc, panelX + 2, y + 2, sidebarW() - 4, ROW_H - 4, 2, HubTheme.HOVER);
 				}
-				int color = sel ? 0xFFFFE9A8 : (hovered ? 0xFFFFFFFF : HubTheme.TEXT);
+				int color = sel ? HubTheme.PRIMARY_SOFT_TEXT : (hovered ? HubTheme.TITLE : HubTheme.TEXT);
 				drawIcon(dc, p.icon, panelX + (sidebarW() > 44 ? 8 : 11), y + 5);
 				if (sidebarW() > 44) {
 					dc.drawText(textRenderer, Text.literal(p.label), panelX + 28, y + 8, color, false);
@@ -586,8 +595,8 @@ public class HubScreen extends Screen {
 		if (ms > 0) {
 			int barH = Math.max(12, (bottom - top) * (bottom - top) / (HubPage.values().length * ROW_H));
 			int barY = top + (bottom - top - barH) * sidebarScroll / ms;
-			dc.fill(panelX + sidebarW() - 3, top, panelX + sidebarW() - 1, bottom, 0xFF333333);
-			dc.fill(panelX + sidebarW() - 3, barY, panelX + sidebarW() - 1, barY + barH, 0xFF8A8A8A);
+			dc.fill(panelX + sidebarW() - 3, top, panelX + sidebarW() - 1, bottom, HubTheme.ROW_HOVER);
+			dc.fill(panelX + sidebarW() - 3, barY, panelX + sidebarW() - 1, barY + barH, HubTheme.MUTED);
 		}
 		if (rippleRow >= 0) {
 			long dt = System.currentTimeMillis() - rippleAt;
@@ -624,7 +633,7 @@ public class HubScreen extends Screen {
 		for (String[] r : rows) {
 			if (!r[0].equals(lastGroup)) {
 				lastGroup = r[0];
-				dc.drawText(textRenderer, Text.literal(r[0]), cx, y, 0xFF6A6A6A, false);
+				dc.drawText(textRenderer, Text.literal(r[0]), cx, y, HubTheme.HINT, false);
 				y += 14;
 			}
 			dc.fill(cx, y, cx + cw, y + 18, HubTheme.CARD);
@@ -639,7 +648,7 @@ public class HubScreen extends Screen {
 	private void renderBottom(DrawContext dc) {
 		int y = panelY + panelH - BOTTOM_BAR;
 		if (!isVanilla()) {
-			dc.fill(panelX, y, panelX + panelW, panelY + panelH, 0xFF1B1B1B);
+			dc.fill(panelX, y, panelX + panelW, panelY + panelH, HubTheme.BAR);
 			dc.fill(panelX, y, panelX + panelW, y + 1, HubTheme.LINE);
 		}
 
@@ -659,7 +668,7 @@ public class HubScreen extends Screen {
 			}
 			Tips.Tip tip = Tips.at(tipIndex);
 			text = tip.text();
-			color = tip.ad() ? 0xFFC9A227 : HubTheme.MUTED;
+			color = tip.ad() ? HubTheme.GOLD : HubTheme.MUTED;
 		}
 		if (!text.isEmpty()) {
 			int maxW = panelW - 20;
@@ -715,6 +724,40 @@ public class HubScreen extends Screen {
 		return page.id;
 	}
 
+	/**
+	 * 仅 dev 夹具（U10）：点设置页的某一行。
+	 *
+	 * <p>坐标来自 {@link HubSettingsPage#rowCenter}，与 {@code handleClick} 里的命中判定同一套布局，
+	 * 而且走 {@link #mouseClicked} ⇒ 验的是「真实点击能不能点到」，不是直接改静态开关。
+	 *
+	 * @return 是否命中（行被裁剪/不存在时返回 false）
+	 */
+	public boolean devClickSettingsRow(HubSettingsPage.Row row) {
+		if (page != HubPage.SETTINGS) return false;
+		int cx = panelX + sidebarW() + 12;
+		int cy = panelY + TOP_BAR + 8;
+		int cw = panelW - sidebarW() - 24;
+		int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+		double[] p = HubSettingsPage.rowCenter(row, cx, cy, cw, ch);
+		if (p == null) return false;
+		return mouseClicked(p[0], p[1], 0);
+	}
+
+	/** 仅 dev 夹具：设置页内容区高度（用于算滚动上限）。 */
+	public int devSettingsContentHeight() {
+		return panelH - TOP_BAR - BOTTOM_BAR - 16;
+	}
+
+	/** 仅 dev 夹具：设置页滚动上限（0 = 装得下，不需要滚）。 */
+	public int devSettingsScrollMax() {
+		return HubSettingsPage.maxScroll(devSettingsContentHeight());
+	}
+
+	/** 仅 dev 夹具：设置页滚到指定偏移（越界由 render 夹回）。 */
+	public void devScrollSettings(int v) {
+		HubSettingsPage.scrollTo(v);
+	}
+
 	/** 仅 dev 夹具：点商店左侧目录树第 {@code row} 行（走真实 mouseClicked 命中路径）。 */
 	public boolean devClickTreeRow(int row) {
 		if (page != HubPage.SHOP) return false;
@@ -725,6 +768,33 @@ public class HubScreen extends Screen {
 		double[] p = HubShopPage.treeRowCenter(cx, cy, ch, row);
 		if (p == null) return false;
 		return mouseClicked(p[0], p[1], 0);
+	}
+
+	/**
+	 * 仅 dev 夹具（U9）：点排行页的「只看活跃」复选框。
+	 *
+	 * <p>坐标与 {@code handleClick} 里 {@code HubRankPage.click(...)} 判定的矩形同源，
+	 * 而且走 {@link #mouseClicked} ⇒ 验的是真命中路径（含 {@code inSearchBox} 让位）。
+	 */
+	public boolean devClickRankToggle() {
+		if (page != HubPage.RANK) return false;
+		int cx = panelX + sidebarW() + 12;
+		int cy = panelY + TOP_BAR + 8;
+		// 复选框矩形 = x..x+70 / y+22..y+36（render 里 sy=y+24，命中判定 -2/+12）
+		return mouseClicked(cx + 30, cy + 29, 0);
+	}
+
+	/** 仅 dev 夹具（U9/§48.6）：点排行页顶部的榜单下拉（验「其余榜为二级」的下拉是活的）。 */
+	public boolean devClickRankDropdown() {
+		if (page != HubPage.RANK) return false;
+		int cx = panelX + sidebarW() + 12;
+		int cy = panelY + TOP_BAR + 8;
+		return mouseClicked(cx + 20, cy + 9, 0);
+	}
+
+	/** 仅 dev 夹具：当前「只看活跃」开关值（写日志用，不做判定的第二来源）。 */
+	public boolean devRankActiveOnly() {
+		return rankActiveOnly;
 	}
 
 	/** 仅 dev 夹具：走真实 charTyped 通道写字，再请求一页（验搜索真的过服务端）。 */
@@ -1091,6 +1161,13 @@ public class HubScreen extends Screen {
 				return true;
 			}
 			if (ra == HubRankPage.Action.SYNC) {
+				int left = rankSyncCooldownLeft();
+				if (left > 0) {
+					// 冷却中只更新界面内提示，不重发请求（§43.6 防刷）
+					setStatus("同步冷却中，还需 " + left + " 秒");
+					return true;
+				}
+				lastRankSyncAt = System.currentTimeMillis();
 				com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
 				setStatus("正在同步榜单…");
 				return true;
@@ -1219,6 +1296,46 @@ public class HubScreen extends Screen {
 			return mx >= cx && mx < cx + cw - 92 && my >= cy + 16 && my < cy + 32;
 		}
 		return false;
+	}
+
+	/** 排行页「同步」还剩多少秒冷却（0 = 可点）；冷却秒数读客户端配置，0 表示不限。 */
+	private int rankSyncCooldownLeft() {
+		int cd = ClientUiConfig.rankSyncCooldownSeconds;
+		if (cd <= 0 || lastRankSyncAt <= 0) return 0;
+		long left = cd * 1000L - (System.currentTimeMillis() - lastRankSyncAt);
+		if (left <= 0) return 0;
+		return (int) Math.ceil(left / 1000.0);
+	}
+
+	/** 仅 dev 夹具：点榜单下拉里的第 {@code idx} 项（走 hitDropdown 同一套坐标）。 */
+	public boolean devClickRankBoard(int idx) {
+		if (page != HubPage.RANK) return false;
+		int cx = panelX + sidebarW() + 12;
+		int cy = panelY + TOP_BAR + 8;
+		int listH = HubRankPage.BOARDS.length * 16;
+		int bottom = panelY + panelH - BOTTOM_BAR;
+		int iy = (cy + 20 + listH <= bottom) ? cy + 20 : cy - listH;
+		return mouseClicked(cx + 20, iy + idx * 16 + 8, 0);
+	}
+
+	/** 仅 dev 夹具：当前选中的榜（0=财富）。 */
+	public int devRankBoard() {
+		return rankBoard;
+	}
+
+	/** 仅 dev 夹具：点排行页的「同步」按钮（验 60 秒冷却与置灰）。 */
+	public boolean devClickRankSync() {
+		if (page != HubPage.RANK) return false;
+		int cx = panelX + sidebarW() + 12;
+		int cy = panelY + TOP_BAR + 8;
+		int cw = panelW - sidebarW() - 24;
+		// 命中区 = x+w-20..x+w / sy-2..sy+12（render 里 sy = cy+24）
+		return mouseClicked(cx + cw - 10, cy + 29, 0);
+	}
+
+	/** 仅 dev 夹具：当前同步冷却剩余秒数（写日志用）。 */
+	public int devRankSyncCooldownLeft() {
+		return rankSyncCooldownLeft();
 	}
 
 	private void requestGuild() {

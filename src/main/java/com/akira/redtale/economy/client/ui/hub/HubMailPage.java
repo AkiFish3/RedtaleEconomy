@@ -34,10 +34,10 @@ public final class HubMailPage {
 	private static void drawButton(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			String label, double mouseX, double mouseY) {
 		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		dc.fill(x, y, x + w, y + h, hover ? 0xFF4A3F22 : 0xFF3A3020);
+		dc.fill(x, y, x + w, y + h, hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.PRIMARY_SOFT);
 		dc.fill(x, y, x + w, y + 1, HubTheme.GOLD);
 		dc.fill(x, y + h - 1, x + w, y + h, HubTheme.GOLD);
-		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 7, 0xFFFFE9A8, false);
+		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 7, HubTheme.PRIMARY_SOFT_TEXT, false);
 	}
 
 	public static Action click(double mx, double my, int x, int y, int w, int h) {

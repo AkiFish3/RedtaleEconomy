@@ -43,8 +43,8 @@ public final class UiShots {
 	private static final int JOIN_TIMEOUT = 400;
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
-	/** 最后一个拍照 step（U4 侧边栏 5 步 + U11 目录树 6 步，从 5 扩到 31）。 */
-	private static final int LAST_STEP = 31;
+	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2，到 86）。 */
+	private static final int LAST_STEP = 86;
 
 	private static boolean active;
 	private static int tick;
@@ -185,6 +185,147 @@ public final class UiShots {
 			case 29 -> shotKeep(mc, "u6-18-shop-tree-l3.png", () -> { });
 			case 30 -> act(mc, () -> search(mc, "oak"));
 			case 31 -> shotKeep(mc, "u6-19-shop-search-oak.png", () -> { });
+			// ★U9：排行榜★ 默认（只看活跃）→ 点开关 → 全量 → 打开榜单下拉。
+			// 判断依据不只靠看图：每步把 RankClientNetworking.LAST 的行数 / total / self 写进日志，
+			// 图能看到 6 行 vs 10 行、下拉里的五个榜名。
+			case 32 -> act(mc, () -> mc.setScreen(null));
+			case 33 -> shotKeep(mc, "u6-20-rank-active.png", () -> open(mc, HubPage.RANK, "rt rank"));
+			case 34 -> act(mc, () -> {
+				// 打开界面后 25 tick 才走到这里 ⇒ LAST 已是服务端回来的活跃榜
+				logRank(mc, "active");
+				clickRankToggle(mc);
+			});
+			case 35 -> shotKeep(mc, "u6-21-rank-all.png", () -> { });
+			case 36 -> act(mc, () -> {
+				logRank(mc, "all");
+				clickRankDropdown(mc);
+			});
+			case 37 -> shotKeep(mc, "u6-22-rank-boards.png", () -> { });
+			// §43.6：「同步」60 秒冷却 —— 第一次点真的发请求，紧接着再点应该被冷却拦下
+			case 38 -> act(mc, () -> clickRankDropdown(mc));   // 关掉下拉，否则下一次点击被它吃掉
+			case 39 -> act(mc, () -> clickRankSync(mc, "first"));
+			case 40 -> shotKeep(mc, "u6-23-rank-sync.png", () -> { });
+			case 41 -> act(mc, () -> clickRankSync(mc, "second"));
+			case 42 -> shotKeep(mc, "u6-24-rank-sync-cooldown.png", () -> { });
+			// 二级榜：下拉里选「收入」—— 该榜没数据源，界面应明确说"尚未接入"而不是照搬财富数据
+			case 43 -> act(mc, () -> clickRankDropdown(mc));
+			case 44 -> act(mc, () -> clickRankBoard(mc, 1));
+			case 45 -> shotKeep(mc, "u6-25-rank-board-income.png", () -> { });
+			// ★U10 收口：设置页还剩三处「纸面承诺、实机没验」的行为★
+			// ① 管理员折叠区能否展开（点「管理工具」那一行，走真实 mouseClicked）
+			// ② 「修改键位」是否真跳原版界面　③ 「显示语言」是否真跳原版界面
+			// 都是「点一下 → 界面变了」的可截图状态，不属于文档 §7 的悬停/拖拽/滚轮。
+			case 46 -> act(mc, () -> {
+				mc.setScreen(null);
+				HubSettingsPage.setAdminOpen(false);
+				HubSettingsPage.scrollTo(0);
+				LOG.add("settings reset: adminOpen=" + HubSettingsPage.devAdminOpen()
+						+ " scroll=" + HubSettingsPage.devScroll());
+			});
+			case 47 -> shotKeep(mc, "u6-26-settings-collapsed.png",
+					() -> open(mc, HubPage.SETTINGS, "rt settings"));
+			case 48 -> act(mc, () -> {
+				// 427x240 逻辑分辨率下「管理员」整组在折叠之外 ⇒ 先滚到底再点，
+				// 否则 rowCenter 返回 null（第一次跑就踩到：hit=false）。
+				if (mc.currentScreen instanceof HubScreen hub) {
+					int max = hub.devSettingsScrollMax();
+					hub.devScrollSettings(max);
+					LOG.add("settings scroll to " + max + " (contentH="
+							+ hub.devSettingsContentHeight() + ")");
+				}
+				clickSettingsRow(mc, HubSettingsPage.Row.ADMIN_HEAD, "expand");
+			});
+			case 49 -> act(mc, () -> {
+				// 展开后内容变长，滚动上限也变 ⇒ 重新滚到底，否则「重载配置」那行被裁掉
+				if (mc.currentScreen instanceof HubScreen hub) {
+					int max = hub.devSettingsScrollMax();
+					hub.devScrollSettings(max);
+					LOG.add("settings scroll after expand to " + max);
+				}
+			});
+			case 50 -> shotKeep(mc, "u6-27-settings-expanded.png", () -> { });
+			// 再点一次：折叠区必须能双向切换，不是「展开就回不去」
+			case 51 -> act(mc, () -> clickSettingsRow(mc, HubSettingsPage.Row.ADMIN_HEAD, "collapse"));
+			case 52 -> shotKeep(mc, "u6-33-settings-collapsed-again.png", () -> { });
+			case 53 -> act(mc, () -> clickSettingsRow(mc, HubSettingsPage.Row.LANGUAGE, "language"));
+			case 54 -> shotRaw(mc, "u6-34-settings-language.png");
+			case 55 -> act(mc, () -> {
+				mc.setScreen(null);
+				HubSettingsPage.setAdminOpen(true);
+				HubSettingsPage.scrollTo(0);
+			});
+			case 56 -> shotKeep(mc, "u6-35-settings-back.png",
+					() -> open(mc, HubPage.SETTINGS, "rt settings"));
+			case 57 -> act(mc, () -> clickSettingsRow(mc, HubSettingsPage.Row.KEYBINDS, "keybinds"));
+			case 58 -> shotRaw(mc, "u6-36-settings-keybinds.png");
+			// 设置页在原版主题下的可读性（分组标题/悬停行曾写死深色值）
+			case 59 -> act(mc, () -> {
+				mc.setScreen(null);
+				ClientUiConfig.theme = "vanilla";
+				ClientUiConfig.save();
+				HubTheme.apply("vanilla");
+				HubSettingsPage.scrollTo(0);
+			});
+			case 60 -> shotKeep(mc, "u6-37-settings-vanilla.png",
+					() -> open(mc, HubPage.SETTINGS, "rt settings"));
+			case 61 -> act(mc, () -> {
+				ClientUiConfig.theme = "dark";
+				ClientUiConfig.save();
+				HubTheme.apply("dark");
+			});
+			// ★R39 收口：按钮音效开关★ 截不到声音，改为验证「是否向声音系统请求播放」——
+			// sound=vanilla 时 click() 必须调用 SoundManager.play，silent 时必须直接 return。
+			case 62 -> act(mc, () -> soundProbe(mc, "silent"));
+			case 63 -> act(mc, () -> soundProbe(mc, "vanilla"));
+			// ★U13：主题覆盖收口★ —— 九个页在原版主题下逐个拍，验「页内卡片不再画深色」。
+			// 全部走 clickEntry（真实 mouseClicked 命中侧边栏），一屏接一屏地换页。
+			case 64 -> act(mc, () -> {
+				mc.setScreen(null);
+				ClientUiConfig.theme = "vanilla";
+				ClientUiConfig.save();
+				HubTheme.apply("vanilla");
+				LOG.add("theme=vanilla for U13 sweep");
+			});
+			case 65 -> shotKeep(mc, "u6-38-vanilla-checkin.png",
+					() -> open(mc, HubPage.CHECKIN, "rt checkin"));
+			case 66 -> act(mc, () -> clickEntry(mc, "商店", 1));
+			case 67 -> shotKeep(mc, "u6-39-vanilla-shop.png", () -> { });
+			case 68 -> act(mc, () -> clickEntry(mc, "市场", 2));
+			case 69 -> shotKeep(mc, "u6-40-vanilla-market.png", () -> { });
+			case 70 -> act(mc, () -> clickEntry(mc, "仓储", 3));
+			case 71 -> shotKeep(mc, "u6-41-vanilla-storage.png", () -> { });
+			case 72 -> act(mc, () -> clickEntry(mc, "悬赏", 4));
+			case 73 -> shotKeep(mc, "u6-42-vanilla-bounty.png", () -> { });
+			case 74 -> act(mc, () -> clickEntry(mc, "战令", 5));
+			case 75 -> shotKeep(mc, "u6-43-vanilla-pass.png", () -> { });
+			case 76 -> act(mc, () -> clickEntry(mc, "协会", 6));
+			case 77 -> shotKeep(mc, "u6-44-vanilla-guild.png", () -> { });
+			case 78 -> act(mc, () -> clickEntry(mc, "邮件", 7));
+			case 79 -> shotKeep(mc, "u6-45-vanilla-mail.png", () -> { });
+			case 80 -> act(mc, () -> clickEntry(mc, "排行", 8));
+			case 81 -> shotKeep(mc, "u6-46-vanilla-rank.png", () -> { });
+			// ★U10 最后一条：非 OP 少 4 行★ —— 单机主机恒 OP4，所以先拍一张 OP 基线，
+			// 再 /deop @s 把权限降下来，同一个界面下一帧就会少掉整组管理员行。
+			case 82 -> act(mc, () -> {
+				mc.setScreen(null);
+				ClientUiConfig.theme = "dark";
+				ClientUiConfig.save();
+				HubTheme.apply("dark");
+				HubSettingsPage.setAdminOpen(true);
+				HubSettingsPage.scrollTo(0);
+			});
+			case 83 -> shotKeep(mc, "u6-47-settings-op.png", () -> {
+				HubSettingsPage.setAdminOpen(true);
+				open(mc, HubPage.SETTINGS, "rt settings");
+			});
+			case 84 -> act(mc, () -> {
+				logPerm(mc, "before-deop");
+				if (mc.player != null) {
+					mc.player.networkHandler.sendChatCommand("deop " + mc.player.getGameProfile().getName());
+				}
+			});
+			case 85 -> act(mc, () -> logPerm(mc, "after-deop"));
+			case 86 -> shotRaw(mc, "u6-48-settings-nonop.png");
 			default -> finish(mc);
 		}
 	}
@@ -288,7 +429,138 @@ public final class UiShots {
 				+ ShopClientState.filter().categoryOrEmpty());
 	}
 
-	/** 只执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */
+	/** 点排行页「只看活跃」复选框（走 HubScreen 真实 mouseClicked 命中路径）。 */
+	private static void clickRankToggle(MinecraftClient mc) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("rank toggle skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		boolean before = hub.devRankActiveOnly();
+		boolean hit = hub.devClickRankToggle();
+		LOG.add("rank toggle hit=" + hit + " state " + before + " -> " + hub.devRankActiveOnly()
+				+ " at tick " + tick);
+	}
+
+	/** 点排行页顶部的榜单下拉（验「其余榜是二级」的下拉真的能开）。 */
+	private static void clickRankDropdown(MinecraftClient mc) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("rank dropdown skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		boolean hit = hub.devClickRankDropdown();
+		LOG.add("rank dropdown hit=" + hit + " at tick " + tick);
+	}
+
+	/** 从下拉里选第 idx 个榜（走真实 mouseClicked 命中路径）。 */
+	private static void clickRankBoard(MinecraftClient mc, int idx) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("rank board skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		boolean hit = hub.devClickRankBoard(idx);
+		LOG.add("rank board[" + idx + "] hit=" + hit + " selected=" + hub.devRankBoard()
+				+ " at tick " + tick);
+	}
+
+	/** 点排行页「同步」按钮，并记下点完后的冷却剩余秒数（验 60 秒冷却真的生效）。 */
+	private static void clickRankSync(MinecraftClient mc, String tag) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("rank sync skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		int before = hub.devRankSyncCooldownLeft();
+		boolean hit = hub.devClickRankSync();
+		LOG.add("rank sync[" + tag + "] hit=" + hit + " cooldownBefore=" + before
+				+ " cooldownAfter=" + hub.devRankSyncCooldownLeft() + " at tick " + tick);
+	}
+
+	/** 把客户端缓存的榜快照写进日志：行数 / total / 自己那行 / 快照自带的 activeOnly。 */
+	private static void logRank(MinecraftClient mc, String tag) {
+		var snap = com.akira.redtale.economy.client.rank.RankClientNetworking.LAST;
+		if (snap == null) {
+			LOG.add("rank[" + tag + "] no snapshot");
+			return;
+		}
+		var self = snap.self();
+		LOG.add("rank[" + tag + "] rows=" + snap.top().size() + " total=" + snap.total()
+				+ " snapActiveOnly=" + snap.activeOnly()
+				+ " self=" + (self == null ? "null" : self.rank() + "/" + self.name() + "/" + self.balance())
+				+ " uiActiveOnly=" + (mc.currentScreen instanceof HubScreen h ? h.devRankActiveOnly() : null)
+				+ " at tick " + tick);
+		if (!snap.top().isEmpty()) {
+			StringBuilder sb = new StringBuilder("rank[" + tag + "] top=");
+			for (var r : snap.top()) sb.append(r.rank()).append(':').append(r.name()).append(' ');
+			LOG.add(sb.toString().trim());
+		}
+	}
+
+	/** 点设置页某一行（走 HubScreen 真实 mouseClicked 命中路径），并记录点击前后状态与落到哪个界面。 */
+	private static void clickSettingsRow(MinecraftClient mc, HubSettingsPage.Row row, String tag) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("settings row " + row + "[" + tag + "] skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		boolean before = HubSettingsPage.devAdminOpen();
+		boolean hit = hub.devClickSettingsRow(row);
+		LOG.add("settings row " + row + "[" + tag + "] hit=" + hit
+				+ " adminOpen " + before + " -> " + HubSettingsPage.devAdminOpen()
+				+ " screen=" + (mc.currentScreen == null ? "null"
+				: mc.currentScreen.getClass().getSimpleName())
+				+ " at tick " + tick);
+	}
+
+	/**
+	 * 拍「不是我们的界面」（原版键位/语言界面）：不判 isOurs，有什么拍什么。
+	 *
+	 * <p>不清屏 —— 下一步自己负责把界面关掉。
+	 */
+	private static void shotRaw(MinecraftClient mc, String name) {
+		Screen cur = mc.currentScreen;
+		if (cur == null) {
+			LOG.add("raw shot " + name + " skipped: screen is null at tick " + tick);
+			next(step + 1);
+			return;
+		}
+		ScreenshotRecorder.saveScreenshot(mc.runDirectory, name, mc.getFramebuffer(),
+				text -> LOG.add("saved " + name + " : " + text.getString()));
+		LOG.add("raw shot " + name + " at tick " + tick + " screen=" + cur.getClass().getSimpleName());
+		next(step + 1);
+	}
+
+	/**
+	 * 探针：设成 {@code mode} 后真的点一次（走 {@link ClientUiConfig#click()}），
+	 * 把「有没有向 SoundManager 请求播放」写进日志。
+	 */
+	private static void soundProbe(MinecraftClient mc, String mode) {
+		ClientUiConfig.sound = mode;
+		ClientUiConfig.save();
+		ClientUiConfig.click();
+		LOG.add("sound[" + mode + "] playRequested=" + ClientUiConfig.devLastClickRequestedSound()
+				+ " label=" + ClientUiConfig.soundLabel() + " at tick " + tick);
+	}
+
+	/** 记下当前权限等级与设置页可见行数（U10：非 OP 应比 OP 少 4 行）。 */
+	private static void logPerm(MinecraftClient mc, String tag) {
+		if (mc.player == null) {
+			LOG.add("perm[" + tag + "] no player");
+			return;
+		}
+		LOG.add("perm[" + tag + "] level4=" + mc.player.hasPermissionLevel(4)
+				+ " level2=" + mc.player.hasPermissionLevel(2)
+				+ " adminVisible=" + HubSettingsPage.devAdminVisible()
+				+ " rows=" + HubSettingsPage.devRowCount()
+				+ " adminOpen=" + HubSettingsPage.devAdminOpen()
+				+ " screen=" + (mc.currentScreen == null ? "null"
+				: mc.currentScreen.getClass().getSimpleName())
+				+ " at tick " + tick);
+	}
+
+	/** 仅执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */
 	private static void act(MinecraftClient mc, Runnable action) {
 		action.run();
 		LOG.add("act step " + step + " at tick " + tick);

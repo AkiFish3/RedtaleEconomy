@@ -20,10 +20,7 @@ public final class HubPassPage {
 	private static final int CELL_H = 52;
 	private static final int GAP = 4;
 
-	private static final int C_CELL_OK = 0xFF332B18;
-	private static final int C_TRACK = 0xFF151515;
-	private static final int C_DONE = 0xFF2A2A2A;
-
+			
 	private HubPassPage() {
 	}
 
@@ -41,7 +38,7 @@ public final class HubPassPage {
 
 		// 经验条
 		int barY = y + 14;
-		dc.fill(x, barY, x + w, barY + 6, C_TRACK);
+		dc.fill(x, barY, x + w, barY + 6, HubTheme.TRACK);
 		long need = Math.max(1, s.xpNext());
 		int fill = (int) (w * Math.min(1.0, (double) s.xp() / need));
 		dc.fill(x, barY, x + fill, barY + 6, HubTheme.GOLD);
@@ -81,9 +78,9 @@ public final class HubPassPage {
 			boolean can = unlocked && done && !got;
 			boolean hover = mouseX >= cx && mouseX < cx + CELL_W && mouseY >= y && mouseY < y + CELL_H;
 
-			int bg = got ? C_DONE : (can ? C_CELL_OK : (unlocked ? HubTheme.CARD : 0xFF1C1C1C));
+			int bg = got ? HubTheme.DISABLED_BG : (can ? HubTheme.SELECT : (unlocked ? HubTheme.CARD : HubTheme.INNER));
 			dc.fill(cx, y, cx + CELL_W, y + CELL_H, bg);
-			int edge = can ? HubTheme.GOLD : (hover ? 0xFF5A5A5A : HubTheme.LINE);
+			int edge = can ? HubTheme.GOLD : (hover ? HubTheme.EDGE_HOVER : HubTheme.LINE);
 			dc.fill(cx, y, cx + CELL_W, y + 1, edge);
 			dc.fill(cx, y + CELL_H - 1, cx + CELL_W, y + CELL_H, edge);
 
@@ -93,9 +90,9 @@ public final class HubPassPage {
 			String reward = r.money() > 0 ? ("+" + shortNum(r.money())) : (r.items().isEmpty() ? "—" : "×" + r.items().get(0).count());
 			dc.drawText(tr, Text.literal(reward), cx + 4, y + 20, HubTheme.GOLD, false);
 			String state = got ? "已领" : (done ? (unlocked ? "可领" : "锁定") : "未达");
-			dc.drawText(tr, Text.literal(state), cx + 4, y + 36, can ? 0xFFFFE9A8 : HubTheme.MUTED, false);
+			dc.drawText(tr, Text.literal(state), cx + 4, y + 36, can ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
 			if (!freeTrack && !unlocked) {
-				dc.fill(cx + CELL_W - 10, y + 4, cx + CELL_W - 4, y + 10, 0xFF8A7A5A);
+				dc.fill(cx + CELL_W - 10, y + 4, cx + CELL_W - 4, y + 10, HubTheme.GOLD);
 			}
 		}
 	}

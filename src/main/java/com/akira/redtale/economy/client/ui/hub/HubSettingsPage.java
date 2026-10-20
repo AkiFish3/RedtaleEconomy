@@ -11,12 +11,11 @@ import net.minecraft.text.Text;
  */
 public final class HubSettingsPage {
 
-	private static final int C_GROUP = 0xFF6A6A6A;
-	private static final int C_ROW_HOVER = 0xFF323232;
-
 	/** 可点击的行。 */
 	public enum Row {
 		THEME, SOUND, LABELS, TIPS, DEBUG,
+		/** U10：跳原版语言设置（界面上写的语言必须能改，不能只在标题里承诺）。 */
+		LANGUAGE,
 		/** U10：跳原版按键设置（不自己造键位界面）。 */
 		KEYBINDS,
 		/** U10：管理员折叠区（仅 OP4 可见，默认收起）。 */
@@ -44,6 +43,11 @@ public final class HubSettingsPage {
 
 	public static void scrollBy(int delta) {
 		scroll = Math.max(0, scroll + delta);
+	}
+
+	/** 仅 dev 夹具：直接跳到指定偏移（{@link #maxScroll} 之外的值由 render 夹回）。 */
+	public static void scrollTo(int v) {
+		scroll = Math.max(0, v);
 	}
 
 	/** 内容总高（行 + 分组标题 + 底部提示），与 render 的累加口径一致。 */
@@ -82,11 +86,14 @@ public final class HubSettingsPage {
 		list.add(item("外观", "按钮音效", ClientUiConfig.soundLabel(), Row.SOUND));
 		list.add(item("界面", "侧边栏显示文字", ClientUiConfig.showLabels ? "开" : "关", Row.LABELS));
 		list.add(item("界面", "底部提示轮播", ClientUiConfig.tipsEnabled ? "开" : "关", Row.TIPS));
+		list.add(item("界面", "显示语言", "打开原版设置", Row.LANGUAGE));
 		list.add(item("按键", "修改键位", "打开原版设置", Row.KEYBINDS));
 		list.add(item("高级", "连接信息", "—", Row.DEBUG));
 		// U10：管理员区默认折叠，避免普通玩家看到一堆「点了也没权限」的行
 		if (isAdmin()) {
-			list.add(item("管理员", "管理工具", adminOpen ? "收起 ▴" : "展开 ▾", Row.ADMIN_HEAD));
+			// 折叠标记只用 ASCII：几何图形块（▸/▴/▾）在默认字体里常是空白字形，
+			// 上一轮 U11 的树箭头就踩过（▸ 画出来什么都没有）。
+			list.add(item("管理员", "管理工具", adminOpen ? "收起 -" : "展开 +", Row.ADMIN_HEAD));
 			if (adminOpen) {
 				list.add(item("管理员", "商店编辑", "/shop admin edit", Row.ADMIN_SHOP));
 				list.add(item("管理员", "配置编辑", "/redtale edit", Row.ADMIN_CONFIG));
@@ -118,13 +125,15 @@ public final class HubSettingsPage {
 		for (Item it : items()) {
 			if (!it.group.equals(lastGroup)) {
 				lastGroup = it.group;
-				dc.drawText(tr, Text.literal(it.group), x, cy + 2, C_GROUP, false);
+				// 分组标题走 MUTED：曾写死 0xFF6A6A6A，在原版灰底（0xFFC6C6C6）上对比度约 2.6:1
+				dc.drawText(tr, Text.literal(it.group), x, cy + 2, HubTheme.MUTED, false);
 				cy += 16;
 			}
 			boolean inArea = mouseY >= y && mouseY < y + h;
 			boolean hover = inArea && mouseX >= x && mouseX < x + w
 					&& mouseY >= cy && mouseY < cy + 18;
-			dc.fill(x, cy, x + w, cy + 18, hover ? C_ROW_HOVER : HubTheme.CARD);
+			// 悬停底走主题：写死 0xFF323232 在原版主题里会把深灰文字糊掉
+			dc.fill(x, cy, x + w, cy + 18, hover ? HubTheme.ROW_HOVER : HubTheme.CARD);
 			dc.drawText(tr, Text.literal(it.label), x + 6, cy + 5, HubTheme.TEXT, false);
 			int vw = tr.getWidth(it.value);
 			boolean clickable = it.row != Row.DEBUG;
@@ -139,7 +148,7 @@ public final class HubSettingsPage {
 			int trackH = h;
 			int barH = Math.max(16, (int) ((long) trackH * trackH / (trackH + max)));
 			int barY = y + (int) ((long) (trackH - barH) * scroll / max);
-			dc.fill(x + w - 2, y, x + w, y + trackH, 0xFF151515);
+			dc.fill(x + w - 2, y, x + w, y + trackH, HubTheme.TRACK);
 			dc.fill(x + w - 2, barY, x + w, barY + barH, HubTheme.GOLD);
 		}
 		return cy;
@@ -163,9 +172,61 @@ public final class HubSettingsPage {
 		return null;
 	}
 
+	/**
+	 * 仅 dev 截图夹具使用：{@code row} 那一行的中心点（与本类 render / click 同一套布局）。
+	 *
+	 * <p>越界（被裁剪在可视区外）或该行当前不存在（折叠中的管理员子行）返回 {@code null}，
+	 * 夹具据此判定「点不到」而不是硬点一个空坐标。
+	 */
+	public static double[] rowCenter(Row row, int x, int y, int w, int h) {
+		String lastGroup = "";
+		int cy = y - scroll;
+		for (Item it : items()) {
+			if (!it.group.equals(lastGroup)) {
+				lastGroup = it.group;
+				cy += 16;
+			}
+			if (it.row == row) {
+				double mx = x + w / 2.0;
+				double my = cy + 9;
+				if (my < y || my >= y + h) return null;
+				return new double[]{mx, my};
+			}
+			cy += 20;
+		}
+		return null;
+	}
+
+	/** 仅 dev 夹具：当前是否展开管理员区（写日志用）。 */
+	public static boolean devAdminOpen() {
+		return adminOpen;
+	}
+
+	/** 仅 dev 夹具：当前权限下可见的行数（非 OP 恒比 OP 少 4 行：管理工具 + 3 个子行）。 */
+	public static int devRowCount() {
+		return items().length;
+	}
+
+	/** 仅 dev 夹具：客户端判定自己是不是管理员（读的就是 render 用的同一个判断）。 */
+	public static boolean devAdminVisible() {
+		return isAdmin();
+	}
+
+	/** 仅 dev 夹具：当前滚动偏移（写日志用）。 */
+	public static int devScroll() {
+		return scroll;
+	}
+
 	/** 执行切换并返回要显示的提示。 */
 	public static String toggle(Row row) {
 		switch (row) {
+			case LANGUAGE -> {
+				var mc = net.minecraft.client.MinecraftClient.getInstance();
+				// 直接复用原版语言列表：改完按「完成」回 Hub
+				mc.setScreen(new net.minecraft.client.gui.screen.option.LanguageOptionsScreen(
+						mc.currentScreen, mc.options, mc.getLanguageManager()));
+				return "已打开语言设置";
+			}
 			case KEYBINDS -> {
 				var mc = net.minecraft.client.MinecraftClient.getInstance();
 				// 直接复用原版键位界面：玩家改完按 Esc 回到 Hub（不自己造一套）

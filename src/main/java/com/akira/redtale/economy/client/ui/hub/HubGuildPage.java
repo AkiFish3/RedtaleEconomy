@@ -11,8 +11,7 @@ import java.util.List;
 /** Hub 内的协会页：档位阶梯 + 声望进度。 */
 public final class HubGuildPage {
 
-	private static final int C_TRACK = 0xFF151515;
-
+	
 	private HubGuildPage() {
 	}
 
@@ -35,7 +34,7 @@ public final class HubGuildPage {
 			nextName = nx.name();
 		}
 		int barY = y + 16;
-		dc.fill(x, barY, x + w, barY + 6, C_TRACK);
+		dc.fill(x, barY, x + w, barY + 6, HubTheme.TRACK);
 		if (nextRep > 0) {
 			long base = ranks.get(s.currentIndex()).rep();
 			double p = Math.min(1.0, (double) (s.rep() - base) / Math.max(1, nextRep - base));
@@ -55,7 +54,7 @@ public final class HubGuildPage {
 			dc.fill(x, ry, x + w, ry + 18, isCur ? HubTheme.SELECT : HubTheme.CARD);
 			if (isCur) dc.fill(x, ry, x + 3, ry + 18, HubTheme.GOLD);
 			dc.drawText(tr, Text.literal(ranks.get(i).name()), x + 8, ry + 5,
-					isCur ? 0xFFFFE9A8 : HubTheme.TEXT, false);
+					isCur ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.TEXT, false);
 			String need = ranks.get(i).rep() + "";
 			dc.drawText(tr, Text.literal(need), x + w - 6 - tr.getWidth(need), ry + 5,
 					isCur ? HubTheme.GOLD : HubTheme.MUTED, false);
