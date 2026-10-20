@@ -51,6 +51,15 @@ public final class RedtaleCommands {
 						.then(CommandManager.argument("code",
 										com.mojang.brigadier.arguments.StringArgumentType.word())
 								.executes(RedtaleCommands::cancelTicket)))
+				// R37：离线服改名（旧名 → 新名，逐条迁移数据；执行前出清单 + 票据确认）
+				.then(CommandManager.literal("player")
+						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
+						.then(CommandManager.literal("rename")
+								.then(CommandManager.argument("old",
+												com.mojang.brigadier.arguments.StringArgumentType.word())
+										.then(CommandManager.argument("new",
+														com.mojang.brigadier.arguments.StringArgumentType.word())
+												.executes(RedtaleCommands::playerRename)))))
 				.then(CommandManager.literal("help")
 						.executes(RedtaleCommands::help))
 				// B24 补发奖励：统一走邮件（物品进 Contact 信箱/队列，货币进待领取队列）
@@ -275,6 +284,67 @@ public final class RedtaleCommands {
 	}
 
 	/**
+	 * R37：{@code /redtale player rename <旧名> <新名>}。
+	 *
+	 * <p>离线服 UUID 由名字推导，改名 = 换号 ⇒ 先把旧 UUID 名下的数据复制到新 UUID
+	 * （{@link com.akira.redtale.economy.util.PlayerRename}），执行前打印清单并要求
+	 * {@code /redtale confirm <票据>}。正版服直接拒绝（那边改名走 Mojang，UUID 不变）。
+	 */
+	private static int playerRename(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			if (src.getServer() != null && src.getServer().isOnlineMode()) {
+				src.sendError(Text.literal("§c正版服改名请改 Mojang ID（UUID 不变，不需要迁移）；本命令只服务离线服"));
+				return 0;
+			}
+			String oldName = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "old").trim();
+			String newName = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "new").trim();
+			var nameRe = java.util.regex.Pattern.compile("^[A-Za-z0-9_]{3,16}$");
+			if (!nameRe.matcher(oldName).matches() || !nameRe.matcher(newName).matches()) {
+				src.sendError(Text.literal("§c名字只允许 3-16 位字母/数字/下划线"));
+				return 0;
+			}
+			if (oldName.equalsIgnoreCase(newName)) {
+				src.sendError(Text.literal("§c新旧名字相同"));
+				return 0;
+			}
+			var root = com.akira.redtale.economy.util.DataRoot.path();
+			var plan = com.akira.redtale.economy.util.PlayerRename.plan(root, oldName, newName);
+			if (plan.empty()) {
+				src.sendError(Text.literal("§c旧号没有可迁移的数据（" + plan.oldUuid() + "）—— 确认名字拼写，"
+						+ "或该玩家从未在本服消费过"));
+				return 0;
+			}
+			if (plan.conflicts() > 0) {
+				src.sendError(Text.literal("§c新号已有 " + plan.conflicts()
+						+ " 个同名文件，拒绝自动合并（会覆盖新号数据），请人工处理"));
+				return 0;
+			}
+			long bal = com.akira.redtale.economy.economy.BalanceService.get(plan.oldUuid());
+			var st = com.akira.redtale.economy.util.PlayerRename.stats(root, plan.oldUuid());
+			src.sendFeedback(() -> Text.literal("§6[rename] §f" + oldName + " §7→ §f" + newName), false);
+			src.sendFeedback(() -> Text.literal("§7UUID §f" + plan.oldUuid() + " §7→ §f" + plan.newUuid()), false);
+			src.sendFeedback(() -> Text.literal("§7余额 §f" + com.akira.redtale.economy.economy.Currency.format(bal)
+					+ " §7· 仓库 §f" + st.warehouseSlots() + "§7格(已购 " + st.warehousePurchased() + ")"
+					+ " §7· 签到 §f" + st.checkinStreak() + "§7天(共 " + st.checkinTotal() + ")"), false);
+			src.sendFeedback(() -> Text.literal("§7战令 §f" + st.passXp() + "xp"
+					+ (st.passPremium() ? " §6付费轨" : " §7免费轨")
+					+ " §7· 协会声望 §f" + st.guildRep()
+					+ " §7· 数据文件 §f" + st.dataFiles() + " 个"), false);
+			src.sendFeedback(() -> Text.literal("§7旧数据保留不删（可回退），新号同名文件不动"), false);
+
+			var t = ConfirmTickets.issue(src.getPlayer() == null ? new java.util.UUID(0, 0) : src.getPlayer().getUuid(),
+					"player.rename", oldName + "|" + newName);
+			src.sendFeedback(() -> Text.literal("§e确认执行：§f/redtale confirm " + t.code()
+					+ " §7（" + ConfirmTickets.remainingSeconds(t) + " 秒内有效）"), false);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c执行失败：" + e.getMessage()));
+			return 0;
+		}
+	}
+
+	/**
 	 * R36：{@code /rt admin data} —— 只读诊断，用来在游戏里确认「数据真的落在存档目录」，
 	 * 不用去翻文件系统。不改任何数据、不写盘。
 	 */
@@ -333,6 +403,20 @@ public final class RedtaleCommands {
 					&& com.akira.redtale.economy.shop.ShopCatalog.removeItem(parts[0], parts[1]);
 			case "shop.removeshop" -> parts.length >= 1
 					&& com.akira.redtale.economy.shop.ShopCatalog.removeShop(parts[0]);
+			case "player.rename" -> {
+				if (parts.length < 2) yield false;
+				var root = com.akira.redtale.economy.util.DataRoot.path();
+				var plan = com.akira.redtale.economy.util.PlayerRename.plan(root, parts[0], parts[1]);
+				var res = com.akira.redtale.economy.util.PlayerRename.execute(root, plan);
+				// 迁移完让各模块重新读新 UUID 名下的文件（旧号数据保留）
+				com.akira.redtale.economy.util.DataRoot.rebind();
+				src.sendFeedback(() -> Text.literal("§a迁移完成：复制 §f" + res.copied() + " §a个文件"
+						+ (res.failed() > 0 ? "，§c失败 " + res.failed() : "")
+						+ "，别名表 " + (res.aliasWritten() ? "§a已写" : "§c未写")), false);
+				RedtaleEconomy.LOGGER.info("[rename] {} → {}：复制 {}，失败 {}，旧数据保留",
+						parts[0], parts[1], res.copied(), res.failed());
+				yield res.copied() > 0 && res.failed() == 0;
+			}
 			default -> false;
 		};
 		if (!ok) {

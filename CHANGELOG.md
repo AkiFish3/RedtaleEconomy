@@ -1,5 +1,11 @@
 # 更新记录
 
+## 2026-10-20 — R37：离线服改名 `/redtale player rename <旧> <新>`
+
+- 新增 `util/PlayerRename`：按离线 UUID（`OfflinePlayer:<name>`）把旧号数据**复制**到新号名下——文件名/目录名里的 UUID 替换、内容里的 UUID 替换、JSON 白名单字段（`name/player/playerName/posterName/accepterName/ownerName`）改名；`accounts/_identities.json` 写别名。**旧数据一律保留，目标已存在则算冲突并拒绝**。
+- 新增 `/redtale player rename <旧名> <新名>`（owner 权限）：先打印清单（余额 / 仓库格数 / 签到天数 / 战令 xp / 协会声望 / 命中文件数），再发确认票据，`/redtale confirm <码>` 才真正复制；正版服直接拒绝（UUID 不变，不需要迁移）。
+- 执行后自动 `DataRoot.rebind()`，各模块按新 UUID 重读。
+
 ## 2026-10-20 — R36：玩家数据迁到 `<world>/redtale-data`
 
 **行为变更**
