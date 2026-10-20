@@ -3,6 +3,7 @@ package com.akira.redtale.economy.shop;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.ShopConfig;
 import com.akira.redtale.economy.config.StorageConfig;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -40,7 +41,7 @@ public final class ShopStock {
 		STOCK.clear();
 		file = null;
 		lastError = null;
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			Path f = r.path().resolve(ShopConfig.stockFile());
 			Files.createDirectories(f.getParent());

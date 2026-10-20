@@ -147,6 +147,35 @@ public class RedtaleEconomy implements ModInitializer {
 
 		com.akira.redtale.economy.net.BalanceNetworking.register();
 		com.akira.redtale.economy.net.WarehouseNetworking.register();
+
+		// R36：数据根目录两段式（spec §40.2）
+		// 加载期 %world% 不可用 → 各模块先落 redtale-data.pending；
+		// 这里登记「存档就绪后要重绑」的消费者，SERVER_STARTING 里统一重解析 + 重读盘。
+		com.akira.redtale.economy.util.DataRoot.onRebind(() -> modules.rebindDataDirs());
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.storage.Ledger::init);
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.storage.SnapshotService::init);
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.journal.TxnJournal::init);
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.shop.ShopTransactions::init);
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.rank.RankService::init);
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.economy.BalanceService::init);
+		com.akira.redtale.economy.util.DataRoot.onRebind(
+				com.akira.redtale.economy.util.DayRollover::rebindDir);
+
+		// ★必须先于 SERVER_STARTED★：存档目录只有这时才确定，重绑完再 recover/start
+		ServerLifecycleEvents.SERVER_STARTING.register(s -> {
+			try {
+				com.akira.redtale.economy.util.DataRoot.onWorldReady(s);
+			} catch (Exception e) {
+				LOGGER.error("[data] 数据目录初始化失败，退回 %server%/redtale-data：{}", e.getMessage(), e);
+			}
+		});
+
 		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
 			server = s;
 			// E2：先补完上次崩在半路的事务（退物品/退钱），再让玩家进来
@@ -205,6 +234,8 @@ public class RedtaleEconomy implements ModInitializer {
 			BalanceService.shutdown();
 			com.akira.redtale.economy.util.DayRollover.stop();
 			com.akira.redtale.economy.rank.RankService.stop();
+			// R36：回主菜单后 %world% 重新不可用（单人换存档不会重启游戏）
+			com.akira.redtale.economy.util.DataRoot.onServerStopping();
 			server = null;
 		});
 

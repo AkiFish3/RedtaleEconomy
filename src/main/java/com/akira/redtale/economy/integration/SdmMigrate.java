@@ -5,6 +5,7 @@ import com.akira.redtale.economy.config.SdmMigrateConfig;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -137,7 +138,7 @@ public final class SdmMigrate {
 	// ---------------------------------------------------------------- 快照
 
 	private static Path backupDir() {
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		return r.path().resolve("backup");
 	}
 

@@ -10,6 +10,7 @@ import com.akira.redtale.economy.module.impl.PremiumModule;
 import com.akira.redtale.economy.net.ShopNetworking;
 import com.akira.redtale.economy.net.ShopProtocol;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.util.TimeUtil;
 import com.google.gson.Gson;
@@ -57,7 +58,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 	}
 
 	public static void init() {
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			Path d = r.path().resolve(ShopConfig.limitsDir());
 			Files.createDirectories(d);

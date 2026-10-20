@@ -9,6 +9,7 @@ import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -145,9 +146,15 @@ public final class BattlePassModule implements RedtaleModule {
 		PassCommands.register(dispatcher);
 	}
 
+	/** R36：开服后数据目录重绑（{@code DataRoot.onWorldReady} 调用，%world% 这时才可用）。 */
+	@Override
+	public void rebindDataDir() {
+		resolveDir();
+	}
+
 	private static void resolveDir() {
 		try {
-			PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+			PathResolver.Resolved r = DataRoot.resolve();
 			Path d = r.path().resolve("battlepass");
 			Files.createDirectories(d);
 			baseDir = d;

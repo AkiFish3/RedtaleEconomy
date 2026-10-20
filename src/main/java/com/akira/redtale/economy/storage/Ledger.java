@@ -2,6 +2,7 @@ package com.akira.redtale.economy.storage;
 
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.StorageConfig;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.util.TimeUtil;
 import com.google.gson.JsonObject;
@@ -61,7 +62,7 @@ public final class Ledger {
 				return t;
 			});
 		}
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			Path dir = r.path().resolve(StorageConfig.ledgerDir().replace("/", java.io.File.separator));
 			Files.createDirectories(dir);

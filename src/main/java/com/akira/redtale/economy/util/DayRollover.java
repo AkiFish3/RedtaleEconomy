@@ -216,8 +216,7 @@ public final class DayRollover {
 	private static synchronized void initStateFile() {
 		if (stateFile != null) return;
 		try {
-			var r = com.akira.redtale.economy.util.PathResolver
-					.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+			var r = DataRoot.resolve();
 			Path dir = r.path().resolve("day");
 			Files.createDirectories(dir);
 			stateFile = dir.resolve("state.json");
@@ -225,6 +224,11 @@ public final class DayRollover {
 			stateFile = null;
 			RedtaleEconomy.LOGGER.warn("[day] 状态目录不可用，停机跨天只能靠玩家登录兜底：{}", e.getMessage());
 		}
+	}
+
+	/** R36：换存档 / 开服重绑数据目录时清掉缓存的 state.json 路径，下次用新目录。 */
+	public static synchronized void rebindDir() {
+		stateFile = null;
 	}
 
 	private static String loadPersisted() {

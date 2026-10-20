@@ -38,6 +38,14 @@ public interface RedtaleModule {
 	default void onReload(ConfigManager cfg) {
 	}
 
+	/**
+	 * 数据目录重绑（R36）：{@code %world%} 在模组加载期不可用，模块 {@code onLoad} 里解析到的是
+	 * 暂存目录 {@code redtale-data.pending}；服务器起来后 {@code DataRoot.onWorldReady} 会回调这里，
+	 * 实现方重新解析目录并把内存里的数据从新目录重读一遍。
+	 */
+	default void rebindDataDir() {
+	}
+
 	/** 注册命令；模块关闭时不会被调用。 */
 	default void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
 	}

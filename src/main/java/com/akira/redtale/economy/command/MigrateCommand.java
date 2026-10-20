@@ -10,6 +10,7 @@ import com.akira.redtale.economy.economy.InternalProvider;
 import com.akira.redtale.economy.economy.NumismaticBridge;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.storage.MysqlBackend;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -222,14 +223,14 @@ public final class MigrateCommand {
 	}
 
 	private static Path accountDir() {
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		return r.path().resolve(StorageConfig.accountsDir().replace("/", java.io.File.separator));
 	}
 
 	/** 迁移前整目录备份到 {@code <root>/backup/migrate-<yyyyMMdd-HHmmss>/}；失败返回 null。 */
 	private static Path backupDir() {
 		try {
-			PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+			PathResolver.Resolved r = DataRoot.resolve();
 			Path src = r.path().resolve(StorageConfig.accountsDir().replace("/", java.io.File.separator));
 			if (!Files.isDirectory(src)) return null;
 			String ts = java.time.LocalDateTime.now()

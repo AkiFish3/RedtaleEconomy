@@ -8,6 +8,7 @@ import com.akira.redtale.economy.config.WarehouseConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.warehouse.WarehouseData;
 import com.akira.redtale.economy.warehouse.WarehouseInventory;
@@ -71,9 +72,15 @@ public final class WarehouseModule implements RedtaleModule {
 		WarehouseCommands.register(dispatcher, WarehouseConfig.openCommands());
 	}
 
+	/** R36：开服后数据目录重绑（{@code DataRoot.onWorldReady} 调用，%world% 这时才可用）。 */
+	@Override
+	public void rebindDataDir() {
+		resolveDir();
+	}
+
 	private static void resolveDir() {
 		try {
-			PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+			PathResolver.Resolved r = DataRoot.resolve();
 			Path dir = r.path().resolve("warehouse");
 			Files.createDirectories(dir);
 			WarehouseData.setDir(dir);

@@ -8,6 +8,7 @@ import com.akira.redtale.economy.config.ConfigStore;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.module.RedtaleModule;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.util.TimeUtil;
 import com.google.gson.Gson;
@@ -177,8 +178,14 @@ public final class CheckinModule implements RedtaleModule {
 		CheckinCommands.register(dispatcher);
 	}
 
+	/** R36：开服后数据目录重绑（{@code DataRoot.onWorldReady} 调用，%world% 这时才可用）。 */
+	@Override
+	public void rebindDataDir() {
+		resolveDir();
+	}
+
 	private static void resolveDir() {
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			Path dir = r.path().resolve("checkin");
 			Files.createDirectories(dir);

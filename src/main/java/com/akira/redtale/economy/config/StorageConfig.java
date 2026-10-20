@@ -8,7 +8,8 @@ import java.util.List;
 /**
  * {@code config/redtale/storage.json} —— 存储后端、数据根目录、流水与快照策略（spec v0.6 §13）。
  *
- * <p>root 支持绝对路径（D:/ E:/）、{@code %server%} 占位；含 {@code ..} 直接拒绝。
+ * <p>root 支持绝对路径（D:/ E:/）、{@code %server%}、{@code %world%} 占位；含 {@code ..} 直接拒绝。
+ * 默认 {@code %world%/redtale-data}（R36 / spec §40.2）：玩家数据跟存档走，配置留 config。
  */
 public final class StorageConfig {
 
@@ -18,8 +19,11 @@ public final class StorageConfig {
 			.field("backend", ConfigSchema.choice("json", List.of("json", "mysql"),
 					"存储后端；切换用 /redtale migrate storage"))
 			.field("json", ConfigSchema.obj("JSON 后端")
-					.field("root", ConfigSchema.string("%server%/redtale-data",
-							"数据根目录；可写 D:/redtale-data 或 E:/data/redtale"))
+					.field("root", ConfigSchema.string("%world%/redtale-data",
+							"数据根目录；%world%=当前存档（默认，换世界不串），%server%=服务端根目录，"
+									+ "也可写 D:/redtale-data 或 E:/data/redtale"))
+					.field("migrateLegacy", ConfigSchema.bool(true,
+							"首次启动时把旧的 %server%/redtale-data 复制进新根目录（只复制不删除）"))
 					.field("accounts", ConfigSchema.string("accounts/", "账号目录（每人一个 <uuid>.json）"))
 					.field("ledger", ConfigSchema.string("ledger/", "流水目录（append-only JSONL）"))
 					.field("snapshots", ConfigSchema.string("snapshots/", "余额快照目录"))
@@ -72,7 +76,12 @@ public final class StorageConfig {
 	}
 
 	public static String root() {
-		return store().getPathString("json.root", "%server%/redtale-data");
+		return store().getPathString("json.root", "%world%/redtale-data");
+	}
+
+	/** R36：首次启动是否把旧 {@code %server%/redtale-data} 合并进新根目录。 */
+	public static boolean migrateLegacy() {
+		return store().getPathBool("json.migrateLegacy", true);
 	}
 
 	public static String accountsDir() {

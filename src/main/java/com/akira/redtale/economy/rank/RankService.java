@@ -3,6 +3,7 @@ package com.akira.redtale.economy.rank;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.util.TimeUtil;
 import com.google.gson.Gson;
@@ -93,7 +94,7 @@ public final class RankService {
 		} catch (Exception ignored) {
 			// 配置已定义 / 管理器未就绪都不影响算榜
 		}
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			Path dir = r.path().resolve("rank");
 			Files.createDirectories(dir);

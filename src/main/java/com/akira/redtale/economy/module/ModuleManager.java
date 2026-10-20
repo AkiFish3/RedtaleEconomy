@@ -109,6 +109,18 @@ public final class ModuleManager {
 		}
 	}
 
+	/** R36：存档就绪后让各模块重新解析数据目录（{@code %world%} 这时才可用）。 */
+	public void rebindDataDirs() {
+		for (Map.Entry<String, Boolean> e : effective.entrySet()) {
+			if (!e.getValue()) continue;
+			try {
+				registry.get(e.getKey()).rebindDataDir();
+			} catch (Exception ex) {
+				RedtaleEconomy.LOGGER.error("[module] {} 数据目录重绑失败：{}", e.getKey(), ex.getMessage());
+			}
+		}
+	}
+
 	public void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
 		for (Map.Entry<String, Boolean> e : effective.entrySet()) {
 			if (!e.getValue()) continue;

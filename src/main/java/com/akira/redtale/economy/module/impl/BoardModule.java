@@ -7,6 +7,7 @@ import com.akira.redtale.economy.config.BoardConfig;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.module.RedtaleModule;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.mojang.brigadier.CommandDispatcher;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -51,9 +52,15 @@ public final class BoardModule implements RedtaleModule {
 		BoardCommands.register(dispatcher);
 	}
 
+	/** R36：开服后数据目录重绑（{@code DataRoot.onWorldReady} 调用，%world% 这时才可用）。 */
+	@Override
+	public void rebindDataDir() {
+		resolveDir();
+	}
+
 	private static void resolveDir() {
 		try {
-			PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+			PathResolver.Resolved r = DataRoot.resolve();
 			Path d = r.path().resolve("board");
 			Files.createDirectories(d);
 			dir = d;

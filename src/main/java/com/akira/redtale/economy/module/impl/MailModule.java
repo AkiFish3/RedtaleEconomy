@@ -11,6 +11,7 @@ import com.akira.redtale.economy.mail.MailQueue;
 import com.akira.redtale.economy.mail.MailService;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.perm.Permissions;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -73,9 +74,15 @@ public final class MailModule implements RedtaleModule {
 		registerCommandsInternal(dispatcher);
 	}
 
+	/** R36：开服后数据目录重绑（{@code DataRoot.onWorldReady} 调用，%world% 这时才可用）。 */
+	@Override
+	public void rebindDataDir() {
+		resolveDir();
+	}
+
 	private static void resolveDir() {
 		try {
-			PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+			PathResolver.Resolved r = DataRoot.resolve();
 			Path d = r.path().resolve("mail");
 			Files.createDirectories(d);
 			MailQueue.setDir(d);

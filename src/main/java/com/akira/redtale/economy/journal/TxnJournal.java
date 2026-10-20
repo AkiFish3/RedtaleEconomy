@@ -3,6 +3,7 @@ package com.akira.redtale.economy.journal;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.mail.MailService;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -63,7 +64,7 @@ public final class TxnJournal {
 	}
 
 	public static void init() {
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			dir = r.path().resolve(DIR);
 			Files.createDirectories(dir);

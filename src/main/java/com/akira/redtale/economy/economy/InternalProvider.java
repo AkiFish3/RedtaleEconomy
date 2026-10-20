@@ -6,6 +6,7 @@ import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.storage.DataCompat;
 import com.akira.redtale.economy.storage.IdentityMap;
 import com.akira.redtale.economy.storage.MysqlBackend;
+import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -71,7 +72,7 @@ public final class InternalProvider implements BalanceProvider {
 
 	/** 配置可能被 reload，路径与防抖时间都重新取。 */
 	public void resolvePaths() {
-		PathResolver.Resolved r = PathResolver.resolveDir(StorageConfig.root(), "%server%/redtale-data");
+		PathResolver.Resolved r = DataRoot.resolve();
 		try {
 			Path dir = r.path().resolve(StorageConfig.accountsDir().replace("/", java.io.File.separator));
 			Files.createDirectories(dir);
