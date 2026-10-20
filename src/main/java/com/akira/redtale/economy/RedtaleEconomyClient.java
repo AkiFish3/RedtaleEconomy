@@ -28,6 +28,7 @@ public class RedtaleEconomyClient implements ClientModInitializer {
 		com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.register();
 		com.akira.redtale.economy.client.ui.hub.HubClientNetworking.register();
 		com.akira.redtale.economy.client.rank.RankClientNetworking.register();
+		com.akira.redtale.economy.client.market.MarketClientNetworking.register();
 		com.akira.redtale.economy.client.dev.UiShots.register();
 		RedtaleEconomy.LOGGER.info("[{}] client initialized", RedtaleEconomy.MOD_ID);
 	}

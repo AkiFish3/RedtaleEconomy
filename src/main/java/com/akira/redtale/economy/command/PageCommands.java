@@ -36,6 +36,7 @@ public final class PageCommands {
 	static {
 		PAGES.put("checkin", "签到");
 		PAGES.put("shop", "商店");
+		PAGES.put("market", "市场");
 		PAGES.put("tasks", "任务");
 		PAGES.put("storage", "仓储");
 		PAGES.put("bounty", "悬赏");
@@ -81,6 +82,7 @@ public final class PageCommands {
 	private static final Map<String, String> PAGE_MODULE = Map.of(
 			"checkin", "checkin",
 			"shop", "shop",
+			"market", "market",
 			"tasks", "tasks",
 			"storage", "warehouse",
 			"bounty", "bounty",
@@ -104,6 +106,7 @@ public final class PageCommands {
 		}
 		switch (page) {
 			case "checkin" -> com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);
+			case "market" -> com.akira.redtale.economy.net.MarketNetworking.send(p, 0, false, "");
 			case "shop" -> {
 				var ids = com.akira.redtale.economy.shop.ShopCatalog.shopIds();
 				if (ids.isEmpty()) {

@@ -43,6 +43,12 @@ public final class Ledger {
 	public static final String TYPE_BOARD = "board";
 	public static final String TYPE_MAIL = "mail";
 	public static final String TYPE_MIGRATE = "migrate";
+	/** R40：玩家市场 —— 挂单费 / 买家付款 / 卖家收款，三笔分开记，便于对账。 */
+	public static final String TYPE_MARKET_FEE = "market.fee";
+	public static final String TYPE_MARKET_BUY = "market.buy";
+	public static final String TYPE_MARKET_SELL = "market.sell";
+	/** R41：拍卖出价托管 / 被超越退款 / 流拍退物，都走这个类型。 */
+	public static final String TYPE_MARKET_AUCTION = "market.auction";
 
 	private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
 	private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM");

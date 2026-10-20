@@ -9,6 +9,7 @@ public enum HubPage {
 
 	CHECKIN("checkin", "签到", false, "minecraft:clock"),
 	SHOP("shop", "商店", false, "minecraft:chest"),
+	MARKET("market", "市场", false, "minecraft:emerald_block"),
 	STORAGE("storage", "仓储", false, "minecraft:barrel"),
 	BOUNTY("bounty", "悬赏", false, "minecraft:iron_sword"),
 	PASS("pass", "战令", false, "minecraft:nether_star"),

@@ -48,6 +48,14 @@ public final class PacketIds {
 	/** U9：「只看活跃」开关随请求一起发（服务端按开关选缓存榜，不在请求里算）。 */
 	public static final Identifier C2S_RANK_REQ = RedtaleEconomy.id("rank/request");
 
+	// R40 玩家市场
+	public static final Identifier C2S_MARKET_REQ = RedtaleEconomy.id("market/request");
+	public static final Identifier C2S_MARKET_BUY = RedtaleEconomy.id("market/buy");
+	public static final Identifier C2S_MARKET_CANCEL = RedtaleEconomy.id("market/cancel");
+	public static final Identifier C2S_MARKET_SELL = RedtaleEconomy.id("market/sell");
+	public static final Identifier S2C_MARKET = RedtaleEconomy.id("market/snapshot");
+	public static final Identifier S2C_MARKET_ACTION = RedtaleEconomy.id("market/action");
+
 	private PacketIds() {
 	}
 }

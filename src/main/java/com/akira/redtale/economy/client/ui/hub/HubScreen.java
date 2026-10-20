@@ -45,6 +45,8 @@ public class HubScreen extends Screen {
 	private int monthOffset;
 	private final StringBuilder shopQuery = new StringBuilder();
 	private int shopSelected = -1;
+	/** R40：市场页选中的行（-1 = 未选） */
+	private int marketSelected = -1;
 	private boolean shopRequested;
 	private int passScroll;
 	private final StringBuilder storageQuery = new StringBuilder();
@@ -107,6 +109,7 @@ public class HubScreen extends Screen {
 	private final java.util.List<Integer> dragSlots = new java.util.ArrayList<>();
 	private double rippleX, rippleY;
 	private long lastShopActionAt;
+	private long lastMarketActionAt;
 	private Object lastShopPage;
 	private int lastDragSlot = -1;
 	private int rankBoard;
@@ -146,6 +149,7 @@ public class HubScreen extends Screen {
 					if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
 				}
 				case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
+				case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 				case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
 				default -> {
 				}
@@ -282,6 +286,14 @@ public class HubScreen extends Screen {
 				setStatus(act.ok() ? "已购买" : net.minecraft.text.Text.translatable(act.messageKey()).getString());
 			}
 		}
+		if (page == HubPage.MARKET) {
+			var mact = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST_ACTION;
+			long mAt = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST_ACTION_AT;
+			if (mact != null && mAt > lastMarketActionAt) {
+				lastMarketActionAt = mAt;
+				setStatus(mact.message());
+			}
+		}
 		if (page == HubPage.SETTINGS) {
 			HubSettingsPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.BOUNTY) {
@@ -299,6 +311,8 @@ public class HubScreen extends Screen {
 		} else if (page == HubPage.RANK) {
 			HubRankPage.render(dc, textRenderer, cx, cy, cw, ch, rankBoard, rankActiveOnly,
 					rankDropdown, mouseX, mouseY);
+		} else if (page == HubPage.MARKET) {
+			HubMarketPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY, marketSelected);
 		} else if (page == HubPage.SHOP) {
 			HubShopPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY,
 					shopQuery.toString(), shopSelected);
@@ -725,6 +739,7 @@ public class HubScreen extends Screen {
 				}
 				page = all[idx];
 				if (page == HubPage.SHOP) requestShopPage();
+				if (page == HubPage.MARKET) com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 				if (page == HubPage.BOUNTY) requestBounty();
 				if (page == HubPage.PASS) requestPass();
 				if (page == HubPage.GUILD) requestGuild();
@@ -733,6 +748,64 @@ public class HubScreen extends Screen {
 				}
 				return true;
 			}
+		}
+		// R40 市场：动作全部先改客户端视图状态，再发请求；服务端回包覆盖
+		if (button == 0 && page == HubPage.MARKET) {
+			int cx = panelX + sidebarW() + 12;
+			int cy = panelY + TOP_BAR + 8;
+			int cw = panelW - sidebarW() - 24;
+			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int[] idx = {-1};
+			HubMarketPage.Action a = HubMarketPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch,
+					marketSelected, idx);
+			var snap = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST;
+			switch (a) {
+				case TOGGLE_MINE -> {
+					com.akira.redtale.economy.client.market.MarketClientNetworking.request(0,
+							!snap.mineOnly(), com.akira.redtale.economy.client.market.MarketClientNetworking.query);
+					marketSelected = -1;
+				}
+				case SYNC -> {
+					com.akira.redtale.economy.client.market.MarketClientNetworking.request();
+					setStatus("正在刷新市场…");
+				}
+				case CYCLE_PRICE -> HubMarketPage.cyclePrice();
+				case SELL -> {
+					com.akira.redtale.economy.client.market.MarketClientNetworking.sell(HubMarketPage.price());
+					setStatus("正在挂单…");
+				}
+				case PREV -> {
+					com.akira.redtale.economy.client.market.MarketClientNetworking.request(
+							Math.max(0, snap.page() - 1), snap.mineOnly(),
+							com.akira.redtale.economy.client.market.MarketClientNetworking.query);
+					marketSelected = -1;
+				}
+				case NEXT -> {
+					com.akira.redtale.economy.client.market.MarketClientNetworking.request(
+							snap.page() + 1, snap.mineOnly(),
+							com.akira.redtale.economy.client.market.MarketClientNetworking.query);
+					marketSelected = -1;
+				}
+				case BUY -> {
+					if (marketSelected >= 0 && marketSelected < snap.offers().size()) {
+						com.akira.redtale.economy.client.market.MarketClientNetworking.buy(
+								snap.offers().get(marketSelected).id());
+						setStatus("正在购买…");
+					}
+				}
+				case CANCEL -> {
+					if (marketSelected >= 0 && marketSelected < snap.offers().size()) {
+						com.akira.redtale.economy.client.market.MarketClientNetworking.cancel(
+								snap.offers().get(marketSelected).id());
+						setStatus("正在撤单…");
+					}
+				}
+				default -> {
+					if (idx[0] >= 0) marketSelected = idx[0];
+				}
+			}
+			ClientUiConfig.click();
+			return true;
 		}
 		if (button == 0 && page == HubPage.MAIL) {
 			int cx = panelX + sidebarW() + 12;

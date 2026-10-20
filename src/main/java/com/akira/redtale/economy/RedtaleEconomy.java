@@ -22,6 +22,7 @@ import com.akira.redtale.economy.module.impl.BountyModule;
 import com.akira.redtale.economy.module.impl.EasyNpcModule;
 import com.akira.redtale.economy.module.impl.GuildModule;
 import com.akira.redtale.economy.module.impl.MailModule;
+import com.akira.redtale.economy.module.impl.MarketModule;
 import com.akira.redtale.economy.module.impl.TitleModule;
 import com.akira.redtale.economy.module.impl.CheckinModule;
 import com.akira.redtale.economy.module.impl.EconomyModule;
@@ -112,6 +113,8 @@ public class RedtaleEconomy implements ModInitializer {
 		modules.register(new BattlePassModule());
 		modules.register(new BoardModule());
 		modules.register(new MailModule());
+		// R40 玩家市场：统一 offers 表（sell / escrow），R41 拍卖复用同一张表
+		modules.register(new MarketModule());
 		modules.register(new EasyNpcModule());
 		// 别名必须最后注册：它要看到其它模块已挂好的命令
 		modules.register(new AliasModule());
@@ -148,6 +151,7 @@ public class RedtaleEconomy implements ModInitializer {
 		com.akira.redtale.economy.net.BalanceNetworking.register();
 		com.akira.redtale.economy.net.RankNetworking.register();
 		com.akira.redtale.economy.net.WarehouseNetworking.register();
+		com.akira.redtale.economy.net.MarketNetworking.register();
 
 		// R36：数据根目录两段式（spec §40.2）
 		// 加载期 %world% 不可用 → 各模块先落 redtale-data.pending；
