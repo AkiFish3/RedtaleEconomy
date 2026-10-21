@@ -19,7 +19,8 @@ public enum HubPage {
 	RANK("rank", "排行", false, "minecraft:gold_ingot"),
 	PAY("pay", "转账", false, "minecraft:emerald"),
 	TITLES("titles", "称号", false, "minecraft:name_tag"),
-	SETTINGS("settings", "设置", false, "minecraft:comparator");
+	SETTINGS("settings", "设置", false, "minecraft:comparator"),
+	LEDGER("ledger", "流水", false, "minecraft:book");
 
 	public final String id;
 	public final String label;

@@ -7,6 +7,7 @@ import com.akira.redtale.economy.client.shop.ShopScreen;
 import com.akira.redtale.economy.client.tasks.TaskScreen;
 import com.akira.redtale.economy.client.ui.hub.ClientUiConfig;
 import com.akira.redtale.economy.client.ui.hub.HubBoardPage;
+import com.akira.redtale.economy.client.ui.hub.HubLedgerPage;
 import com.akira.redtale.economy.client.ui.hub.HubPage;
 import com.akira.redtale.economy.client.ui.hub.HubScreen;
 import com.akira.redtale.economy.client.ui.hub.HubSettingsPage;
@@ -454,6 +455,15 @@ public final class UiShots {
 			});
 			case 92 -> shotKeep(mc, "u6-53-board.png", () -> LOG.add("board probe " + HubBoardPage.devProbe()));
 			case 93 -> act(mc, () -> mc.setScreen(null));
+			// T16：流水页。先 /rt ledger 拉一页（服务端按玩家/方向/类型筛），再切「市场」桶看筛选真的生效
+			case 94 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("rt ledger"));
+			case 95 -> shotKeep(mc, "u6-54-ledger.png",
+					() -> LOG.add("ledger probe " + HubLedgerPage.devProbe()));
+			case 96 -> act(mc, () -> com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking
+					.request(2, 0, 2, false));
+			case 97 -> shotKeep(mc, "u6-55-ledger-market.png",
+					() -> LOG.add("ledger probe " + HubLedgerPage.devProbe()));
+			case 98 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}
 	}

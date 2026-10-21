@@ -36,6 +36,9 @@ public final class PacketIds {
 	public static final Identifier C2S_PAY = RedtaleEconomy.id("pay");
 	public static final Identifier S2C_BOARD = RedtaleEconomy.id("board/snapshot");
 	public static final Identifier C2S_BOARD_REQ = RedtaleEconomy.id("board/request");
+	/** T16：流水查看器（请求一页 / 下发一页） */
+	public static final Identifier C2S_LEDGER_REQ = RedtaleEconomy.id("ledger/request");
+	public static final Identifier S2C_LEDGER = RedtaleEconomy.id("ledger/snapshot");
 	// U8b：/rt <page> 直达；U9b：排行榜快照
 	public static final Identifier S2C_HUB_OPEN = RedtaleEconomy.id("hub/open");
 	public static final Identifier S2C_RANK = RedtaleEconomy.id("rank/snapshot");	public static final Identifier S2C_WAREHOUSE = RedtaleEconomy.id("warehouse/snapshot");

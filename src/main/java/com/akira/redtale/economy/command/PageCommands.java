@@ -44,6 +44,7 @@ public final class PageCommands {
 		PAGES.put("guild", "协会");
 		PAGES.put("mail", "邮件");
 		PAGES.put("rank", "排行");
+		PAGES.put("ledger", "流水");
 		PAGES.put("settings", "设置");
 	}
 
@@ -120,6 +121,7 @@ public final class PageCommands {
 			case "pass" -> com.akira.redtale.economy.net.PassNetworking.send(p);
 			case "guild" -> com.akira.redtale.economy.net.GuildNetworking.send(p);
 			case "rank" -> com.akira.redtale.economy.net.RankNetworking.send(p);
+			case "ledger" -> com.akira.redtale.economy.net.LedgerNetworking.send(p);
 			default -> {
 			}
 		}

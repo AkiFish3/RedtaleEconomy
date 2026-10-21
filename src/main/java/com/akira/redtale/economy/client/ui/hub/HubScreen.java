@@ -160,6 +160,7 @@ public class HubScreen extends Screen {
 			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
 			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 			case BOARD -> com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
+			case LEDGER -> com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
 			case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
 			default -> {
 			}
@@ -255,6 +256,8 @@ public class HubScreen extends Screen {
 			HubBountyPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY, hovered);
 		} else if (page == HubPage.BOARD) {
 			HubBoardPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
+		} else if (page == HubPage.LEDGER) {
+			HubLedgerPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.GUILD) {
 			HubGuildPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.MAIL) {
@@ -543,6 +546,11 @@ public class HubScreen extends Screen {
 					HubBoardPage.resetScroll();
 					com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
 					setStatus("正在读取委托板…");
+				}
+				if (page == HubPage.LEDGER) {
+					HubLedgerPage.reset();
+					com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
+					setStatus("正在读取流水…");
 				}
 				if (page == HubPage.PASS) requestPass();
 				if (page == HubPage.GUILD) requestGuild();
@@ -858,6 +866,18 @@ public class HubScreen extends Screen {
 				}
 				return true;
 			}
+		}
+		if (button == 0 && page == HubPage.LEDGER) {
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
+			if (HubLedgerPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch)) {
+				com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
+				setStatus("正在按新条件筛选…");
+				return true;
+			}
+			return true; // 只读页：点了空白也别穿透到底下的东西
 		}
 		if (button == 0 && page == HubPage.BOARD) {
 			int cx = frame.contentX();
@@ -1300,6 +1320,11 @@ public class HubScreen extends Screen {
 		if (page == HubPage.BOARD && mouseX > panelX + sidebarW()) {
 			// T12：低分辨率下一页只放得下 2~3 张卡，必须能滚
 			HubBoardPage.scrollByRows(-(int) Math.signum(amount), frame.contentH());
+			return true;
+		}
+		if (page == HubPage.LEDGER && mouseX > panelX + sidebarW()) {
+			// T16：低分辨率下一页只放得下五六行，必须能滚
+			HubLedgerPage.scrollByRows(-(int) Math.signum(amount), frame.contentH());
 			return true;
 		}
 		if (page == HubPage.STORAGE && mouseX > panelX + sidebarW()) {
