@@ -99,8 +99,10 @@ final class TooltipShotClient {
 
 	private static void collect(MinecraftClient mc) {
 		ItemStack stack = new ItemStack(REItems.NORMAL_PACKAGE);
-		// 直接写 NBT：bindToPlayer 会先查 bound_items 白名单，夹具不该依赖玩家配置
+		// 直接写 NBT：bindToPlayer 会先查 bound_items 白名单，夹具不该依赖玩家配置；
+		// 但显示层必须走生产代码（applyOwnerLore），否则测的是夹具自己的伪造值
 		stack.getOrCreateNbt().putString("BoundOwnerName", mc.player.getName().getString());
+		BoundItemHandler.applyOwnerLore(stack);
 		StringBuilder sb = new StringBuilder();
 		sb.append("# item=").append(stack.getItem()).append(" owner=")
 				.append(BoundItemHandler.getOwnerName(stack)).append(" hasOwner=")

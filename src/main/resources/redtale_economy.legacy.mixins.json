@@ -3,7 +3,6 @@
   "package": "com.akira.redtale.economy.legacy.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
-    "BoundTooltipMixin",
     "BoundPickupMixin",
     "BoundSlotMixin"
   ],

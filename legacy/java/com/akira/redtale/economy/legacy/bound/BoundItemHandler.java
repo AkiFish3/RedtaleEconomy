@@ -4,12 +4,12 @@ import com.akira.redtale.economy.legacy.LegacyInit;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtString;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-
-import java.util.List;
 
 public class BoundItemHandler {
     private static final String OWNER_NAME_KEY = "BoundOwnerName";
@@ -26,7 +26,35 @@ public class BoundItemHandler {
 
         NbtCompound tag = stack.getOrCreateNbt();
         tag.putString(OWNER_NAME_KEY, player.getName().getString());
+        applyOwnerLore(stack);
         LegacyInit.LOGGER.info("Bound item {} to player {}", stack.getItem().getTranslationKey(), player.getName().getString());
+    }
+
+    /**
+     * 把归属人写进原版 {@code display.Lore}（**不注入 {@code ItemStack.getTooltip}**）。
+     *
+     * <p>为什么改成写 lore：旧实现用 {@code @Inject(at=RETURN)} 往 getTooltip 的返回列表里追加，
+     * 而 Obscure-API 在同一个 {@code RETURN} 上 {@code cancellable=true} + {@code setReturnValue}
+     * —— 排在它前面的注入被它重建的列表覆盖，排在它后面的被它的「提前 return」整段跳过，
+     * 两个 priority 方向实测都拿不到这一行（`_LEGACY_VERIFY.md §3.7`）。
+     * lore 是原版 NBT 数据，任何模组重建 tooltip 都会把它读回来，因此不存在抢注入点的问题。</p>
+     *
+     * <p>幂等：同一行已存在就不重复追加（重复绑定时不会堆出多条）。</p>
+     */
+    public static void applyOwnerLore(ItemStack stack) {
+        String ownerName = getOwnerName(stack);
+        if (ownerName == null || ownerName.isEmpty()) return;
+        Text line = Text.translatable("bound.tooltip.owner", ownerName).formatted(Formatting.GRAY);
+        String json = Text.Serializer.toJson(line);
+        NbtCompound display = stack.getOrCreateSubNbt("display");
+        NbtList lore = display.getList("Lore", NbtElement.STRING_TYPE);
+        for (int i = 0; i < lore.size(); i++) {
+            if (json.equals(lore.getString(i))) return;
+        }
+        NbtList updated = new NbtList();
+        updated.addAll(lore);
+        updated.add(NbtString.of(json));
+        display.put("Lore", updated);
     }
 
     /**
@@ -60,60 +88,12 @@ public class BoundItemHandler {
         }
         String ownerName = getOwnerName(stack);
         boolean result = ownerName != null && ownerName.equals(player.getName().getString());
+        // 旧存档的绑定物品只有 BoundOwnerName、没有 lore ⇒ 首次被交互时补一次（只服务端写，避免客户端 NBT 抖动）
+        if (!player.getWorld().isClient()) {
+            applyOwnerLore(stack);
+        }
         LegacyInit.LOGGER.debug("isOwner result: {} for player {} on item owned by {}", result, player.getName().getString(), ownerName);
         return result;
     }
 
-    /**
-     * 修改物品显示名称，追加 “属于 <玩家名>”
-     */
-    public static Text getDisplayName(ItemStack stack) {
-        Text originalName = stack.getName();
-        if (!hasOwner(stack)) return originalName;
-        String ownerName = getOwnerName(stack);
-        if (ownerName == null) return originalName;
-        MutableText boundSuffix = Text.literal(" §7(属于 " + ownerName + "§7)");
-        return originalName.copy().append(boundSuffix);
-    }
-
-    /**
-     * 在物品的 tooltip 中添加所有者信息
-     */
-    public static void appendOwnerTooltip(ItemStack stack, List<Text> tooltip) {
-        if (!hasOwner(stack)) return;
-        String ownerName = getOwnerName(stack);
-        if (ownerName != null) {
-            tooltip.add(Text.translatable("bound.tooltip.owner", ownerName).formatted(Formatting.GRAY));
-        }
-    }
-
-    /**
-     * tooltip 追加的健壮版：返回「可能被替换」的列表。
-     *
-     * <p>原版 {@code ItemStack.getTooltip} 返回的 List 是 {@code ArrayList}，但装了别的模组后不保证：
-     * Obscure-API 在 {@code getTooltip} 的 {@code RETURN} 上 {@code cancellable=true} 注入，
-     * extraspellattributes 用 {@code ModifyReturnValue(TAIL)} 包返回值 —— 都可能换成不可变列表。
-     * 直接 {@code add} 会抛 {@link UnsupportedOperationException}（客户端物品提示直接崩）。
-     * 因此这里兜住：不可变时复制一份再追加，由调用方回写 return value。
-     */
-    public static List<Text> withOwnerTooltip(ItemStack stack, List<Text> tooltip) {
-        if (!hasOwner(stack)) return tooltip;
-        String ownerName = getOwnerName(stack);
-        if (ownerName == null) return tooltip;
-        Text line = Text.translatable("bound.tooltip.owner", ownerName).formatted(Formatting.GRAY);
-        if (tooltip == null) {
-            List<Text> fresh = new java.util.ArrayList<>();
-            fresh.add(line);
-            return fresh;
-        }
-        try {
-            tooltip.add(line);
-            return tooltip;
-        } catch (UnsupportedOperationException immutable) {
-            List<Text> copy = new java.util.ArrayList<>(tooltip.size() + 1);
-            copy.addAll(tooltip);
-            copy.add(line);
-            return copy;
-        }
-    }
 }
