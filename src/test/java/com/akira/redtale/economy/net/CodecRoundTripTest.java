@@ -113,8 +113,8 @@ class CodecRoundTripTest {
 		// 页面用可见行数/条数上限的重载：headless 单测没有配置层，不能走 ShopConfig
 		all.add(of("shop/page",
 				Codec.of("shop/page",
-						(buf, p) -> ShopProtocol.writePage(buf, p, 10),
-						buf -> ShopProtocol.readPage(buf, 41)),
+						(buf, p) -> ShopProtocol.writePageRows(buf, p, 10),
+						buf -> ShopProtocol.readPageRows(buf, 41)),
 				() -> new ShopProtocol.Page("shopA", "测试店", "橡木", 1, 5, 168,
 						List.of(new ShopProtocol.Entry("minecraft:oak_slab", 12, 5, 40, true, true),
 								new ShopProtocol.Entry("minecraft:stone", 3, 1, -1, true, false)),
@@ -216,8 +216,8 @@ class CodecRoundTripTest {
 	void pageCarriesVisibleRowsToClient() {
 		PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
 		try {
-			ShopProtocol.writePage(buf, ShopProtocol.Page.empty("s", ""), 10);
-			ShopProtocol.readPage(buf, 41);
+			ShopProtocol.writePageRows(buf, ShopProtocol.Page.empty("s", ""), 10);
+			ShopProtocol.readPageRows(buf, 41);
 			assertEquals(10, ShopProtocol.lastVisibleRows());
 			assertTrue(!buf.isReadable(), "可见行数之后不该还有字节");
 		} finally {

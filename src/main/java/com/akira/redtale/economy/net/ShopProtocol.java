@@ -163,14 +163,14 @@ public final class ShopProtocol {
 	// ---------------------------------------------------------------- 编码
 
 	public static void writePage(PacketByteBuf buf, Page p) {
-		writePage(buf, p, com.akira.redtale.economy.config.ShopConfig.visibleRows());
+		writePageRows(buf, p, com.akira.redtale.economy.config.ShopConfig.visibleRows());
 	}
 
 	/**
 	 * @param visibleRows 一屏行数（服务端 {@code shop/settings.json}）。单独传参是为了让
 	 *                    往返测试不依赖配置层（headless 单测里没有 shop 配置）。
 	 */
-	public static void writePage(PacketByteBuf buf, Page p, int visibleRows) {
+	public static void writePageRows(PacketByteBuf buf, Page p, int visibleRows) {
 		buf.writeString(p.shopId(), 64);
 		buf.writeString(p.shopName() == null ? p.shopId() : p.shopName(), 64);
 		buf.writeString(p.query() == null ? "" : p.query(), 128);
@@ -186,14 +186,14 @@ public final class ShopProtocol {
 	}
 
 	public static Page readPage(PacketByteBuf buf) {
-		return readPage(buf, ShopConfig.pageSize() + 1);
+		return readPageRows(buf, ShopConfig.pageSize() + 1);
 	}
 
 	/**
 	 * @param maxEntries 商品条数上限（默认 {@code pageSize()+1}，容错一档防恶意端塞超长列表）。
 	 *                   超出的条目<b>读完即丢</b>，不打断后续 facet 与尾部字段。
 	 */
-	public static Page readPage(PacketByteBuf buf, int maxEntries) {
+	public static Page readPageRows(PacketByteBuf buf, int maxEntries) {
 		String shopId = buf.readString(64);
 		String shopName = buf.readString(64);
 		String query = buf.readString(128);
