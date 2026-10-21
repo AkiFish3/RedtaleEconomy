@@ -91,7 +91,9 @@ public class RECommands {
                                     return builder.buildFuture();
                                 })
                                 .executes(context -> {
-                                    String itemId = StringArgumentType.getString(context, "item");
+                                    String raw = StringArgumentType.getString(context, "item");
+                                    // 与 addBoundItem 同口径归一（否则 remove diamond 永远匹配不到 minecraft:diamond）
+                                    String itemId = raw.contains(":") ? raw : "minecraft:" + raw;
                                     ServerCommandSource source = context.getSource();
                                     if (!BoundItemsConfig.getBoundItems().contains(itemId)) {
                                         source.sendFeedback(() -> Text.translatable("command.redtale_economy.remove.not_bound", itemId), true);
