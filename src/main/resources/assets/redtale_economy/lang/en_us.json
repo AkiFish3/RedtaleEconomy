@@ -343,5 +343,21 @@
   "command.redtale_economy.add.success": "§aAdded §e%s §ato the bound list",
   "command.redtale_economy.remove.not_bound": "§cItem %s is not in the bound list",
   "command.redtale_economy.remove.success": "§aRemoved §e%s §afrom the bound list",
-  "command.redtale_economy.list.header": "§aCurrent bound items: §e%s"
+  "command.redtale_economy.list.header": "§aCurrent bound items: §e%s",
+  "item.redtale_economy.refresh_ticket": "Task Refresh Ticket",
+  "item.redtale_economy.reroll_ticket": "Bounty Reroll Ticket",
+  "item.redtale_economy.rename_ticket": "Rename Ticket",
+  "item.redtale_economy.storage_ticket": "Storage Expansion Ticket",
+  "item.redtale_economy.pass_ticket": "Pass XP Ticket",
+  "item.redtale_economy.premium_token": "Sponsor Token",
+  "item.redtale_economy.event_token": "Event Token",
+  "item.redtale_economy.guild_credit": "Guild Contribution Credit",
+  "item.redtale_economy.season_medal": "Season Commemorative Medal",
+  "item.redtale_economy.mythic_shard": "Mythic Shard",
+  "item.redtale_economy.quest_scroll": "Commission Scroll",
+  "item.redtale_economy.treasure_key": "Treasure Key",
+  "item.redtale_economy.gift_small": "Small Gift Box",
+  "item.redtale_economy.gift_large": "Large Gift Box",
+  "item.redtale_economy.exchange_token_basic": "Basic Exchange Token",
+  "item.redtale_economy.exchange_token_advanced": "Advanced Exchange Token"
 }
