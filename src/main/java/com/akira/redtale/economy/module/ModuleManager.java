@@ -95,6 +95,8 @@ public final class ModuleManager {
 			}
 		}
 		logStates();
+		// 加载期订阅清单（此刻 net/*Networking 还没注册，不是全量；全量在 ModuleEvents 首次收到事件时打）
+		RedtaleEconomy.LOGGER.info("[events] 加载期订阅：{}", ModuleEvents.describe());
 	}
 
 	public void reload(ConfigManager cfg) {

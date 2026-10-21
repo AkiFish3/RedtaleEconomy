@@ -1,10 +1,10 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.command.PassCommands;
 import com.akira.redtale.economy.config.BattlePassConfig;
 import com.akira.redtale.economy.config.ConfigManager;
-import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.module.RedtaleModule;
@@ -17,7 +17,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.CommandDispatcher;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -553,8 +552,8 @@ public final class BattlePassModule implements RedtaleModule {
 		if (hooksInstalled) return;
 		hooksInstalled = true;
 
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-			UUID uuid = handler.getPlayer().getUuid();
+		ModuleEvents.onQuit("battlepass", p -> {
+			UUID uuid = p.getUuid();
 			PassData d = CACHE.remove(uuid);
 			if (d != null && d.dirty) save(uuid, d);
 			PLAY_TICKS.remove(uuid);

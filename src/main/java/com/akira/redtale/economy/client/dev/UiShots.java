@@ -445,8 +445,13 @@ public final class UiShots {
 				HubSettingsPage.setAdminOpen(true);
 			});
 			case 90 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("redtale grant money @s 400"));
-			case 91 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("board post minecraft:oak_planks 4 20"));
-			case 92 -> shotKeep(mc, "u6-53-board.png", () -> open(mc, HubPage.BOARD, "board"));
+			case 91 -> act(mc, () -> {
+				mc.player.networkHandler.sendChatCommand("board post minecraft:oak_planks 4 20");
+				// ★命令与拍照不能同 tick★：/board 的回包要一个网络往返，
+				// 写在 shot 的 action 里会拍到上一帧（16:34 那轮拍到的是商店页）。
+				mc.player.networkHandler.sendChatCommand("board");
+			});
+			case 92 -> shotKeep(mc, "u6-53-board.png", () -> { });
 			case 93 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}

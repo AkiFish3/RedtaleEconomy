@@ -1,11 +1,11 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.storage.Ledger;
 import com.akira.redtale.economy.storage.SnapshotService;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 
 /**
  * 存储模块（spec v0.6）：流水 + 余额快照 + 到期清理。
@@ -25,7 +25,7 @@ public final class StorageModule implements RedtaleModule {
 		SnapshotService.init();
 		syncMysql();
 		ServerTickEvents.END_SERVER_TICK.register(SnapshotService::onServerTick);
-		ServerPlayConnectionEvents.DISCONNECT.register((h, s) -> SnapshotService.forget(h.getPlayer().getUuid()));
+		ModuleEvents.onQuit("storage", p -> SnapshotService.forget(p.getUuid()));
 	}
 
 	@Override

@@ -1,7 +1,7 @@
 package com.akira.redtale.economy.net;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.warehouse.WarehouseData;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
@@ -131,11 +131,10 @@ public final class WarehouseNetworking {
 				(server, player, h, buf, sender) -> server.execute(() -> upgrade(player)));
 
 		// 断开时把光标里的东西塞回背包，避免丢物品
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-			UUID id = handler.player.getUuid();
-			ItemStack cur = CURSOR.remove(id);
+		ModuleEvents.onQuit("warehouse.cursor", p -> {
+			ItemStack cur = CURSOR.remove(p.getUuid());
 			if (cur != null && !cur.isEmpty()) {
-				handler.player.getInventory().offerOrDrop(cur);
+				p.getInventory().offerOrDrop(cur);
 			}
 		});
 	}

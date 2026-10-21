@@ -1,5 +1,6 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.EasyNpcConfig;
@@ -7,7 +8,6 @@ import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.perm.Permissions;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -17,7 +17,6 @@ import net.minecraft.text.Text;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -101,7 +100,7 @@ public final class EasyNpcModule implements RedtaleModule {
 		if (hooksInstalled) return;
 		hooksInstalled = true;
 		if (!EasyNpcConfig.syncOnJoin()) return;
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> syncRankTag(handler.getPlayer()));
+		ModuleEvents.onJoin("easynpc", EasyNpcModule::syncRankTag);
 	}
 
 	// ---------------------------------------------------------------- 预设

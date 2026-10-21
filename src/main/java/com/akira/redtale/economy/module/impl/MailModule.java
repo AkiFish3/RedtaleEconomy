@@ -1,9 +1,9 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.MailConfig;
-import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.integration.ContactMail;
 import com.akira.redtale.economy.lang.Lang;
@@ -19,7 +19,6 @@ import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -95,9 +94,9 @@ public final class MailModule implements RedtaleModule {
 	private static void installHooks() {
 		if (hooksInstalled) return;
 		hooksInstalled = true;
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+		ModuleEvents.onQuit("mail", p -> {
 			try {
-				MailQueue.evict(handler.getPlayer().getUuid());
+				MailQueue.evict(p.getUuid());
 			} catch (Exception ignored) {
 				// 退出落盘失败不影响存档
 			}

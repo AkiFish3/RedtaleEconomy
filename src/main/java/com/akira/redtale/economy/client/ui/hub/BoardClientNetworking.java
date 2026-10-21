@@ -29,7 +29,10 @@ public final class BoardClientNetworking {
 			BoardProtocol.Snapshot snap = BoardProtocol.read(buf);
 			LAST = snap;
 			client.execute(() -> {
-				if (client.currentScreen instanceof HubScreen) {
+				if (client.currentScreen instanceof HubScreen hub) {
+					// 已在 Hub 上（比如在商店页敲 /board）：切到委托板页，别当成"已经打开了"直接返回。
+					// 2026-10-21 截图夹具抓到的：日志里 page=shop，/board 之后页面根本没动。
+					hub.setPage(HubPage.BOARD);
 					return;
 				}
 				if (ClientUiConfig.useHub) {

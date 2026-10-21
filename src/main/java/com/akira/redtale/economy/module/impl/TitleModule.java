@@ -1,9 +1,9 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.command.TitleCommands;
 import com.akira.redtale.economy.config.ConfigManager;
-import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.config.TitleConfig;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.util.DataRoot;
@@ -12,7 +12,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.CommandDispatcher;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -335,9 +334,9 @@ public final class TitleModule implements RedtaleModule {
 	private static void installHooks() {
 		if (hooksInstalled) return;
 		hooksInstalled = true;
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+		ModuleEvents.onQuit("title", p -> {
 			// 只清缓存，不改 display_name：玩家下次进来称号还在
-			CACHE.remove(handler.getPlayer().getUuid());
+			CACHE.remove(p.getUuid());
 		});
 	}
 

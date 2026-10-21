@@ -1,9 +1,9 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.command.WarehouseCommands;
 import com.akira.redtale.economy.config.ConfigManager;
-import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.config.WarehouseConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.module.RedtaleModule;
@@ -16,7 +16,6 @@ import com.akira.redtale.economy.warehouse.WarehouseInventory;
 import com.akira.redtale.economy.warehouse.WarehouseScreenHandler;
 import com.mojang.brigadier.CommandDispatcher;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -101,9 +100,9 @@ public final class WarehouseModule implements RedtaleModule {
 			if (!com.akira.redtale.economy.module.ModuleManager.get().isEnabled("warehouse")) return;
 			WarehouseData.flushAll();
 		});
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+		ModuleEvents.onQuit("warehouse", p -> {
 			try {
-				WarehouseData.evict(handler.getPlayer().getUuid());
+				WarehouseData.evict(p.getUuid());
 			} catch (Exception e) {
 				RedtaleEconomy.LOGGER.warn("[warehouse] 退出落盘失败：{}", e.getMessage());
 			}

@@ -1,19 +1,17 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.command.GuildCommands;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.GuildConfig;
-import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.guild.GuildData;
 import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.mojang.brigadier.CommandDispatcher;
-import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -213,17 +211,11 @@ public final class GuildModule implements RedtaleModule {
 		if (hooksInstalled) return;
 		hooksInstalled = true;
 
-		ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
-			try {
-				newDimension(player, destination);
-			} catch (Exception e) {
-				com.akira.redtale.economy.util.Logs.warnOnce("guild.dimension", "[guild] 维度声望失败：{}", e.getMessage());
-			}
-		});
+		ModuleEvents.onWorldChange("guild", (player, origin, destination) ->
+				newDimension(player, destination));
 
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+		ModuleEvents.onJoin("guild", p -> {
 			try {
-				ServerPlayerEntity p = handler.getPlayer();
 				newDimension(p, p.getServerWorld());
 				checkBiome(p, p.getServerWorld());
 			} catch (Exception e) {
@@ -231,10 +223,10 @@ public final class GuildModule implements RedtaleModule {
 			}
 		});
 
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+		ModuleEvents.onQuit("guild", p -> {
 			try {
-				GuildData.evict(handler.getPlayer().getUuid());
-				LAST_BIOME.remove(handler.getPlayer().getUuid());
+				GuildData.evict(p.getUuid());
+				LAST_BIOME.remove(p.getUuid());
 			} catch (Exception ignored) {
 				// 退出清缓存失败不影响存档
 			}

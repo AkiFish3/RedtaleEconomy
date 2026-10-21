@@ -1,12 +1,12 @@
 package com.akira.redtale.economy.module.impl;
 
+import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.bounty.BountyState;
 import com.akira.redtale.economy.command.BountyCommands;
 import com.akira.redtale.economy.config.BountyConfig;
 import com.akira.redtale.economy.config.GuildConfig;
 import com.akira.redtale.economy.config.ConfigManager;
-import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.storage.Ledger;
@@ -14,11 +14,9 @@ import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.util.TimeUtil;
 import com.mojang.brigadier.CommandDispatcher;
-import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.block.BarrelBlock;
 import net.minecraft.block.ChestBlock;
 import net.minecraft.block.ShulkerBoxBlock;
@@ -39,11 +37,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -297,50 +293,37 @@ public final class BountyModule implements RedtaleModule {
 			}
 		});
 
-		UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
-			try {
-				if (world.isClient() || hand != Hand.MAIN_HAND || !(player instanceof ServerPlayerEntity sp)) {
-					return ActionResult.PASS;
-				}
-				if (!enabled()) return ActionResult.PASS;
-				var state = world.getBlockState(hit.getBlockPos());
-				if (isLootContainer(state)) {
-					progress(sp.getUuid(), "loot_chest", "", 1, "");
-				}
-			} catch (Exception e) {
-				RedtaleEconomy.LOGGER.warn("[bounty] loot_chest 进度失败：{}", e.getMessage());
+		ModuleEvents.onUseBlock("bounty.loot", (player, world, hand, hit) -> {
+			if (world.isClient() || hand != Hand.MAIN_HAND || !(player instanceof ServerPlayerEntity sp)) {
+				return ActionResult.PASS;
+			}
+			if (!enabled()) return ActionResult.PASS;
+			var state = world.getBlockState(hit.getBlockPos());
+			if (isLootContainer(state)) {
+				progress(sp.getUuid(), "loot_chest", "", 1, "");
 			}
 			return ActionResult.PASS;
 		});
 
-		ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
-			try {
-				if (!enabled()) return;
-				String dim = destination.getRegistryKey().getValue().toString();
-				progress(player.getUuid(), "dimension", dim, 1, dim);
-				checkBiome(player, destination);
-			} catch (Exception e) {
-				RedtaleEconomy.LOGGER.warn("[bounty] dimension 进度失败：{}", e.getMessage());
-			}
+		ModuleEvents.onWorldChange("bounty", (player, origin, destination) -> {
+			if (!enabled()) return;
+			String dim = destination.getRegistryKey().getValue().toString();
+			progress(player.getUuid(), "dimension", dim, 1, dim);
+			checkBiome(player, destination);
 		});
 
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-			try {
-				if (!enabled()) return;
-				ServerPlayerEntity p = handler.getPlayer();
-				String dim = p.getWorld().getRegistryKey().getValue().toString();
-				progress(p.getUuid(), "dimension", dim, 1, dim);
-				checkBiome(p, p.getServerWorld());
-			} catch (Exception e) {
-				RedtaleEconomy.LOGGER.warn("[bounty] JOIN 进度失败：{}", e.getMessage());
-			}
+		ModuleEvents.onJoin("bounty", p -> {
+			if (!enabled()) return;
+			String dim = p.getWorld().getRegistryKey().getValue().toString();
+			progress(p.getUuid(), "dimension", dim, 1, dim);
+			checkBiome(p, p.getServerWorld());
 		});
 
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+		ModuleEvents.onQuit("bounty", p -> {
 			try {
-				BountyState.evict(handler.getPlayer().getUuid());
-				PENDING.remove(handler.getPlayer().getUuid());
-				LAST_BIOME.remove(handler.getPlayer().getUuid());
+				BountyState.evict(p.getUuid());
+				PENDING.remove(p.getUuid());
+				LAST_BIOME.remove(p.getUuid());
 			} catch (Exception ignored) {
 				// 退出时清缓存失败不影响存档
 			}
