@@ -50,7 +50,10 @@ public class PackageChooseHandler extends ScreenHandler {
     }
 
     // 从NBT提取物品列表的通用方法
-    private DefaultedList<ItemStack> extractItemsFromNbt(NbtCompound nbt) {
+    // ★必须 public static★：SELECT_ITEM 包里传的是「界面第几个格子」，而界面只把**非空**物品放进格子
+    // ⇒ 服务端必须用同一份过滤逻辑把 index 映射回 ItemStack；旧实现直接 `data.items().get(index)`
+    // 用的是含空条目的原始列表，只要包裹 NBT 里有一个空 item，点第一个格子就会发出第 N 个物品（零报错错位）。
+    public static DefaultedList<ItemStack> extractItemsFromNbt(NbtCompound nbt) {
         DefaultedList<ItemStack> list = DefaultedList.of();
         if (nbt != null && nbt.contains("items", NbtElement.LIST_TYPE)) {
             NbtList itemsList = nbt.getList("items", NbtElement.COMPOUND_TYPE);

@@ -47,6 +47,9 @@ public class RENetworking {
             server.execute(() -> {
                 net.minecraft.entity.Entity entity = player.getWorld().getEntityById(entityId);
                 if (entity instanceof PackageEntity pkgEntity) {
+                    // ★归属/距离校验★：这两个包都是「任意玩家都能发」的 C2S。
+                    // 不校验的话，一个改过的客户端可以凭实体 id 远程销毁别人的选择包裹（静默、无日志）。
+                    if (!isAllowedToInteract(player, pkgEntity, "close_choose_package")) return;
                     // 如果实体还没有被激活（即未选择物品），立即销毁
                     if (!pkgEntity.isActivated()) {
                         pkgEntity.destroyImmediately();
@@ -63,30 +66,36 @@ public class RENetworking {
             server.execute(() -> {
                 ItemStack mainHand = player.getStackInHand(Hand.MAIN_HAND);
                 ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
-                PackageData data = null;
+                ItemStack usedPack = null;
                 Hand usedHand = null;
 
                 if (isPackage(mainHand)) {
-                    data = PackageData.fromNbt(mainHand.getNbt());
+                    usedPack = mainHand;
                     usedHand = Hand.MAIN_HAND;
                 } else if (isPackage(offHand)) {
-                    data = PackageData.fromNbt(offHand.getNbt());
+                    usedPack = offHand;
                     usedHand = Hand.OFF_HAND;
                 }
 
+                PackageData data = usedPack == null ? null : PackageData.fromNbt(usedPack.getNbt());
+                // ★index 必须按「界面同一份过滤列表」解释★（见 PackageChooseHandler#extractItemsFromNbt）：
+                // 旧写法用 data.items().get(index)，包裹 NBT 里只要有一个空 item 就会错位给错东西。
+                java.util.List<ItemStack> choosable = PackageChooseHandler.extractItemsFromNbt(usedPack == null ? null : usedPack.getNbt());
+
                 if (data == null || data.mode() != PackageData.PackageMode.CHOOSE ||
-                        index < 0 || index >= data.items().size()) {
+                        index < 0 || index >= choosable.size()) {
                     LegacyInit.LOGGER.warn("Invalid select_item request from player {}", player.getGameProfile().getName());
                     return;
                 }
 
                 net.minecraft.entity.Entity entity = player.getWorld().getEntityById(entityId);
                 if (entity instanceof PackageEntity pkgEntity) {
+                    if (!isAllowedToInteract(player, pkgEntity, "select_item")) return;
                     if (pkgEntity.isActivated()) {
                         LegacyInit.LOGGER.warn("Duplicate SELECT_ITEM packet ignored for entity {}", entityId);
                         return;
                     }
-                    pkgEntity.setSelectedItem(data.items().get(index));
+                    pkgEntity.setSelectedItem(new PackageData.PackageItem(choosable.get(index).copy(), 1));
                 } else {
                     LegacyInit.LOGGER.warn("Entity {} not found or not a PackageEntity", entityId);
                     return;
@@ -101,6 +110,21 @@ public class RENetworking {
         });
 
         LegacyInit.LOGGER.info("✅ Registered LegacyInit networking");
+    }
+
+    /** C2S 交互闸门：owner 一致 + 距离 ≤20 格（与 {@code PackageEntity.tick} 的 400.0 平方距离同口径）。 */
+    private static boolean isAllowedToInteract(ServerPlayerEntity player, PackageEntity entity, String channel) {
+        if (entity.getOwnerUuid() != null && !entity.getOwnerUuid().equals(player.getUuid())) {
+            LegacyInit.LOGGER.warn("{} rejected: {} is not the owner of package entity {}",
+                    channel, player.getGameProfile().getName(), entity.getId());
+            return false;
+        }
+        if (player.squaredDistanceTo(entity) > 400.0) {
+            LegacyInit.LOGGER.warn("{} rejected: {} too far from package entity {}",
+                    channel, player.getGameProfile().getName(), entity.getId());
+            return false;
+        }
+        return true;
     }
 
     public static boolean isPackage(ItemStack stack) {
