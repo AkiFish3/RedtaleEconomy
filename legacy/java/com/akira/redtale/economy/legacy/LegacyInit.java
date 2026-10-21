@@ -26,6 +26,8 @@ public class LegacyInit implements ModInitializer {
 		LegacyExchange.register();
 		// 开发期视觉夹具（无 b14-pkg-shots.flag 时 register() 立即返回）
 		com.akira.redtale.economy.legacy.dev.PackageShotHarness.register();
+		// T39 客户端视觉夹具（无 b16-ttip.flag 时 register() 立即返回）
+		com.akira.redtale.economy.legacy.dev.TooltipShotHarness.register();
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				RECommands.register(dispatcher));
