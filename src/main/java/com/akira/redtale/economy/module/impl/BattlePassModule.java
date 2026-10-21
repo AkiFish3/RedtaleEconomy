@@ -54,7 +54,6 @@ public final class BattlePassModule implements RedtaleModule {
 	private static final Map<UUID, PassData> CACHE = new ConcurrentHashMap<>();
 	private static Path baseDir;
 	private static volatile boolean hooksInstalled;
-	private static int tickCounter;
 	private static final Map<UUID, Integer> PLAY_TICKS = new ConcurrentHashMap<>();
 
 	/** 单个玩家单赛季数据。 */

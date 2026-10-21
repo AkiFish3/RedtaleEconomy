@@ -189,19 +189,6 @@ public final class HubCheckinPage {
 		HubWidgets.button(dc, tr, x, y, w, h, label, variant, hover, false, enabled);
 	}
 
-	private static void drawButtonOld(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
-			String label, boolean enabled, double mouseX, double mouseY) {
-		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		int bg = enabled ? (hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.PRIMARY_SOFT) : HubTheme.DISABLED_BG;
-		int edge = enabled ? HubTheme.GOLD : HubTheme.LINE;
-		dc.fill(x, y, x + w, y + h, bg);
-		dc.fill(x, y, x + w, y + 1, edge);
-		dc.fill(x, y + h - 1, x + w, y + h, edge);
-		dc.fill(x, y, x + 1, y + h, edge);
-		dc.fill(x + w - 1, y, x + w, y + h, edge);
-		int color = enabled ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.DISABLED_TEXT;
-		dc.drawText(tr, Text.literal(label), x + (w - tr.getWidth(label)) / 2, y + 6, color, false);
-	}
 
 	public static Action click(double mouseX, double mouseY, int x, int y, int w, int h,
 			CheckinProtocol.Snapshot snap, int monthOffset) {

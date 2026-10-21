@@ -52,12 +52,8 @@ public final class TaskModule implements RedtaleModule {
 	/** 兼容旧版平铺文件（同样按新结构解析，只是名字不带目录层级）。 */
 	private static final String LEGACY_POOLS = "tasks/pools.json";
 	private static final String LEGACY_DAILY = "tasks/daily.json";
-
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
-	private static final ConfigSchema POOL_ITEM = ConfigSchema.obj("池内物品")
-			.field("id", ConfigSchema.string("minecraft:stone", "物品 id（必须带命名空间）"))
-			.field("weight", ConfigSchema.integer(1, 1, 1000, "权重（越大需求越少，用于拆解预算）"));
 
 	/** 池用「对象 map」而非数组：{@code {"pools":{"food":{"items":[...]}}}}。 */
 	public static final ConfigSchema SETTINGS_SCHEMA = ConfigSchema.obj("每日任务")

@@ -72,9 +72,6 @@ public final class HubShopPage {
 		return tw == 0 ? w : w - tw - 6;
 	}
 
-	/** 价格档位上限（铜）；0 = 不限。点击依次循环。 */
-	private static final long[] PRICE_STEPS = {0, 10, 100, 1_000, 10_000, 100_000};
-
 	/** 四个筛选 chip 的布局（宽随文字变，但两处必须算得一样）。 */
 	private static int[] chipWidths(TextRenderer tr, ShopProtocol.Page page) {
 		com.akira.redtale.economy.net.ShopFilter f = ShopClientState.filter();

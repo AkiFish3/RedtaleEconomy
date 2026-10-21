@@ -195,15 +195,6 @@ public final class TaskScreen extends Screen {
 	}
 
 
-	private Text itemLine(TaskProtocol.Task t) {
-		List<String> parts = new ArrayList<>();
-		for (TaskProtocol.Item i : t.items()) {
-			String mark = i.have() >= i.need() ? "§a" : "§c";
-			parts.add(mark + i.id() + "§7 " + i.have() + "/" + i.need());
-		}
-		return Text.literal(String.join("§7, ", parts));
-	}
-
 	/**
 	 * 金额：跳过 0 单位（§37.2 数字右对齐、金额金色）。
 	 * {@code Currency.format} 会输出「0 金 4 银 20 铜」，卡片 118px 宽放不下也没意义。

@@ -92,9 +92,6 @@ public class HubScreen extends Screen {
 	private int dragButton = -1;
 	private boolean searchFocused;
 	private long pageAnimAt;
-	private long shownRaw = -1;
-	private long rawTarget = -1;
-	private long rawAnimAt;
 	private boolean dragActive;
 	private int pendingIdx = -1;
 	private boolean pendingInv;
@@ -123,8 +120,6 @@ public class HubScreen extends Screen {
 	 */
 	private boolean rankActiveOnly = true;
 	private boolean rankDropdown;
-	private int tipIndex;
-	private long tipSwitchAt;
 
 	public HubScreen() {
 		super(Text.literal("Redtale"));

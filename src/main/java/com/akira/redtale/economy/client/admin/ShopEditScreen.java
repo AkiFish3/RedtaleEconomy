@@ -29,7 +29,6 @@ public final class ShopEditScreen extends Screen {
 
 	private static final int ROW_H = 12;
 	private static final int LIST_W = 250;
-	private static final int PANEL_H = 236;
 	private static final int PAD = 6;
 
 	private final String shopId;
