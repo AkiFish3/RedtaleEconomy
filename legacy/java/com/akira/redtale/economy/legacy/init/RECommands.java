@@ -56,11 +56,20 @@ public class RECommands {
                         })
                 )
                 .then(literal("add")
-                        .then(argument("item", StringArgumentType.string())
+                        // ★必须是 greedyString★：`word()` / `string()` 的非引号分支走
+                        // `StringReader.readUnquotedString()`，字符集只有 `0-9A-Za-z_.+-`，
+                        // **不含冒号** ⇒ `add minecraft:emerald` 直接报
+                        // "Expected whitespace to end one argument, but found trailing data"。
+                        // 而建议列表（ITEM_SUGGESTIONS）给的就是 `minecraft:xxx` 这种带冒号的写法，
+                        // 玩家点补全 → 命令立刻解析失败。旧代码把 `word()` 换成 `string()` 只是换了个
+                        // 同样不收冒号的实现（2026-10-22 实测：`add hand` 能过、`add minecraft:emerald` 不能）。
+                        .then(argument("item", StringArgumentType.greedyString())
                                 .suggests(ITEM_SUGGESTIONS)
                                 .executes(context -> {
                                     String input = StringArgumentType.getString(context, "item");
                                     ServerCommandSource source = context.getSource();
+                                    // greedyString 会把引号也吃进来（玩家照旧文档写 add "minecraft:diamond"）⇒ 先剥引号
+                                    input = stripQuotes(input);
                                     // 处理 "hand" 快捷输入
                                     if ("hand".equalsIgnoreCase(input)) {
                                         // 需要获取执行者手中的物品 ID（非 OP 版本需要额外处理）
@@ -96,7 +105,8 @@ public class RECommands {
                         )
                 )
                 .then(literal("remove")
-                        .then(argument("item", StringArgumentType.string())
+                        // 同上：不收冒号 ⇒ 必须 greedyString，否则 `remove minecraft:diamond` 解析失败
+                        .then(argument("item", StringArgumentType.greedyString())
                                 .suggests((context, builder) -> {
                                     for (String id : BoundItemsConfig.getBoundItems()) {
                                         builder.suggest(id);
@@ -105,6 +115,8 @@ public class RECommands {
                                 })
                                 .executes(context -> {
                                     String raw = StringArgumentType.getString(context, "item");
+                                    // greedyString 会连引号一起吃进来，与 add 同口径先剥引号
+                                    raw = stripQuotes(raw);
                                     // 与 addBoundItem 同口径归一（否则 remove diamond 永远匹配不到 minecraft:diamond）
                                     String itemId = raw.contains(":") ? raw : "minecraft:" + raw;
                                     ServerCommandSource source = context.getSource();
@@ -151,6 +163,20 @@ public class RECommands {
                 )
                 )
         );
+    }
+
+    /** 剥掉一层成对的引号：{@code greedyString()} 不解析引号，会把它们当普通字符收下。 */
+    private static String stripQuotes(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.length() >= 2) {
+            char first = t.charAt(0);
+            char last = t.charAt(t.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                t = t.substring(1, t.length() - 1).trim();
+            }
+        }
+        return t;
     }
 
     /** {@code /redtale bound spawnpkg <tier> <mode>}：在命令源位置刷一个内容固定的包裹实体。 */
