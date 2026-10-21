@@ -326,7 +326,7 @@ public final class TaskCommands {
 	 */
 	private static boolean altBlocked(ServerCommandSource src, ServerPlayerEntity p) {
 		com.akira.redtale.economy.storage.AltGuard.Decision d =
-				com.akira.redtale.economy.storage.AltGuard.gate(p.getUuid(), p.getIp(), "task");
+				com.akira.redtale.economy.storage.AltGuard.gate(p.getUuid(), p.getName().getString(), p.getIp(), "task");
 		if (d.allowed()) return false;
 		src.sendError(Text.literal("§c[防小号] " + d.reason()));
 		return true;

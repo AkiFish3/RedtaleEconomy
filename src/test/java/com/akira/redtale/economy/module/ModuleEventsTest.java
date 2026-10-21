@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -75,6 +76,10 @@ class ModuleEventsTest {
 				new ModuleEvents.Named<>("x", record(new ArrayList<>(), "x")));
 		ModuleEvents.dispatch(hooks, "quit", null);
 		ModuleEvents.resetForTest();
-		assertEquals("join:;quit:;world:;block:", ModuleEvents.describe());
+		// 断言「已清空」而不是整串常量：describe() 每加一个事件钩子都会变，写死整串会让
+		// 每次扩展都误报一次（T05 加 death/break/tick 时就地炸了一轮）。
+		String d = ModuleEvents.describe();
+		assertTrue(d.startsWith("join:;quit:;world:;block:;"), "四类原始钩子必须仍存在：" + d);
+		assertFalse(d.contains("x"), "reset 后不能残留订阅者：" + d);
 	}
 }

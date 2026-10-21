@@ -35,7 +35,7 @@ public final class CheckinCommands {
 		}
 		// T18：防小号（默认关闭）。拒绝时不改状态、不发奖，直接回动作栏
 		com.akira.redtale.economy.storage.AltGuard.Decision alt =
-				com.akira.redtale.economy.storage.AltGuard.gate(p.getUuid(), p.getIp(), "checkin");
+				com.akira.redtale.economy.storage.AltGuard.gate(p.getUuid(), p.getName().getString(), p.getIp(), "checkin");
 		if (!alt.allowed()) {
 			p.sendMessage(Text.literal("§c[防小号] " + alt.reason()), true);
 			return 0;

@@ -77,4 +77,23 @@ class AltGuardTest {
 		assertEquals("", AltGuard.normalizeIp(null));
 		assertEquals("", AltGuard.normalizeIp("unknown"));
 	}
+
+	/** 回归：被拒账号不能落表，否则它变成「老面孔」，重试一次即通过（实机复现过）。 */
+	@Test
+	void deniedAccountIsNotRecordedSoRetryStillDenied() {
+		Map<String, AltGuard.Rec> m = table("u1", "1.1.1.1");
+		assertFalse(AltGuard.evaluateAndRecord(m, "u2", "B", "1.1.1.1", NOW, 24, 1).allowed());
+		assertFalse(m.containsKey("u2"), "拒绝不能记账");
+		assertFalse(AltGuard.evaluateAndRecord(m, "u2", "B", "1.1.1.1", NOW + 1000, 24, 1).allowed(),
+				"同账号重试仍应被拒");
+		assertEquals(1, m.size());
+	}
+
+	@Test
+	void allowedAccountRecordsIpAndName() {
+		Map<String, AltGuard.Rec> m = new HashMap<>();
+		assertTrue(AltGuard.evaluateAndRecord(m, "u1", "Aki", "2.2.2.2", NOW, 24, 3).allowed());
+		assertEquals("2.2.2.2", m.get("u1").ip());
+		assertEquals("Aki", m.get("u1").name(), "落盘要能认出是哪个号");
+	}
 }

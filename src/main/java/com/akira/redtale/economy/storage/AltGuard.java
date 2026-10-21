@@ -60,6 +60,10 @@ public final class AltGuard {
 	 * 且不要把物品先扣走（顺序错了等于吞玩家物品）。
 	 */
 	public static Decision gate(UUID uuid, String rawIp, String scope) {
+		return gate(uuid, null, rawIp, scope);
+	}
+
+	public static Decision gate(UUID uuid, String name, String rawIp, String scope) {
 		if (uuid == null) return ALLOW;
 		String ip = normalizeIp(rawIp);
 		boolean enabled = AntiAltConfig.enabled();
@@ -70,7 +74,7 @@ public final class AltGuard {
 			long now = System.currentTimeMillis();
 			int cooldown = AntiAltConfig.cooldownHours();
 			int max = AntiAltConfig.maxAccountsPerIp();
-			d = evaluate(RECS, uuid.toString(), ip, now, cooldown, max);
+			d = evaluateAndRecord(RECS, uuid.toString(), name, ip, now, cooldown, max);
 			if (!d.allowed()) {
 				if (AntiAltConfig.logOnly()) {
 					RedtaleEconomy.LOGGER.warn("[anti-alt] {} 触发（scope={}，logOnly 未拦截）：{}",
@@ -84,25 +88,36 @@ public final class AltGuard {
 			if (!d.allowed()) {
 				Webhook.notify("alt.block", "玩家 " + uuid + " 的 " + scope + " 被拒：" + d.reason());
 			}
+			// ★记账后必须自己触发落盘★：maybeSave 原先只挂在 observe() 尾部，改成
+			// evaluateAndRecord 后调用链断开 ⇒ 记录只在内存，重启即丢（2026-10-22 实测 ipmap 恒 {}）。
+			if (d.allowed()) maybeSave(now);
 		}
-		observe(uuid, ip, null);
+		// ★只有放行才记账★：被拒账号若也写进表，下次 evaluate 会把它当「老面孔」直接放行
+		// ⇒ 防小号退化成「第一次被拒、重试即通过」，等于没有防护（2026-10-22 实机复现）。
 		return d;
 	}
 
-	/** 记录一次出现（登录/领取都算）。{@code ip} 为空时只刷新时间戳，不覆盖已有 IP。 */
-	public static void observe(UUID uuid, String rawIp, String name) {
-		if (uuid == null) return;
-		loadIfNeeded();
-		String ip = normalizeIp(rawIp);
-		String key = uuid.toString();
-		long now = System.currentTimeMillis();
-		RECS.compute(key, (k, old) -> {
-			String useIp = ip.isEmpty() ? (old == null ? "" : old.ip()) : ip;
-			String useName = name == null || name.isBlank() ? (old == null ? "" : old.name()) : name;
-			return new Rec(useIp, useName, now);
-		});
-		maybeSave(now);
+	/**
+	 * 判定 + <b>仅在放行时</b>记账。
+	 *
+	 * <p>拆成独立方法是为了让「拒绝不落表」这条口径可以被单测直接盯住 —— 它一旦回退，
+	 * 防小号会在第二次尝试时静默失效（没有任何日志异常）。
+	 */
+	public static Decision evaluateAndRecord(Map<String, Rec> table, String uuid, String name, String ip,
+			long now, int cooldownHours, int maxAccounts) {
+		Decision d = evaluate(table, uuid, ip, now, cooldownHours, maxAccounts);
+		if (!d.allowed() || table == null || uuid == null) return d;
+		String useIp = ip == null ? "" : ip;
+		String useName = name == null ? "" : name;
+		table.compute(uuid, (k, old) -> new Rec(
+				useIp.isEmpty() ? (old == null ? "" : old.ip()) : useIp,
+				useName.isEmpty() ? (old == null ? "" : old.name()) : useName,
+				now));
+		return d;
 	}
+
+	// 注意：这里刻意不提供「登录即记账」的入口。登录时记账会把被拒账号
+	// 变成「老面孔」，重试一次即可通过 —— 记账只能发生在放行之后（见 evaluateAndRecord）。
 
 	/**
 	 * 纯判定：该 IP 在窗口内的不同 UUID 数（含本人）超过 {@code maxAccounts} 且本人是新面孔 → 拒绝。
