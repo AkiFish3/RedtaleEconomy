@@ -493,8 +493,39 @@ public final class HubShopPage {
 		return idx;
 	}
 
-	/** T69b：列表模式一屏能放几行（22+2 行距）。 */
-	private static int listRows(int availH) {
+	/**
+	 * 仅 dev 夹具用：第 {@code index} 件商品的中心坐标（按**当前模式**的几何算）。
+	 *
+	 * <p>越界 / 不在当前可见行内返回 {@code null} —— 夹具据此判「画得出来就能点得到」。
+	 * 两套几何（网格/列表）各算一次，避免夹具自己写死格子尺寸。
+	 */
+	public static double[] itemCenter(int index, int x, int y, int w, int h) {
+		ShopProtocol.Page page = ShopClientState.page();
+		if (page == null || index < 0 || index >= page.entries().size()) return null;
+		int gx = gridX(x, page);
+		int gw = gridW(w, page);
+		int startY = gridStartY(y);
+		int limitY = gridLimitY(y, h);
+		if (listMode()) {
+			int row = index - scrollRow;
+			if (row < 0 || row >= listRows(limitY - startY)) return null;
+			double cy = startY + row * (LIST_ROW + LIST_GAP) + LIST_ROW / 2.0;
+			if (cy >= limitY) return null;
+			return new double[]{gx + (gw - 6) / 2.0, cy};
+		}
+		int[] d = dims(gw, limitY - startY);
+		int cols = d[0];
+		int cell = d[1];
+		int row = index / cols - scrollRow;
+		int col = index % cols;
+		if (row < 0 || row >= d[2]) return null;
+		int blockW = cols * cell + (cols - 1) * GAP;
+		int gx0 = gx + Math.max(0, (gw - blockW) / 2);
+		return new double[]{gx0 + col * (cell + GAP) + cell / 2.0,
+				startY + row * (cell + GAP) + cell / 2.0};
+	}
+
+	/** T69b：列表模式一屏能放几行（22+2 行距）。 */	private static int listRows(int availH) {
 		return Math.max(1, (availH + LIST_GAP) / (LIST_ROW + LIST_GAP));
 	}
 

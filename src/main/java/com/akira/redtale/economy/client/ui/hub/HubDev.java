@@ -100,6 +100,18 @@ public final class HubDev {
 		return ClientUiConfig.shopView;
 	}
 
+	/**
+	 * 夹具：点第 {@code index} 件商品（走真实 mouseClicked）。
+	 * {@code true} = 命中并改选中；坐标由页面按当前模式算，夹具不写死格子尺寸。
+	 */
+	public static boolean clickShopItem(HubScreen host, int index) {
+		if (host.page != HubPage.SHOP) return false;
+		double[] p = HubShopPage.itemCenter(index, host.frame.contentX(), host.frame.contentY(),
+				host.frame.contentW(), host.frame.contentH());
+		if (p == null) return false;
+		return host.mouseClicked(p[0], p[1], 0);
+	}
+
 	public static boolean clickRankToggle(HubScreen host) {
 		if (host.page != HubPage.RANK) return false;
 		int cx = host.frame.contentX();

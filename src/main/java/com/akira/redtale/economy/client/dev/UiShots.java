@@ -59,7 +59,7 @@ public final class UiShots {
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
 	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2 + T44 商店滚动 1，到 89）。 */
-	private static final int LAST_STEP = 203;
+	private static final int LAST_STEP = 224;
 	/**
 	 * 多人模式（连专用服务器）的起点 step。
 	 *
@@ -683,7 +683,56 @@ public final class UiShots {
 							.TitlesClientNetworking.LAST.prefix() + "|"
 							+ com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.suffix()
 							+ "|" + com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.gradient()));
-			default -> finish(mc);
+			// ★T69b 商店双模式★：同一批商品在「图标网格」与「卡片列表」下各拍一张，
+			// 并各做一次真实点击（几何不同 ⇒ 命中必须各自成立）。
+			// 先复位成网格再打开界面：上一步可能把 shopView 留在列表。
+			case 218 -> act(mc, () -> {
+				ClientUiConfig.shopView = 0;
+				ClientUiConfig.save();
+				mc.setScreen(null);
+				open(mc, HubPage.SHOP, "rt shop");
+			});
+			case 219 -> shotKeep(mc, "u6-70-shop-grid.png",
+					() -> LOG.add("shop grid view=" + (mc.currentScreen instanceof HubScreen h
+							? HubDev.shopViewVal(h) : -1)
+							+ " clickItem0=" + (mc.currentScreen instanceof HubScreen h
+							? HubDev.clickShopItem(h, 0) : false)));
+			case 220 -> act(mc, () -> {
+				if (mc.currentScreen instanceof HubScreen hub) {
+					LOG.add("shop view chip hit=" + HubDev.clickShopViewChip(hub)
+							+ " -> view=" + HubDev.shopViewVal(hub));
+				} else {
+					LOG.add("shop view chip skipped: screen="
+							+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+				}
+			});
+			case 221 -> shotKeep(mc, "u6-71-shop-list.png",
+					() -> LOG.add("shop list clickItem1=" + (mc.currentScreen instanceof HubScreen h
+							? HubDev.clickShopItem(h, 1) : false)));
+			case 222 -> act(mc, () -> {
+				if (mc.currentScreen instanceof HubScreen hub) {
+					int bottom = HubDev.scrollShopBottom(hub);
+					int last = ShopClientState.page() == null ? -1
+							: ShopClientState.page().entries().size() - 1;
+					LOG.add("shop list scroll bottom -> row " + bottom + " last=" + last
+							+ " clickLast=" + (last >= 0 ? HubDev.clickShopItem(hub, last) : false));
+				}
+			});
+			case 223 -> shotKeep(mc, "u6-72-shop-list-bottom.png", () -> { });
+			// 收尾：把偏好复位成网格，别把夹具的状态留给玩家
+			case 224 -> act(mc, () -> {
+				ClientUiConfig.shopView = 0;
+				ClientUiConfig.save();
+				LOG.add("shop view restored to grid");
+			});
+			// ★稀疏编号★：这个 step 号没有动作时直接跳下一个，不要 finish。
+			// 以前是 `default -> finish`，于是「在末尾追加 218+」会被 123 这个空号直接截断
+			// （整轮只跑到 122 就退出，新步骤永远不执行、也不报错）。
+			// 真正的结束条件仍在 tick() 里：step > LAST_STEP。
+			default -> {
+				step += 1;
+				stepAt = tick + FAST_SETTLE;
+			}
 		}
 	}
 
