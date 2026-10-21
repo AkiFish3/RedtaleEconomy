@@ -42,8 +42,10 @@ public class PackageEntity extends Entity implements GeoEntity {
     private static final int GIVE_INTERVAL = 3;
 
     private int age = 0;
-    private boolean animationTriggered = false;
     private boolean rewardGiven = false;
+    /** 客户端：predicate 已下发的动画名。★只在目标变化时才 setAnimation★——
+     *  每 tick 重设会把 thenPlay/thenLoop 动画钉在第一帧（看起来像静止贴图）。 */
+    private String appliedAnimation = null;
 
     private static final TrackedData<String> ANIMATION_STATE = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.STRING);
     private static final TrackedData<Boolean> CHOOSE_MODE_ACTIVE = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
@@ -127,7 +129,7 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.activated = true;
         this.setAnimationState("open");
         this.dataTracker.set(CHOOSE_MODE_ACTIVE, false);
-        this.animationTriggered = false;
+        this.appliedAnimation = null;
         this.chooseModeTickCount = 0;
     }
 
@@ -145,11 +147,9 @@ public class PackageEntity extends Entity implements GeoEntity {
         super.tick();
 
         if (this.getWorld().isClient()) {
-            if (!animationTriggered) {
-                String animName = "idle".equals(this.getAnimationState()) ? "idle" : "open";
-                this.triggerAnim("controller", animName);
-                animationTriggered = true;
-            }
+            // 动画统一由 predicate 驱动（同一目标动画只 setAnimation 一次）。
+            // 旧写法：这里 triggerAnim + predicate 里每 tick thenPlay("open") 互相抢控制权，
+            // 结果是 open 播完被重置回第一帧、idle 也每 tick 重置 ⇒ 看起来完全是静止贴图。
             return;
         }
 
@@ -301,6 +301,9 @@ public class PackageEntity extends Entity implements GeoEntity {
     @Override
     protected void writeCustomDataToNbt(NbtCompound nbt) {
         nbt.putString("AnimationState", this.getAnimationState());
+        // ★必须存★：packageStack 不落盘（重载后是无参构造的 EMPTY），档位只能靠这个字段还原，
+        // 否则实体存盘再读回会统一变 normal 贴图。
+        nbt.putString("PackageTier", this.getPackageTier());
         nbt.putInt("Age", this.age);
         nbt.putBoolean("RewardGiven", this.rewardGiven);
         nbt.putBoolean("Activated", this.activated);
@@ -328,6 +331,9 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.rewardGiven = nbt.getBoolean("RewardGiven");
         this.activated = nbt.getBoolean("Activated");
         this.dataTracker.set(CHOOSE_MODE_ACTIVE, nbt.getBoolean("ChooseModeActive"));
+        if (nbt.contains("PackageTier")) {
+            this.dataTracker.set(PACKAGE_TIER, nbt.getString("PackageTier"));
+        }
         this.chooseModeTickCount = nbt.getInt("ChooseModeTickCount");
         this.giveCounter = nbt.getInt("GiveCounter");
         this.currentGiveIndex = nbt.getInt("CurrentGiveIndex");
@@ -352,7 +358,7 @@ public class PackageEntity extends Entity implements GeoEntity {
     public void onTrackedDataSet(TrackedData<?> data) {
         super.onTrackedDataSet(data);
         if (this.getWorld().isClient() && data == ANIMATION_STATE) {
-            this.animationTriggered = false;
+            this.appliedAnimation = null;
         }
     }
 
@@ -373,11 +379,12 @@ public class PackageEntity extends Entity implements GeoEntity {
     }
 
     private <T extends GeoEntity> PlayState predicate(AnimationState<T> event) {
-        String currentState = this.getAnimationState();
-        if ("idle".equals(currentState)) {
-            event.getController().setAnimation(RawAnimation.begin().thenLoop("idle"));
-        } else {
-            event.getController().setAnimation(RawAnimation.begin().thenPlay("open"));
+        String target = "idle".equals(this.getAnimationState()) ? "idle" : "open";
+        if (!target.equals(this.appliedAnimation)) {
+            this.appliedAnimation = target;
+            event.getController().setAnimation("idle".equals(target)
+                    ? RawAnimation.begin().thenLoop("idle")
+                    : RawAnimation.begin().thenPlay("open"));
         }
         return PlayState.CONTINUE;
     }
