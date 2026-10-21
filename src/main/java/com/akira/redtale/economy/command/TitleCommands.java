@@ -26,6 +26,7 @@ public final class TitleCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "titles", "title");
 		// ★不能叫 "title"★：原版自带 /title（requires 权限等级 2），Brigadier 的 addChild
 		// 只合并子节点与 executor、**不合并 requires** ⇒ 普通玩家看到的是
 		// 「Unknown or incomplete command」（2026-10-21 假人实测）。改名 /titles。

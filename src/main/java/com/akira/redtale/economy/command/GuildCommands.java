@@ -24,6 +24,7 @@ public final class GuildCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "guild", "guild");
 		d.register(CommandManager.literal("guild")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(GuildCommands::info)

@@ -48,6 +48,7 @@ public final class ShopAdminCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "shop", "shop");
 		d.register(CommandManager.literal("shop").requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(ShopAdminCommands::openDefault)
 				.then(CommandManager.literal("open")

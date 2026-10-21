@@ -24,6 +24,7 @@ public final class PassCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "pass", "battlepass");
 		d.register(CommandManager.literal("pass")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(PassCommands::info)

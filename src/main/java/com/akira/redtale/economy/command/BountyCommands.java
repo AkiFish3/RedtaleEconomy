@@ -25,6 +25,7 @@ public final class BountyCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "bounty", "bounty");
 		d.register(CommandManager.literal("bounty")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(BountyCommands::open)

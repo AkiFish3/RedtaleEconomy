@@ -25,6 +25,9 @@ public final class RedtaleCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+		// T35：声明本类占的根命令名（冲突检测，见 CommandTable）
+		CommandTable.declare(dispatcher, "redtale", "core");
+		CommandTable.declare(dispatcher, "rt", "core");
 		LiteralArgumentBuilder<ServerCommandSource> root = CommandManager.literal("redtale")
 				.then(CommandManager.literal("reload")
 						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))

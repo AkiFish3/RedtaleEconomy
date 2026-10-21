@@ -34,6 +34,7 @@ public final class MarketCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "market", "market");
 		d.register(CommandManager.literal("market")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(ctx -> {

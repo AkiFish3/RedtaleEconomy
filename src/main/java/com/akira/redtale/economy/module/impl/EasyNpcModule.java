@@ -2,6 +2,7 @@ package com.akira.redtale.economy.module.impl;
 
 import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.RedtaleEconomy;
+import com.akira.redtale.economy.command.CommandTable;
 import com.akira.redtale.economy.config.ConfigManager;
 import com.akira.redtale.economy.config.EasyNpcConfig;
 import com.akira.redtale.economy.module.RedtaleModule;
@@ -55,6 +56,8 @@ public final class EasyNpcModule implements RedtaleModule {
 
 	@Override
 	public void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
+		// T35：声明根命令归属（与 /title 撞名那次的教训，见 CommandTable）
+		CommandTable.declare(dispatcher, "easynpc", "easynpc");
 		dispatcher.register(CommandManager.literal("easynpc")
 				.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 				.executes(EasyNpcModule::help)

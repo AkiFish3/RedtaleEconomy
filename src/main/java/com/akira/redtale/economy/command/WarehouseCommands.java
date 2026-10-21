@@ -31,6 +31,7 @@ public final class WarehouseCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d, List<String> names) {
+		for (String n : names) CommandTable.declare(d, n, "warehouse");
 		for (String name : names) {
 			if (name == null || name.isBlank()) continue;
 			LiteralArgumentBuilder<ServerCommandSource> root = CommandManager.literal(name)

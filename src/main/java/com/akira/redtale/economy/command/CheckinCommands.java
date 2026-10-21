@@ -18,6 +18,7 @@ public final class CheckinCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "checkin", "checkin");
 		d.register(CommandManager.literal("checkin").requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(CheckinCommands::doCheckin)
 				.then(CommandManager.literal("make-up").executes(CheckinCommands::doMakeup))

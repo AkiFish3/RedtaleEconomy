@@ -36,6 +36,7 @@ public final class BoardCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "board", "board");
 		d.register(CommandManager.literal("board")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(BoardCommands::open)

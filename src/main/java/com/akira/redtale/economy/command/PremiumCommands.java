@@ -29,6 +29,7 @@ public final class PremiumCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
+		CommandTable.declare(d, "premium", "premium");
 		d.register(CommandManager.literal("premium")
 				.executes(PremiumCommands::self)
 				.then(CommandManager.literal("give")
