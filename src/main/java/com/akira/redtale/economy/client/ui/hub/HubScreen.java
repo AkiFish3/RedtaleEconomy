@@ -18,7 +18,7 @@ public class HubScreen extends Screen {
 
 	boolean autoCompact;
 
-	private boolean isVanilla() {
+	boolean vanilla() {
 		return "vanilla".equals(ClientUiConfig.theme);
 	}
 
@@ -33,8 +33,8 @@ public class HubScreen extends Screen {
 
 	/** 面板几何（T32：所有坐标只算一次，见 {@link HubFrame}）。 */
 	HubFrame frame;
-	private final HubSidebar sidebar = new HubSidebar();
-	private final HubStatusLine statusLine = new HubStatusLine();
+	final HubSidebar sidebar = new HubSidebar();
+	final HubStatusLine statusLine = new HubStatusLine();
 
 
 	HubPage page = HubPage.CHECKIN;
@@ -96,7 +96,7 @@ public class HubScreen extends Screen {
 	boolean dragPlacing ;
 	int dragButton = -1;
 	boolean searchFocused ;
-	private long pageAnimAt;
+	long pageAnimAt;
 	boolean dragActive ;
 	int pendingIdx = -1;
 	boolean pendingInv ;
@@ -106,15 +106,15 @@ public class HubScreen extends Screen {
 	final StringBuilder payAmount = new StringBuilder();
 	int payFocus ;
 	final java.util.List<Integer> dragSlots = new java.util.ArrayList<>();
-	private long lastShopActionAt;
+	long lastShopActionAt;
 	/** T01：最近一次点买/卖的商品与金额，用来在回包后补「含税 x 铜」。 */
 	String lastTradeItem = "";
 	long lastTradeAmount ;
 	boolean lastTradeBuy = true;
-	private long lastMarketActionAt;
+	long lastMarketActionAt;
 	/** §43.6：排行榜「同步」按钮 60 秒冷却（只读缓存，防刷）。 */
 	long lastRankSyncAt ;
-	private Object lastShopPage;
+	Object lastShopPage;
 	int lastDragSlot = -1;
 	int rankBoard ;
 	/**
@@ -172,6 +172,11 @@ public class HubScreen extends Screen {
 		}
 	}
 
+	/** T32 批次3：Screen.renderBackground / hasShiftDown 是 protected，给同包渲染类一个桥。 */
+	void paintBackground(DrawContext dc) {
+		renderBackground(dc);
+	}
+
 	@Override
 	public boolean shouldPause() {
 		// §39 D1：不暂停单人游戏
@@ -204,166 +209,9 @@ public class HubScreen extends Screen {
 
 	@Override
 	public void render(DrawContext dc, int mouseX, int mouseY, float delta) {
-		boolean vanilla = isVanilla();
-		if (!vanilla) this.renderBackground(dc);
-		// 外框（面板/标题/余额/关闭/分隔线/侧栏底色）整块交给 HubChrome
-		HubChrome.render(dc, textRenderer, frame, page, vanilla, this.width, this.height,
-				HubChrome.headText(page), mouseX, mouseY);
-		sidebar.render(dc, textRenderer, frame, page, mouseX, mouseY);
-
-		// 内容区（切换页面时轻微滑入）
-		var mat = dc.getMatrices();
-		long since = System.currentTimeMillis() - pageAnimAt;
-		float t = pageAnimAt == 0 ? 1f : Math.min(1f, since / 120f);
-		int slide = (int) (6 * (1 - t));
-		mat.push();
-		mat.translate(slide, 0, 0);
-		int cx = frame.contentX();
-		int cy = frame.contentY();
-		int cw = frame.contentW();
-		int ch = frame.contentH();
-		// 商店操作结果回显（买/卖成功或失败都进界面状态行，不进聊天）
-		if (page == HubPage.SHOP) {
-			if (ShopClientState.page() != lastShopPage) {
-				lastShopPage = ShopClientState.page();
-				shopSelected = -1;
-				// 换页 / 换筛选后回到网格顶部：旧滚动位置在新一页上多半是空的
-				HubShopPage.resetScroll();
-			}
-			var act = ShopClientState.lastAction();
-			if (act != null && ShopClientState.lastActionAt() > lastShopActionAt) {
-				lastShopActionAt = ShopClientState.lastActionAt();
-				String base = act.ok() ? "已购买"
-						: net.minecraft.text.Text.translatable(act.messageKey()).getString();
-				if (act.ok()) base = lastTradeBuy ? "已购买" : "已出售";
-				// T01：成功时补税额（失败不说税，免得看起来像被多收了）
-				if (act.ok() && lastTradeAmount > 0) {
-					long tax = lastTradeBuy
-							? ShopClientState.tax().buyTax(lastTradeItem, lastTradeAmount)
-							: ShopClientState.tax().sellTax(lastTradeItem, lastTradeAmount);
-					if (tax > 0) base = base + "（" + (lastTradeBuy ? "含税 " : "扣税 ") + tax + " 铜）";
-				}
-				setStatus(base);
-			}
-		}
-		if (page == HubPage.MARKET) {
-			var mact = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST_ACTION;
-			long mAt = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST_ACTION_AT;
-			if (mact != null && mAt > lastMarketActionAt) {
-				lastMarketActionAt = mAt;
-				setStatus(mact.message());
-			}
-		}
-		if (page == HubPage.SETTINGS) {
-			HubSettingsPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
-		} else if (page == HubPage.BOUNTY) {
-			int[] hovered = {-1};
-			HubBountyPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY, hovered);
-		} else if (page == HubPage.BOARD) {
-			HubBoardPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
-		} else if (page == HubPage.LEDGER) {
-			HubLedgerPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
-		} else if (page == HubPage.GUILD) {
-			HubGuildPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
-		} else if (page == HubPage.MAIL) {
-			HubMailPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
-		} else if (page == HubPage.PAY) {
-			HubPayPage.render(dc, textRenderer, cx, cy, cw, ch, payName.toString(),
-					payAmount.toString(), payFocus, mouseX, mouseY);
-		} else if (page == HubPage.TITLES) {
-			HubTitlesPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
-		} else if (page == HubPage.STORAGE) {
-			HubStoragePage.render(dc, textRenderer, cx, cy, cw, ch,
-					storageQuery.toString(), storageCat, storageScroll, mouseX, mouseY);
-		} else if (page == HubPage.PASS) {
-			HubPassPage.render(dc, textRenderer, cx, cy, cw, ch, passScroll, mouseX, mouseY);
-		} else if (page == HubPage.RANK) {
-			HubRankPage.setSyncCooldownSeconds(rankSyncCooldownLeft());
-			HubRankPage.render(dc, textRenderer, cx, cy, cw, ch, rankBoard, rankActiveOnly,
-					rankDropdown, mouseX, mouseY);
-		} else if (page == HubPage.MARKET) {
-			HubMarketPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY, marketSelected);
-		} else if (page == HubPage.SHOP) {
-			HubShopPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY,
-					shopQuery.toString(), shopSelected);
-		} else if (page == HubPage.CHECKIN) {
-			HubCheckinPage.render(dc, textRenderer, cx, cy, cw, ch,
-					com.akira.redtale.economy.client.checkin.CheckinClientNetworking.LAST,
-					monthOffset, mouseX, mouseY);
-		} else {
-			renderPlaceholder(dc, cx, cy, cw);
-		}
-
-		mat.pop();
-
-		// 搜索框统一重绘（外观由 HubChrome 保证两页一致）
-		if (page == HubPage.SHOP || page == HubPage.STORAGE) {
-			HubChrome.renderSearch(dc, textRenderer, frame, page,
-					page == HubPage.SHOP ? shopQuery.toString() : storageQuery.toString(),
-					searchFocused, vanilla);
-		}
-
-		// 底部：状态优先，空闲出 tip
-		statusLine.render(dc, textRenderer, frame);
-
-		// ★下拉最后画★，否则会被底栏/后面的元素盖住
-		if (page == HubPage.RANK && HubRankPage.needsDropdownOverlay()) {
-			int rx = frame.contentX();
-			int ry = frame.contentY();
-			HubRankPage.drawDropdown(dc, textRenderer, rx, ry, rankBoard,
-					panelY + panelH - HubFrame.BOTTOM_BAR, mouseX, mouseY);
-		}
-		if (page == HubPage.STORAGE) {
-			long handle = MinecraftClient.getInstance().getWindow().getHandle();
-			boolean down0 = org.lwjgl.glfw.GLFW.glfwGetMouseButton(handle, 0)
-					== org.lwjgl.glfw.GLFW.GLFW_PRESS;
-			boolean down1 = org.lwjgl.glfw.GLFW.glfwGetMouseButton(handle, 1)
-					== org.lwjgl.glfw.GLFW.GLFW_PRESS;
-			if (!down0 && !down1) {
-				dragActive = false;
-				lastDragSlot = -1;
-			}
-		}
-		if (page == HubPage.STORAGE && dragActive) {
-			int cx2 = frame.contentX();
-			int cy2 = frame.contentY();
-			int cw2 = frame.contentW();
-			int ch2 = frame.contentH();
-			var rr = HubStoragePage.click(mouseX, mouseY, cx2, cy2, cw2, ch2,
-					dragButton < 0 ? 0 : dragButton, storageScroll);
-			if (rr.hit() == HubStoragePage.Hit.STORAGE && rr.index() >= 0
-					&& !dragSlots.contains(rr.index())) {
-				dragSlots.add(rr.index());
-			}
-		}
-		if (page == HubPage.STORAGE && HubStoragePage.needsCatOverlay()) {
-			int sx2 = frame.contentX();
-			int sy2 = frame.contentY();
-			int sw2 = frame.contentW();
-			HubStoragePage.drawCatDropdown(dc, textRenderer, sx2, sy2, sw2, storageCat,
-					mouseX, mouseY);
-		}
-		// ★光标物品永远在最上层★
-		if (page == HubPage.STORAGE) {
-			HubStoragePage.drawCursor(dc, textRenderer, mouseX, mouseY);
-		}
-		// ★侧边栏 tooltip 也在最后画★：以前在侧栏内部画，会被内容区/底栏盖住
-		sidebar.drawPendingTooltip(dc, textRenderer, mouseX, mouseY);
-
+		// T32 批次3：渲染顺序（底版 → 侧栏 → 内容 → 搜索 → 状态 → 浮层 → tip）整块在 HubRender
+		HubRender.render(this, dc, mouseX, mouseY);
 		super.render(dc, mouseX, mouseY, delta);
-	}
-
-	/**
-	 * 余额显示（§47.7）：装了 Numismatic 就画硬币图标 + 数量（金→银→铜，0 跳过）；
-	 * 没装则用紧凑文字「12银30铜」。宽度不够时自动跳过后面币种。
-	 */
-	/** 称号：取 Styled Chat 的 display_name 首段（拿不到就空）。 */
-	/** 玩家头像（用皮肤贴图的 8×8 脸部放大）。 */
-	private void renderPlaceholder(DrawContext dc, int cx, int cy, int cw) {
-		dc.fill(cx, cy, cx + cw, cy + 64, HubTheme.CARD);
-		dc.drawText(textRenderer, Text.literal("这一页正在迁移到新界面"), cx + 8, cy + 10, HubTheme.TEXT, false);
-		dc.drawText(textRenderer, Text.literal("命令仍然可用：/rt " + page.id), cx + 8, cy + 28, HubTheme.MUTED, false);
-		dc.drawText(textRenderer, Text.literal("侧边栏 / 顶栏 / 底部提示已生效"), cx + 8, cy + 44, HubTheme.MUTED, false);
 	}
 
 	/** 供页面调用的状态提示（§38：界面内提示，不进聊天）。 */
@@ -610,200 +458,32 @@ public class HubScreen extends Screen {
 
 	@Override
 	public boolean charTyped(char chr, int modifiers) {
-		if (page == HubPage.PAY && payFocus > 0 && !Character.isISOControl(chr)) {
-			if (payFocus == 1 && payName.length() < 24
-					&& (Character.isLetterOrDigit(chr) || chr == '_')) {
-				payName.append(chr);
-			} else if (payFocus == 2 && Character.isDigit(chr) && payAmount.length() < 12) {
-				payAmount.append(chr);
-			}
-			return true;
-		}
-		if (page == HubPage.STORAGE && searchFocused && !Character.isISOControl(chr)) {
-			storageQuery.append(chr);
-			return true;
-		}
-		if (page == HubPage.SHOP && searchFocused && !Character.isISOControl(chr)) {
-			shopQuery.append(chr);
-			return true;
-		}
-		return super.charTyped(chr, modifiers);
+		Boolean r = HubInput.charTyped(this, chr, modifiers);
+		return r != null ? r : super.charTyped(chr, modifiers);
 	}
 
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-		if (keyCode == 256 && searchFocused) { // 聚焦时 ESC 先失焦
-			searchFocused = false;
-			return true;
-		}
-		if (keyCode == 256) { // ESC 再清搜索，最后关界面
-			if (page == HubPage.SHOP && shopQuery.length() > 0) {
-				shopQuery.setLength(0);
-				requestShopPage();
-				return true;
-			}
-			if (page == HubPage.STORAGE && storageQuery.length() > 0) {
-				storageQuery.setLength(0);
-				return true;
-			}
-		}
-		if (page == HubPage.PAY && keyCode == 259) {
-			if (payFocus == 1 && payName.length() > 0) payName.setLength(payName.length() - 1);
-			if (payFocus == 2 && payAmount.length() > 0) payAmount.setLength(payAmount.length() - 1);
-			return true;
-		}
-		if (!searchFocused && page == HubPage.STORAGE && keyCode == 81) { // Q
-			com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
-			return true;
-		}
-		if (!searchFocused && page == HubPage.STORAGE && keyCode >= 49 && keyCode <= 57) {
-			var held = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.LAST.cursor();
-			if (held != null && !held.isEmpty()) {
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.hotbar(keyCode - 49);
-				return true;
-			}
-		}
-		if (searchFocused && page == HubPage.STORAGE && keyCode == 259 && storageQuery.length() > 0) {
-			storageQuery.setLength(storageQuery.length() - 1);
-			return true;
-		}
-		if (page == HubPage.SHOP && searchFocused) {
-			if (keyCode == 259 && shopQuery.length() > 0) { // backspace
-				shopQuery.setLength(shopQuery.length() - 1);
-				return true;
-			}
-			if (keyCode == 257 || keyCode == 335) { // enter
-				requestShopPage();
-				shopSelected = -1;
-				return true;
-			}
-		}
-		return super.keyPressed(keyCode, scanCode, modifiers);
+		Boolean r = HubInput.keyPressed(this, keyCode, scanCode, modifiers);
+		return r != null ? r : super.keyPressed(keyCode, scanCode, modifiers);
 	}
 
 	@Override
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double dx, double dy) {
-		if (page == HubPage.STORAGE && dragPlacing) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			var r = HubStoragePage.click(mouseX, mouseY, cx, cy, cw, ch,
-					dragButton < 0 ? 0 : dragButton, storageScroll);
-			if (r.index() < 0 || r.index() == lastDragSlot) return true;
-			boolean shift = hasShiftDown();
-			if (r.hit() == HubStoragePage.Hit.STORAGE) {
-				if (shift) {
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localQuickOut(r.index());
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.quick(r.index());
-				} else {
-					var cur = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.CURSOR;
-					if (cur == null || cur.isEmpty()) return true;
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localPlace(r.index(), true);
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.place(r.index(), true);
-				}
-				lastDragSlot = r.index();
-				return true;
-			}
-			if (r.hit() == HubStoragePage.Hit.INV) {
-				int real = HubStoragePage.displayToSlot(r.index());
-				if (shift) {
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localQuickIn(real);
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.quickInv(real);
-				} else {
-					var cur = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.CURSOR;
-					if (cur == null || cur.isEmpty()) return true;
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localPlaceToInv(real, true);
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.placeToInv(real, true);
-				}
-				lastDragSlot = 1000 + r.index();
-				return true;
-			}
-		}
-		return super.mouseDragged(mouseX, mouseY, button, dx, dy);
+		Boolean r = HubInput.mouseDragged(this, mouseX, mouseY, button);
+		return r != null ? r : super.mouseDragged(mouseX, mouseY, button, dx, dy);
 	}
 
 	@Override
 	public boolean mouseReleased(double mouseX, double mouseY, int button) {
-		// ★拖拽结束：一次性把经过的格子交给服务端平分★
-		if (dragActive && pendingInv == false && !dragSlots.isEmpty()) {
-			int[] arr = new int[dragSlots.size()];
-			for (int i = 0; i < arr.length; i++) arr[i] = dragSlots.get(i);
-			com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.spread(
-					arr, pendingAll);
-			dragSlots.clear();
-			pendingIdx = -1;
-		}
-		// 持物按下后没有拖到别的格子 -> 视为普通点击，整叠/单个放下
-		if (dragActive && pendingIdx >= 0 && lastDragSlot == pressKey) {
-			if (pendingInv) {
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localPlaceToInv(
-						pendingIdx, !pendingAll);
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.placeToInv(
-						pendingIdx, !pendingAll);
-			} else {
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localPlace(
-						pendingIdx, !pendingAll);
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.place(
-						pendingIdx, !pendingAll);
-			}
-		}
-		pendingIdx = -1;
-		dragPlacing = false;
-		dragActive = false;
-		dragButton = -1;
-		lastDragSlot = -1;
+		HubInput.mouseReleased(this);
 		return super.mouseReleased(mouseX, mouseY, button);
 	}
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-		if (page == HubPage.SHOP && mouseX > panelX + sidebarW()) {
-			// T44：427×240 下一页 40 条只放得下 4 张卡 ⇒ 必须能滚，否则中间 36 条翻页也翻不到
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			int cy = frame.contentY();
-			HubShopPage.scrollByRows(-(int) Math.signum(amount), cw, cy, ch);
-			return true;
-		}
-		if (page == HubPage.BOARD && mouseX > panelX + sidebarW()) {
-			// T12：低分辨率下一页只放得下 2~3 张卡，必须能滚
-			HubBoardPage.scrollByRows(-(int) Math.signum(amount), frame.contentH());
-			return true;
-		}
-		if (page == HubPage.LEDGER && mouseX > panelX + sidebarW()) {
-			// T16：低分辨率下一页只放得下五六行，必须能滚
-			HubLedgerPage.scrollByRows(-(int) Math.signum(amount), frame.contentH());
-			return true;
-		}
-		if (page == HubPage.STORAGE && mouseX > panelX + sidebarW()) {
-			storageScroll = Math.max(0, Math.min(
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.SLOT_COUNT,
-					storageScroll - (int) Math.signum(amount)));
-			return true;
-		}
-		if (page == HubPage.SETTINGS && mouseX > panelX + sidebarW()) {
-			// U10：Scale 2 下设置页内容区装不下全部行（管理员区会被裁掉），必须能滚
-			int ch = frame.contentH();
-			if (HubSettingsPage.maxScroll(ch) > 0) {
-				HubSettingsPage.scrollBy(-(int) Math.signum(amount) * 20);
-				return true;
-			}
-		}
-		if (page == HubPage.PASS && mouseX > panelX + sidebarW()) {
-			int cw = frame.contentW();
-			int max = HubPassPage.maxScroll(cw);
-			if (max > 0) {
-				passScroll = Math.max(0, Math.min(max, passScroll - (int) Math.signum(amount)));
-				return true;
-			}
-		}
-		if (mouseX >= panelX && mouseX < panelX + sidebarW()) {
-			if (frame.maxScroll() > 0) {
-				sidebar.scrollBy(frame, amount);
-				return true;
-			}
-		}
-		return super.mouseScrolled(mouseX, mouseY, amount);
+		Boolean r = HubInput.mouseScrolled(this, mouseX, amount);
+		return r != null ? r : super.mouseScrolled(mouseX, mouseY, amount);
 	}
+
 }
