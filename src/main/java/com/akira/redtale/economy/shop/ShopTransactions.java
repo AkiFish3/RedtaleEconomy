@@ -98,6 +98,9 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 		long price = e.buyPrice() * count;
 		// R32：协会等级商店折扣（只影响普通货币，赞助点商品不打折）
 		if (!premium) price = GuildModule.applyShopDiscount(player.getUuid(), price);
+		// 手续费：买家多付的部分（可开关，按协会等级可能免税）
+		long tax = premium ? 0 : ShopTax.buyTax(player.getUuid(), itemId, price);
+		if (tax > 0) price += tax;
 		if (price <= 0) {
 			return new ShopProtocol.ActionResult(false, "shop.badRequest", balance, 0);
 		}
@@ -215,6 +218,10 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 		if (limitError != null) {
 			return new ShopProtocol.ActionResult(false, limitError, balance, 0);
 		}
+		// 手续费：卖家实收 = 收入 - 税
+		long sellTax = ShopTax.sellTax(player.getUuid(),
+				net.minecraft.registry.Registries.ITEM.getId(item).toString(), income);
+		if (sellTax > 0) income -= sellTax;
 
 		// 先扣物品，再入账；入账失败要把物品还回去（Q2）
 		// E2：写前日志 —— 崩溃后能按 taken 状态把物品退回来

@@ -187,7 +187,8 @@ public final class ShopAdminCommands {
 			return 1;
 		}
 		if (ids.isEmpty()) {
-			ctx.getSource().sendFeedback(() -> Text.literal(Lang.msg("shop.empty")), false);
+			// 玩家侧失败也走 actionbar：每次 /shop 都会命中，进聊天就是刷屏（2026-10-21 专用服实测）。
+			p.sendMessage(Text.literal(Lang.msg("shop.empty")), true);
 			return 0;
 		}
 		if (ids.size() > 1) {

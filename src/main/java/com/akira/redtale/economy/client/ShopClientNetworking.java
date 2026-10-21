@@ -51,6 +51,12 @@ public final class ShopClientNetworking {
 			client.execute(() -> ShopClientState.setAction(r));
 		});
 
+		// T01：税率（打开商店时下发；只用于显示含税价）
+		ClientPlayNetworking.registerGlobalReceiver(PacketIds.S2C_SHOP_TAX, (client, handler, buf, sender) -> {
+			ShopProtocol.TaxInfo t = ShopProtocol.readTax(buf);
+			client.execute(() -> ShopClientState.setTax(t));
+		});
+
 		RedtaleEconomy.LOGGER.info("[net] 客户端接收器已注册");
 	}
 

@@ -1,0 +1,279 @@
+package com.akira.redtale.economy.client.ui.hub;
+
+import com.akira.redtale.economy.client.balance.BalanceClientNetworking;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+
+import java.util.List;
+
+/**
+ * 左侧栏（T32 批次1）：玩家区（头像/名字/余额）+ 页面列表 + 滚动条 + 点击涟漪。
+ *
+ * <p>从 {@code HubScreen} 整块搬出来，状态（滚动位置、余额滚动动画、涟漪）跟着一起搬，
+ * 屏幕只负责「这一栏在哪个矩形里」。
+ *
+ * <p>tooltip 不在这里画：按硬规则浮层最后画，这里只登记 {@link #pendingTooltip}，
+ * 由 {@code HubScreen} 在光标物品之后统一绘制。
+ */
+public final class HubSidebar {
+
+	private int scroll;
+	private int rippleRow = -1;
+	private long rippleAt;
+	private double rippleX;
+	private double rippleY;
+	/** 余额数字滚动动画（250ms）。 */
+	private long shownRaw = -1;
+	private long rawTarget = -1;
+	private long rawAnimAt;
+
+	private List<Text> pendingTooltip;
+
+	/** 侧边栏滚动偏移（dev 夹具要读）。 */
+	public int scrollOffset() {
+		return scroll;
+	}
+
+	public void setScroll(int v) {
+		scroll = v;
+	}
+
+	/** 点某行时的视觉涟漪（目前没有调用方，保留给后续动画用）。 */
+	public void ripple(int row, double x, double y) {
+		rippleRow = row;
+		rippleX = x;
+		rippleY = y;
+		rippleAt = System.currentTimeMillis();
+	}
+
+	/** 鼠标 Y 落在第几行（不考虑是否在栏内）；越界返回 -1。 */
+	public int rowAt(HubFrame f, double mouseY) {
+		int idx = ((int) mouseY - f.entryTop() + scroll) / HubFrame.ROW_H;
+		HubPage[] all = HubPage.values();
+		return (idx >= 0 && idx < all.length) ? idx : -1;
+	}
+
+	/** 第 index 行的垂直中心（真实命中路径用，含滚动偏移）。 */
+	public double rowCenterY(HubFrame f, int index) {
+		return f.entryTop() - scroll + index * HubFrame.ROW_H + HubFrame.ROW_H / 2.0;
+	}
+
+	/** 滚轮：负数向上。越界自动夹回。 */
+	public void scrollBy(HubFrame f, double amount) {
+		int ms = f.maxScroll();
+		if (ms <= 0) return;
+		scroll = Math.max(0, Math.min(ms, scroll - (int) (amount * HubFrame.ROW_H)));
+	}
+
+	public void render(DrawContext dc, TextRenderer tr, HubFrame f, HubPage page,
+					   int mouseX, int mouseY) {
+		pendingTooltip = null;
+		renderProfile(dc, tr, f, mouseX, mouseY);
+		renderEntries(dc, tr, f, page, mouseX, mouseY);
+	}
+
+	/** 浮层统一在最后画（顶栏/内容/底栏都可能覆盖侧边栏）。 */
+	public void drawPendingTooltip(DrawContext dc, TextRenderer tr, int mouseX, int mouseY) {
+		if (pendingTooltip == null) return;
+		dc.drawTooltip(tr, pendingTooltip, mouseX, mouseY);
+		pendingTooltip = null;
+	}
+
+	private void renderProfile(DrawContext dc, TextRenderer tr, HubFrame f, int mouseX, int mouseY) {
+		int x = f.x;
+		int y = f.y + HubFrame.TOP_BAR;
+		int sidebarW = f.sidebarW();
+		dc.fill(x, y, x + sidebarW, y + HubFrame.PROFILE_H,
+				"vanilla".equals(ClientUiConfig.theme) ? HubTheme.PANEL : HubTheme.BAR);
+		boolean withText = ClientUiConfig.showLabels && !f.compact;
+		int headSize = withText ? 32 : 26;
+		int headX = withText ? x + 6 : x + (sidebarW - headSize) / 2;
+		int headY = withText ? y + 6 : y + 8;
+		dc.fill(headX - 1, headY - 1, headX + headSize + 1, headY + headSize + 1,
+				"vanilla".equals(ClientUiConfig.theme) ? HubTheme.LINE : HubTheme.SLOT);
+		drawHead(dc, headX, headY, headSize);
+		if (withText) {
+			MinecraftClient mc = MinecraftClient.getInstance();
+			String name = mc.player == null ? "—" : mc.player.getGameProfile().getName();
+			dc.drawText(tr, Text.literal(HubText.trim(tr, name, sidebarW - 44)),
+					x + 42, y + 8, HubTheme.TEXT, false);
+			long raw = BalanceClientNetworking.RAW;
+			// 余额变化时做 250ms 数字滚动（l1ght 的 animatedBalance 同款手感）
+			long now = System.currentTimeMillis();
+			if (raw != rawTarget) {
+				rawTarget = raw;
+				if (shownRaw < 0) shownRaw = raw;
+				rawAnimAt = now;
+			}
+			long shown = rawTarget;
+			if (shownRaw >= 0 && now - rawAnimAt < 250) {
+				float k = (now - rawAnimAt) / 250f;
+				shown = shownRaw + (long) ((rawTarget - shownRaw) * k);
+			} else if (shownRaw >= 0) {
+				shownRaw = rawTarget;
+			}
+			drawCoins(dc, tr, x + 4, y + 40, sidebarW - 8, shown);
+		}
+		boolean hoverHead = !withText
+				&& mouseX >= headX && mouseX < headX + headSize
+				&& mouseY >= headY && mouseY < headY + headSize;
+		if (hoverHead) {
+			MinecraftClient mc2 = MinecraftClient.getInstance();
+			String nm = mc2.player == null ? "—" : mc2.player.getGameProfile().getName();
+			long raw2 = BalanceClientNetworking.RAW;
+			String money2 = raw2 < 0 ? "…" : com.akira.redtale.economy.economy.Currency.format(raw2);
+			pendingTooltip = List.of(Text.literal(nm), Text.literal(money2));
+		}
+		dc.fill(x, y, x + sidebarW, y + 1, HubTheme.LINE);                        // 顶边
+		dc.fill(x, y, x + 1, y + HubFrame.PROFILE_H, HubTheme.LINE);              // 左边
+		dc.fill(x, y + HubFrame.PROFILE_H - 1, x + sidebarW, y + HubFrame.PROFILE_H,
+				HubTheme.LINE);                                                   // 底边
+	}
+
+	/**
+	 * 余额显示（§47.7）：装了 Numismatic 就画硬币图标 + 数量（金→银→铜，0 跳过）；
+	 * 没装则用紧凑文字「12银30铜」。宽度不够时自动跳过后面币种。
+	 */
+	private void drawCoins(DrawContext dc, TextRenderer tr, int x, int y, int w, long raw) {
+		if (raw < 0) {
+			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.TEXT, false);
+			return;
+		}
+		long gc = Math.max(1, com.akira.redtale.economy.economy.Currency.goldInCopper());
+		long sc = Math.max(1, com.akira.redtale.economy.economy.Currency.silverInCopper());
+		long gold = raw / gc;
+		long rest = raw % gc;
+		long silver = rest / sc;
+		long copper = rest % sc;
+
+		boolean numis = FabricLoader.getInstance().isModLoaded("numismatic-overhaul");
+		if (!numis) {
+			String txt = (gold > 0 ? gold + "金" : "") + (silver > 0 ? silver + "银" : "")
+					+ (copper > 0 || (gold == 0 && silver == 0) ? copper + "铜" : "");
+			dc.drawText(tr, Text.literal(HubText.trim(tr, txt, w)), x, y, HubTheme.TEXT, false);
+			return;
+		}
+		if (gold == 0 && silver == 0 && copper == 0) {
+			coin(dc, tr, x, y, "numismatic-overhaul:bronze_coin", 0, x + w, true);
+			return;
+		}
+		int right = x + w;
+		int cx = coin(dc, tr, x, y, "numismatic-overhaul:gold_coin", gold, right, false);
+		cx = coin(dc, tr, cx, y, "numismatic-overhaul:silver_coin", silver, right, false);
+		coin(dc, tr, cx, y, "numismatic-overhaul:bronze_coin", copper, right, false);
+	}
+
+	private int coin(DrawContext dc, TextRenderer tr, int x, int y, String itemId, long value,
+					int right, boolean force) {
+		if (value <= 0 && !force) return x;
+		String n = value >= 10000 ? (value / 1000) + "k" : String.valueOf(value);
+		int needW = 17 + tr.getWidth(n);
+		// right 是**绝对坐标**的右边界（之前误把它当宽度，导致永远画不出来）
+		if (x + needW > right) return x;
+		try {
+			var item = Registries.ITEM.get(new Identifier(itemId));
+			if (item != null && item != net.minecraft.item.Items.AIR) {
+				dc.drawItem(new ItemStack(item), x, y - 4);
+			}
+		} catch (Exception ignored) {
+			// 图标缺失只影响观感
+		}
+		dc.drawText(tr, Text.literal(n), x + 17, y, HubTheme.TEXT, false);
+		return x + needW + 2;
+	}
+
+	/** 玩家头像（用皮肤贴图的 8×8 脸部放大）。 */
+	private void drawHead(DrawContext dc, int x, int y, int size) {
+		try {
+			MinecraftClient mc = MinecraftClient.getInstance();
+			if (mc.player == null) throw new IllegalStateException();
+			var tex = mc.getSkinProvider().loadSkin(mc.player.getGameProfile());
+			var m = dc.getMatrices();
+			m.push();
+			m.translate(x, y, 0);
+			float k = size / 8f;
+			m.scale(k, k, 1f);
+			dc.drawTexture(tex, 0, 0, 8, 8, 8, 8, 64, 64);
+			// 外层（帽子）叠在脸上，位置 40,8
+			dc.drawTexture(tex, 0, 0, 40, 8, 8, 8, 64, 64);
+			m.pop();
+		} catch (Exception ex) {
+			dc.fill(x, y, x + size, y + size, HubTheme.SLOT);
+		}
+	}
+
+	private void drawIcon(DrawContext dc, String itemId, int x, int y) {
+		try {
+			var item = Registries.ITEM.get(new Identifier(itemId));
+			if (item != null && item != net.minecraft.item.Items.AIR) {
+				dc.drawItem(new ItemStack(item), x, y);
+			}
+		} catch (Exception ignored) {
+			// 图标缺失不影响文字
+		}
+	}
+
+	private void renderEntries(DrawContext dc, TextRenderer tr, HubFrame f, HubPage page,
+							   int mouseX, int mouseY) {
+		int top = f.entryTop();
+		int bottom = f.entryBottom();
+		int sidebarW = f.sidebarW();
+		boolean clip = bottom > top;
+		// ★裁剪★：不让滚动时条目画到顶栏/底栏上
+		if (clip) dc.enableScissor(f.x, top, f.x + sidebarW, bottom);
+		int y = top - scroll;
+		for (HubPage p : HubPage.values()) {
+			if (y + HubFrame.ROW_H > top && y < bottom) {
+				boolean sel = p == page;
+				boolean hovered = mouseX >= f.x && mouseX < f.x + sidebarW
+						&& mouseY >= y && mouseY < y + HubFrame.ROW_H;
+				if ("vanilla".equals(ClientUiConfig.theme)) {
+					if (sel || hovered) {
+						HubVanilla.button(dc, f.x + 2, y + 2, sidebarW - 4, 20, hovered, false);
+					}
+				} else if (sel) {
+					HubWidgets.roundRect(dc, f.x + 2, y + 2, sidebarW - 4, HubFrame.ROW_H - 4,
+							2, HubTheme.SELECT);
+					HubWidgets.indicator(dc, f.x + 2, y + 2, HubFrame.ROW_H - 4);
+				} else if (hovered) {
+					HubWidgets.roundRect(dc, f.x + 2, y + 2, sidebarW - 4, HubFrame.ROW_H - 4,
+							2, HubTheme.HOVER);
+				}
+				int color = sel ? HubTheme.PRIMARY_SOFT_TEXT : (hovered ? HubTheme.TITLE : HubTheme.TEXT);
+				drawIcon(dc, p.icon, f.x + (sidebarW > 44 ? 8 : 11), y + 5);
+				if (sidebarW > 44) {
+					dc.drawText(tr, Text.literal(p.label), f.x + 28, y + 8, color, false);
+				} else if (hovered) {
+					pendingTooltip = List.of(Text.literal(p.label));
+				}
+			}
+			y += HubFrame.ROW_H;
+		}
+		// 溢出时画细滚动条
+		int ms = f.maxScroll();
+		if (ms > 0) {
+			int barH = Math.max(12, (bottom - top) * (bottom - top)
+					/ (HubPage.values().length * HubFrame.ROW_H));
+			int barY = top + (bottom - top - barH) * scroll / ms;
+			dc.fill(f.x + sidebarW - 3, top, f.x + sidebarW - 1, bottom, HubTheme.ROW_HOVER);
+			dc.fill(f.x + sidebarW - 3, barY, f.x + sidebarW - 1, barY + barH, HubTheme.MUTED);
+		}
+		if (rippleRow >= 0) {
+			long dt = System.currentTimeMillis() - rippleAt;
+			if (dt < 260) {
+				int ry = top - scroll + rippleRow * HubFrame.ROW_H;
+				HubWidgets.ripple(dc, f.x + 2, ry + 2, sidebarW - 4, HubFrame.ROW_H - 4,
+						rippleX, rippleY, dt / 260f, 0xFFFFFF);
+			} else {
+				rippleRow = -1;
+			}
+		}
+		if (clip) dc.disableScissor();
+	}
+}

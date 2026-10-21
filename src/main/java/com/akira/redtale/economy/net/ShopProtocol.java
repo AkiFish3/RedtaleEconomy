@@ -51,7 +51,93 @@ public final class ShopProtocol {
 	/** readPage 顺带读到的「一屏行数」；客户端接收方用 {@link #lastVisibleRows()} 取。 */
 	private static volatile int lastVisibleRows = 9;
 
+	/**
+	 * T01：税率信息（打开商店时下发一次）。
+	 *
+	 * <p><b>为什么单独一个包而不是塞进 {@link Page}：</b>{@code Page} 的每个 {@link Entry}
+	 * 都要按玩家算免税，而 {@code Entry} 是对所有玩家一样的商品快照（缓存友好）。
+	 * 税率只跟「谁在看」有关，所以按玩家发，客户端自己乘。
+	 *
+	 * <p>{@code exemptMine} 已经由服务端按协会等级算好；{@code mode/items} 让客户端
+	 * 能精确判断「这件商品收不收」，避免界面显示含税价、结算却不收（或反过来）。
+	 * 客户端算出来的只是<b>显示值</b>，真正扣多少以服务端 {@code ActionResult} 为准。
+	 */
+	public record TaxInfo(boolean enabled, int buyPct, int sellPct, boolean exemptMine,
+			String mode, List<String> items) {
+
+		public static TaxInfo none() {
+			return new TaxInfo(false, 0, 0, false, "none", List.of());
+		}
+
+		/** 买入要加收的税（铜，向上取整）。税率关/免税/名单外 → 0。 */
+		public long buyTax(String itemId, long price) {
+			return calc(buyPct, itemId, price);
+		}
+
+		/** 卖出被扣掉的税（铜，向上取整）。 */
+		public long sellTax(String itemId, long income) {
+			return calc(sellPct, itemId, income);
+		}
+
+		private long calc(int pct, String itemId, long amount) {
+			if (!enabled || exemptMine || pct <= 0 || amount <= 0) return 0;
+			if (!taxedItem(itemId)) return 0;
+			return (amount * pct + 99) / 100;
+		}
+
+		/** 与服务端 {@code ShopTax.itemTaxed} 同口径：none=全收；whitelist=名单内；blacklist=名单外。 */
+		public boolean taxedItem(String itemId) {
+			if ("none".equalsIgnoreCase(mode)) return true;
+			boolean in = false;
+			if (itemId != null && items != null) {
+				for (String raw : items) {
+					if (raw == null) continue;
+					String pat = raw.trim();
+					if (pat.isEmpty()) continue;
+					if (pat.endsWith(":*")) {
+						if (itemId.startsWith(pat.substring(0, pat.length() - 1))) {
+							in = true;
+							break;
+						}
+					} else if (pat.equals(itemId)) {
+						in = true;
+						break;
+					}
+				}
+			}
+			return "whitelist".equalsIgnoreCase(mode) ? in : !in;
+		}
+	}
+
 	private ShopProtocol() {
+	}
+
+	// ---------------------------------------------------------------- 税率（T01）
+
+	public static void writeTax(PacketByteBuf buf, TaxInfo t) {
+		buf.writeBoolean(t.enabled());
+		buf.writeVarInt(t.buyPct());
+		buf.writeVarInt(t.sellPct());
+		buf.writeBoolean(t.exemptMine());
+		buf.writeString(t.mode() == null ? "blacklist" : t.mode(), 16);
+		buf.writeVarInt(t.items().size());
+		for (String it : t.items()) {
+			buf.writeString(it == null ? "" : it, 128);
+		}
+	}
+
+	public static TaxInfo readTax(PacketByteBuf buf) {
+		boolean enabled = buf.readBoolean();
+		int buyPct = buf.readVarInt();
+		int sellPct = buf.readVarInt();
+		boolean exempt = buf.readBoolean();
+		String mode = buf.readString(16);
+		int n = Math.min(buf.readVarInt(), 512);
+		List<String> items = new ArrayList<>(n);
+		for (int i = 0; i < n; i++) {
+			items.add(buf.readString(128));
+		}
+		return new TaxInfo(enabled, buyPct, sellPct, exempt, mode, items);
 	}
 
 	public static int lastVisibleRows() {

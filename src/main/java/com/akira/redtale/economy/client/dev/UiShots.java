@@ -43,8 +43,30 @@ public final class UiShots {
 	private static final int JOIN_TIMEOUT = 400;
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
-	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2，到 86）。 */
-	private static final int LAST_STEP = 86;
+	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2 + T44 商店滚动 1，到 89）。 */
+	private static final int LAST_STEP = 203;
+	/**
+	 * 多人模式（连专用服务器）的起点 step。
+	 *
+	 * <p>单机那套 1..86 里一半命令要 OP（/give、/deop、pass unlock），非 OP 客户端跑会一路失败、
+	 * 白等 12 次重试。所以只要检测到「连的是远程服务器」，直接跳到这条精简线：
+	 * 只验 U10 的权限分支（设置页行数 / 管理员区可见性），外加一次「点管理员行必须打不中」。
+	 */
+	private static final int MULTI_BASE = 200;
+
+	// ——— T44：双分辨率 ———
+	/** 窗口态强制尺寸（Aki 定的验收口径：854×480 + guiScale=2 ⇒ 427×240 逻辑像素）。 */
+	private static final int WIN_W = 854;
+	private static final int WIN_H = 480;
+	/** 强制 GUI 缩放（0=自动，2=固定）。 */
+	private static final int GUI_SCALE = 2;
+	/**
+	 * 切分辨率后的 settle（tick）。
+	 *
+	 * <p>换 framebuffer 会让 GuiGraphics 的投影矩阵重建、字体图集重新上传，
+	 * 而且 resize 回调是在下一帧才跑，所以 25 tick 的普通 SETTLE 不够（实测会拍到旧尺寸的残影）。
+	 */
+	private static final int RES_SETTLE = 40;
 
 	private static boolean active;
 	private static int tick;
@@ -54,6 +76,13 @@ public final class UiShots {
 	/** 同一步重试上限（避免界面打不开就死等）。 */
 	private static final int MAX_ATTEMPTS = 12;
 	private static int attempts;
+	/** 分辨率（窗口尺寸 + guiScale）是否已落地。 */
+	private static boolean resReady;
+	/** 请求切全屏的那个 tick；-1 表示当前没有待生效的切换。 */
+	private static int fsToggleAt = -1;
+	/** 成对率统计：窗口版 / 全屏版各存了几张。 */
+	private static int winShots;
+	private static int fsShots;
 	private static final List<String> LOG = new ArrayList<>();
 
 	private UiShots() {
@@ -72,12 +101,19 @@ public final class UiShots {
 	private static void onTick(MinecraftClient mc) {
 		if (!active) return;
 		tick++;
+		if (!resReady) {
+			// 世界还没进就得先把窗口尺寸定下来，否则后面所有布局都是按别的大小算的
+			setupResolution(mc);
+			return;
+		}
 		if (step == 0) {
 			// 等进世界：有玩家才有真实数据（余额/任务/商店页）
 			if (mc.player != null && mc.currentScreen == null) {
 				inWorld = true;
-				LOG.add("joined world at tick " + tick);
-				next(1);
+				boolean multi = mc.getCurrentServerEntry() != null;
+				LOG.add("joined " + (multi ? "multiplayer " + mc.getCurrentServerEntry().address
+						: "singleplayer") + " at tick " + tick);
+				next(multi ? MULTI_BASE : 1);
 			} else if (tick > JOIN_TIMEOUT) {
 				LOG.add("join timeout at tick " + tick + ", fallback to title screen");
 				next(1);
@@ -326,8 +362,146 @@ public final class UiShots {
 			});
 			case 85 -> act(mc, () -> logPerm(mc, "after-deop"));
 			case 86 -> shotRaw(mc, "u6-48-settings-nonop.png");
+			// ★T44 副产物：小窗口下商店网格只能放 2×2★ —— 服务端一页 40 条，
+			// 以前超出的行被 break 掉、翻页也翻不到。这两步验「滚到底能看到第 5 行之后的卡」。
+			case 87 -> act(mc, () -> {
+				mc.setScreen(null);
+				open(mc, HubPage.SHOP, "rt shop");
+			});
+			case 88 -> act(mc, () -> {
+				if (mc.currentScreen instanceof HubScreen hub) {
+					LOG.add("shop scroll bottom -> row " + hub.devScrollShopBottom()
+							+ " at tick " + tick);
+				} else {
+					LOG.add("shop scroll skipped: screen is "
+							+ (mc.currentScreen == null ? "null"
+							: mc.currentScreen.getClass().getSimpleName()));
+				}
+			});
+			case 89 -> shotKeep(mc, "u6-52-shop-scrolled.png", () -> { });
+			// ★U10 非 OP 分支（专用服务器）★ —— 单机主机恒 OP4、/deop 无效（上一轮实证），
+			// 只能在真正的专用服务器上用非 OP 客户端验。这条线只跑三件事：
+			// ① 进服后权限等级与设置页行数　② 顺手点「管理工具」必须打不中（行不存在）
+			// ③ 截图留证。服务端侧由 RCON 事后 /op 再复测一次做 A/B 对照。
+			case 200 -> act(mc, () -> {
+				mc.setScreen(null);
+				HubSettingsPage.setAdminOpen(true);
+				HubSettingsPage.scrollTo(0);
+				ClientUiConfig.theme = "dark";
+				ClientUiConfig.save();
+				HubTheme.apply("dark");
+			});
+			case 201 -> shotKeep(mc, settingsShot(mc, "u6-49-settings-mp"),
+					() -> open(mc, HubPage.SETTINGS, "rt settings"));
+			case 202 -> act(mc, () -> {
+				// 427x240 逻辑高度下「管理员」整组在折叠线以下 ⇒ 必须滚到底，
+				// 否则 OP / 非 OP 两张图在默认位置长得一模一样，等于没证据。
+				if (mc.currentScreen instanceof HubScreen hub) {
+					int max = hub.devSettingsScrollMax();
+					hub.devScrollSettings(max);
+					LOG.add("settings scroll to " + max + " (contentH="
+							+ hub.devSettingsContentHeight() + ")");
+				}
+				logPerm(mc, "mp");
+			});
+			case 203 -> shotKeep(mc, settingsShot(mc, "u6-51-settings-mp-bottom"), () -> { });
+			// 拍完再点：点中就说明行真的存在于布局里（OP true / 非 OP false）。
+			// 放在拍照之后，避免展开态被点成折叠、把上一张的布局改掉。
+			case 204 -> act(mc, () -> {
+				boolean before = HubSettingsPage.devAdminOpen();
+				boolean hit = mc.currentScreen instanceof HubScreen hub
+						? hub.devClickSettingsRow(HubSettingsPage.Row.ADMIN_HEAD) : false;
+				LOG.add("settings row ADMIN_HEAD[mp-probe] hit=" + hit
+						+ " adminOpen " + before + " -> " + HubSettingsPage.devAdminOpen());
+				HubSettingsPage.setAdminOpen(true);
+			});
 			default -> finish(mc);
 		}
+	}
+
+	/**
+	 * T44：把窗口钉死成 854×480 + guiScale=2（逻辑 427×240）。
+	 *
+	 * <p>不钉的话，每次跑出来的「错位」都可能是窗口大小的差异而不是布局本身的缺陷 ——
+	 * 截图作为回归证据就没法比。全屏版的逻辑尺寸由同一份 guiScale 推出来，
+	 * 所以两版之间唯一的变量就是「逻辑像素多少」。
+	 */
+	private static void setupResolution(MinecraftClient mc) {
+		resReady = true;
+		var win = mc.getWindow();
+		if (win.isFullscreen()) {
+			// 上一轮可能停在全屏，先回窗口，否则 setWindowedSize 不生效
+			win.toggleFullscreen();
+		}
+		mc.options.getGuiScale().setValue(GUI_SCALE);
+		win.setWindowedSize(WIN_W, WIN_H);
+		mc.onResolutionChanged();
+		LOG.add("resolution pinned to " + WIN_W + "x" + WIN_H + " guiScale=" + GUI_SCALE
+				+ " (fb=" + win.getFramebufferWidth() + "x" + win.getFramebufferHeight()
+				+ ", logical=" + win.getScaledWidth() + "x" + win.getScaledHeight() + ")");
+	}
+
+	/**
+	 * 一张图存两版：窗口态 {@code -win}，全屏态 {@code -fs}。
+	 *
+	 * <p>顺序固定「先窗口、再全屏、拍完回窗口」，所以同一个 step 内两次拍照看到的是
+	 * <b>同一份界面状态</b>（页面、滚动位置、展开项都没变，resize 只改投影）。
+	 * 想反过来「两组独立跑两遍」不行：任务/商店/冷却都是有状态的，第二遍数据就不一样了。
+	 *
+	 * @param clearAfter 拍完全屏版后是否清屏（{@link #shot} 为 true，其余为 false）
+	 */
+	private static void captureBoth(MinecraftClient mc, String name, boolean clearAfter) {
+		var win = mc.getWindow();
+		boolean fs = win.isFullscreen();
+		if (!fs) {
+			if (fsToggleAt >= 0 && tick - fsToggleAt < RES_SETTLE) {
+				return; // 正在等全屏生效
+			}
+			if (fsToggleAt >= 0) {
+				// 切了 40 tick 还没进全屏 ⇒ 环境不支持（无显示器/驱动），记缺口后继续，不能死循环
+				LOG.add("fullscreen unavailable for " + name + " at tick " + tick + ", -fs skipped");
+				fsToggleAt = -1;
+				if (clearAfter) mc.setScreen(null);
+				next(step + 1);
+				return;
+			}
+			save(mc, name, false);
+			win.toggleFullscreen();
+			fsToggleAt = tick;
+			stepAt = tick + RES_SETTLE;
+			LOG.add("toggle fullscreen at tick " + tick);
+			return;
+		}
+		save(mc, name, true);
+		win.toggleFullscreen();
+		fsToggleAt = -1;
+		if (clearAfter) mc.setScreen(null);
+		next(step + 1);
+		// 回窗口也要 settle：下一屏是按窗口尺寸重新算的布局
+		stepAt = tick + RES_SETTLE;
+		LOG.add("toggle windowed at tick " + tick);
+	}
+
+	/** 落盘 + 记一行「这张图是什么分辨率下拍的」。 */
+	private static void save(MinecraftClient mc, String name, boolean fullscreen) {
+		var win = mc.getWindow();
+		String out = name.endsWith(".png")
+				? name.substring(0, name.length() - 4) + (fullscreen ? "-fs.png" : "-win.png")
+				: name + (fullscreen ? "-fs" : "-win");
+		ScreenshotRecorder.saveScreenshot(mc.runDirectory, out, mc.getFramebuffer(),
+				text -> LOG.add("saved " + out + " : " + text.getString()));
+		if (fullscreen) {
+			fsShots++;
+		} else {
+			winShots++;
+		}
+		Screen cur = mc.currentScreen;
+		String pid = cur instanceof HubScreen h ? " page=" + h.devPageId() : "";
+		LOG.add("shot " + out + " at tick " + tick
+				+ " fb=" + win.getFramebufferWidth() + "x" + win.getFramebufferHeight()
+				+ " logical=" + win.getScaledWidth() + "x" + win.getScaledHeight()
+				+ " scale=" + win.getScaleFactor()
+				+ " screen=" + (cur == null ? "null" : cur.getClass().getSimpleName()) + pid);
 	}
 
 	/** 先开界面 → 等 SETTLE tick 后拍。step 里做的是「打开」，下一 step 才是「拍照」。 */
@@ -356,14 +530,9 @@ public final class UiShots {
 			}
 			return;
 		}
-		// 界面已经在了：拍
-		ScreenshotRecorder.saveScreenshot(mc.runDirectory, name, mc.getFramebuffer(),
-				text -> LOG.add("saved " + name + " : " + text.getString()));
-		LOG.add("shot " + name + " at tick " + tick + " screen=" + cur.getClass().getSimpleName());
-		// 拍完清屏，下一步必须自己重新打开，否则会重复拍同一屏
+		// 界面已经在了：拍（窗口 + 全屏各一张，见 captureBoth）
 		attempts = 0;
-		mc.setScreen(null);
-		next(step + 1);
+		captureBoth(mc, name, true);
 	}
 
 	/**
@@ -384,12 +553,8 @@ public final class UiShots {
 			}
 			return;
 		}
-		ScreenshotRecorder.saveScreenshot(mc.runDirectory, name, mc.getFramebuffer(),
-				text -> LOG.add("saved " + name + " : " + text.getString()));
-		String pid = cur instanceof HubScreen h ? " page=" + h.devPageId() : "";
-		LOG.add("shot " + name + " at tick " + tick + " screen=" + cur.getClass().getSimpleName() + pid);
 		attempts = 0;
-		next(step + 1);
+		captureBoth(mc, name, false);
 	}
 
 	/** 点侧边栏第 index 项（走 HubScreen 真实 mouseClicked 命中路径），并记录结果。 */
@@ -526,10 +691,8 @@ public final class UiShots {
 			next(step + 1);
 			return;
 		}
-		ScreenshotRecorder.saveScreenshot(mc.runDirectory, name, mc.getFramebuffer(),
-				text -> LOG.add("saved " + name + " : " + text.getString()));
-		LOG.add("raw shot " + name + " at tick " + tick + " screen=" + cur.getClass().getSimpleName());
-		next(step + 1);
+		LOG.add("raw shot " + name + " start at tick " + tick + " screen=" + cur.getClass().getSimpleName());
+		captureBoth(mc, name, false);
 	}
 
 	/**
@@ -550,7 +713,8 @@ public final class UiShots {
 			LOG.add("perm[" + tag + "] no player");
 			return;
 		}
-		LOG.add("perm[" + tag + "] level4=" + mc.player.hasPermissionLevel(4)
+		LOG.add("perm[" + tag + "] name=" + mc.player.getGameProfile().getName()
+				+ " level4=" + mc.player.hasPermissionLevel(4)
 				+ " level2=" + mc.player.hasPermissionLevel(2)
 				+ " adminVisible=" + HubSettingsPage.devAdminVisible()
 				+ " rows=" + HubSettingsPage.devRowCount()
@@ -558,6 +722,12 @@ public final class UiShots {
 				+ " screen=" + (mc.currentScreen == null ? "null"
 				: mc.currentScreen.getClass().getSimpleName())
 				+ " at tick " + tick);
+	}
+
+	/** 设置页截图名带上权限分支（同一次实验要拍 OP / 非 OP 两张，不能互相覆盖）。 */
+	private static String settingsShot(MinecraftClient mc, String base) {
+		boolean admin = mc.player != null && mc.player.hasPermissionLevel(4);
+		return base.replace("mp", admin ? "op-mp" : "nonop-mp") + ".png";
 	}
 
 	/** 仅执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */
@@ -583,12 +753,50 @@ public final class UiShots {
 
 	private static void finish(MinecraftClient mc) {
 		active = false;
+		if (mc.getWindow().isFullscreen()) {
+			mc.getWindow().toggleFullscreen(); // 别把下一次开发运行留在全屏
+		}
 		try {
 			Path dir = FabricLoader.getInstance().getGameDir();
+			LOG.addAll(pairReport(dir.resolve("screenshots")));
 			Files.write(dir.resolve("u6-shots.log"), LOG, StandardCharsets.UTF_8);
 		} catch (IOException ignored) {
 			// 日志写不出来不影响已经存下的图
 		}
 		mc.scheduleStop();
+	}
+
+	/**
+	 * T44 成对自检：同一 base 必须 {@code -win.png} 与 {@code -fs.png} 都在，缺一即报出来。
+	 *
+	 * <p>放在这里是因为「少一张」正是本轮验证失败的定义 —— 让人肉翻 90 个文件名找缺口不现实。
+	 */
+	private static List<String> pairReport(Path shotsDir) {
+		List<String> out = new ArrayList<>();
+		if (!Files.isDirectory(shotsDir)) {
+			out.add("pairs: screenshots dir missing " + shotsDir);
+			return out;
+		}
+		List<String> missing = new ArrayList<>();
+		try (var stream = Files.list(shotsDir)) {
+			for (Path p : stream.toList()) {
+				String n = p.getFileName().toString();
+				if (n.endsWith("-win.png")) {
+					if (!Files.exists(shotsDir.resolve(n.substring(0, n.length() - 8) + "-fs.png"))) {
+						missing.add(n);
+					}
+				} else if (n.endsWith("-fs.png")) {
+					if (!Files.exists(shotsDir.resolve(n.substring(0, n.length() - 7) + "-win.png"))) {
+						missing.add(n);
+					}
+				}
+			}
+		} catch (IOException e) {
+			out.add("pairs: scan failed " + e);
+			return out;
+		}
+		out.add("pairs: win=" + winShots + " fs=" + fsShots
+				+ " unpaired=" + missing.size() + (missing.isEmpty() ? "" : " -> " + missing));
+		return out;
 	}
 }

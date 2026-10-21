@@ -38,6 +38,20 @@ public final class ShopConfig {
 					"同名商店/商品冲突策略：outer=浅目录优先，merge=合并"))
 			.field("buyEnabled", ConfigSchema.bool(true, "是否允许购买（总开关）"))
 			.field("sellEnabled", ConfigSchema.bool(true, "是否允许出售（总开关）"))
+			.field("tax", ConfigSchema.obj("手续费 / 税")
+					.field("enabled", ConfigSchema.bool(false, "是否开启（默认关，避免突然改变经济平衡）"))
+					.field("buyPercent", ConfigSchema.integer(0, 0, 100,
+							"买入税率（%）：买家实际支付 = 价格×(1+该值%)"))
+					.field("sellPercent", ConfigSchema.integer(0, 0, 100,
+							"卖出税率（%）：卖家实收 = 收入×(1-该值%)"))
+					.field("skipForGuildRank", ConfigSchema.integer(0, 0, 100,
+							"协会等级达到该档（0=关闭）时免税；填 rank 序号，0 表示不启用"))
+					.field("mode", ConfigSchema.choice("blacklist", List.of("none", "whitelist", "blacklist"),
+							"名单模式：none=全部按税率收；whitelist=只有名单内收税；blacklist=只有名单外收税"))
+					.field("items", ConfigSchema.stringList(List.of(
+									"minecraft:diamond",
+									"minecraft:netherite_ingot"),
+							"名单：物品 id 或 modid:* 通配（如 redtale_economy:*）")))
 			.field("sellPriceRatio", ConfigSchema.decimal(0.5, 0, 100,
 					"卖出价系数：sell<=0 时按 buy×ratio 计算，0=不回收"))
 			.field("sellDailyLimitPerItem", ConfigSchema.integer(0, 0, 1_000_000,
@@ -108,6 +122,38 @@ public final class ShopConfig {
 
 	public static boolean buyEnabled() {
 		return store().getBool("buyEnabled", true);
+	}
+
+	public static String taxMode() {
+		return store().getPathString("tax.mode", "blacklist");
+	}
+
+	public static java.util.List<String> taxItems() {
+		var el = store().getPath("tax.items");
+		java.util.List<String> out = new java.util.ArrayList<>();
+		if (el != null && el.isJsonArray()) {
+			for (var e : el.getAsJsonArray()) {
+				if (e.isJsonPrimitive()) out.add(e.getAsString());
+			}
+		}
+		return out;
+	}
+
+	public static boolean taxEnabled() {
+		return store().getPathBool("tax.enabled", false);
+	}
+
+	public static int taxBuyPercent() {
+		return (int) Math.max(0, Math.min(100, store().getPathLong("tax.buyPercent", 0)));
+	}
+
+	public static int taxSellPercent() {
+		return (int) Math.max(0, Math.min(100, store().getPathLong("tax.sellPercent", 0)));
+	}
+
+	/** 免税所需协会档位序号；0 = 不启用。 */
+	public static int taxSkipRank() {
+		return (int) Math.max(0, store().getPathLong("tax.skipForGuildRank", 0));
 	}
 
 	public static boolean sellEnabled() {

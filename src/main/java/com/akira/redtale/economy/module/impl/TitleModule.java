@@ -61,6 +61,8 @@ public final class TitleModule implements RedtaleModule {
 		public String title = "";
 		public String originalDisplayName = "";
 		public String updatedAt = "";
+		/** 已拥有的称号（去重、保序）。当前生效的那个一定在里面。 */
+		public java.util.List<String> owned = new java.util.ArrayList<>();
 
 		String toJson() {
 			JsonObject o = new JsonObject();
@@ -68,6 +70,9 @@ public final class TitleModule implements RedtaleModule {
 			o.addProperty("title", title);
 			o.addProperty("originalDisplayName", originalDisplayName);
 			o.addProperty("updatedAt", updatedAt);
+			com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+			for (String t : owned) arr.add(t);
+			o.add("owned", arr);
 			return GSON.toJson(o);
 		}
 
@@ -79,6 +84,15 @@ public final class TitleModule implements RedtaleModule {
 				d.title = o.has("title") ? o.get("title").getAsString() : "";
 				d.originalDisplayName = o.has("originalDisplayName") ? o.get("originalDisplayName").getAsString() : "";
 				d.updatedAt = o.has("updatedAt") ? o.get("updatedAt").getAsString() : "";
+				if (o.has("owned") && o.get("owned").isJsonArray()) {
+					for (var e : o.getAsJsonArray("owned")) {
+						if (e.isJsonPrimitive()) {
+							String t = e.getAsString();
+							if (!t.isBlank() && !d.owned.contains(t)) d.owned.add(t);
+						}
+					}
+				}
+				if (!d.title.isBlank() && !d.owned.contains(d.title)) d.owned.add(d.title);
 			} catch (Exception e) {
 				RedtaleEconomy.LOGGER.warn("[title] 解析失败，按空记录处理：{}", e.getMessage());
 			}
@@ -195,6 +209,33 @@ public final class TitleModule implements RedtaleModule {
 
 	public static String current(UUID uuid) {
 		return data(uuid).title;
+	}
+
+	/** 已拥有称号列表（含当前生效的）。 */
+	public static java.util.List<String> owned(UUID uuid) {
+		TitleData d = data(uuid);
+		if (!d.title.isBlank() && !d.owned.contains(d.title)) d.owned.add(d.title);
+		return java.util.List.copyOf(d.owned);
+	}
+
+	/** 授予称号：加入拥有列表，并立即生效。 */
+	public static synchronized boolean grant(ServerPlayerEntity player, String title) {
+		if (player == null || !enabled()) return false;
+		String clean = title == null ? "" : title.trim();
+		if (clean.isEmpty()) return false;
+		TitleData d = data(player.getUuid());
+		if (!d.owned.contains(clean)) d.owned.add(clean);
+		save(player.getUuid(), d);
+		return setTitle(player, clean);
+	}
+
+	/** 从拥有列表移除（当前生效的那个被移除时自动卸下）。 */
+	public static synchronized void revoke(ServerPlayerEntity player, String title) {
+		if (player == null) return;
+		TitleData d = data(player.getUuid());
+		d.owned.remove(title);
+		save(player.getUuid(), d);
+		if (title != null && title.equals(d.title)) clearTitle(player);
 	}
 
 	// ---------------------------------------------------------------- 设置 / 还原

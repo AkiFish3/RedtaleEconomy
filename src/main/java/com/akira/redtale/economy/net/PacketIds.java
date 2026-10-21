@@ -18,6 +18,8 @@ public final class PacketIds {
 	public static final Identifier S2C_CONFIG_OPEN = RedtaleEconomy.id("config/open");
 	public static final Identifier S2C_CONFIG_RESULT = RedtaleEconomy.id("config/result");
 	public static final Identifier S2C_ACTION = RedtaleEconomy.id("shop/action");
+	/** T01：税率信息（打开商店时按玩家下发一次） */
+	public static final Identifier S2C_SHOP_TAX = RedtaleEconomy.id("shop/tax");
 
 	public static final Identifier S2C_BOUNTY = RedtaleEconomy.id("bounty/snapshot");
 
@@ -26,6 +28,14 @@ public final class PacketIds {
 	public static final Identifier S2C_PASS = RedtaleEconomy.id("pass/snapshot");
 	public static final Identifier S2C_GUILD = RedtaleEconomy.id("guild/snapshot");
 	public static final Identifier S2C_BALANCE = RedtaleEconomy.id("balance/snapshot");
+	public static final Identifier S2C_TITLES = RedtaleEconomy.id("title/snapshot");
+	public static final Identifier C2S_TITLE_REQ = RedtaleEconomy.id("title/request");
+	public static final Identifier C2S_TITLE_SELECT = RedtaleEconomy.id("title/select");
+	public static final Identifier C2S_TITLE_REMOVE = RedtaleEconomy.id("title/remove");
+	public static final Identifier C2S_TITLE_CLEAR = RedtaleEconomy.id("title/clear");
+	public static final Identifier C2S_PAY = RedtaleEconomy.id("pay");
+	public static final Identifier S2C_BOARD = RedtaleEconomy.id("board/snapshot");
+	public static final Identifier C2S_BOARD_REQ = RedtaleEconomy.id("board/request");
 	// U8b：/rt <page> 直达；U9b：排行榜快照
 	public static final Identifier S2C_HUB_OPEN = RedtaleEconomy.id("hub/open");
 	public static final Identifier S2C_RANK = RedtaleEconomy.id("rank/snapshot");	public static final Identifier S2C_WAREHOUSE = RedtaleEconomy.id("warehouse/snapshot");

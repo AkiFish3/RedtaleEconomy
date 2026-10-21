@@ -83,7 +83,7 @@ public final class TitleCommands {
 		try {
 			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
 			String title = StringArgumentType.getString(ctx, "title");
-			boolean applied = TitleModule.setTitle(target, title);
+			boolean applied = TitleModule.grant(target, title);   // 加入拥有列表并立即生效
 			src.sendFeedback(() -> Text.literal(Lang.msg(applied ? "title.set" : "title.setNoChat",
 					target.getName().getString(), title)), false);
 			return 1;

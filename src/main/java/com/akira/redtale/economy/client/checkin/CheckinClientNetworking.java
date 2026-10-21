@@ -22,14 +22,20 @@ public final class CheckinClientNetworking {
 			CheckinProtocol.Snapshot snap = CheckinProtocol.read(buf);
 			LAST = snap;
 			client.execute(() -> {
+				// 诊断（2026-10-21 T32 轮）：u6-04 拍了 13 次都没开屏，服务端数据确认 checkin 已执行，
+				// 说明卡在客户端这条分支上。这行日志下次跑夹具就能定位（info，不弹窗）。
+				RedtaleEconomy.LOGGER.info("[checkin] snapshot received: useHub={} screen={}",
+						com.akira.redtale.economy.client.ui.hub.ClientUiConfig.useHub,
+						client.currentScreen == null ? "null"
+								: client.currentScreen.getClass().getSimpleName());
 				if (client.currentScreen instanceof com.akira.redtale.economy.client.ui.hub.HubScreen) {
 					return; // Hub 已在显示，只更新数据
 				}
 				if (com.akira.redtale.economy.client.ui.hub.ClientUiConfig.useHub) {
-						com.akira.redtale.economy.client.ui.hub.HubScreen.open(com.akira.redtale.economy.client.ui.hub.HubPage.CHECKIN);
-					} else {
-						client.setScreen(new CheckinScreen(snap));
-					}
+					com.akira.redtale.economy.client.ui.hub.HubScreen.open(com.akira.redtale.economy.client.ui.hub.HubPage.CHECKIN);
+				} else {
+					client.setScreen(new CheckinScreen(snap));
+				}
 			});
 		});
 		RedtaleEconomy.LOGGER.info("[checkin] 签到面板接收器已注册");

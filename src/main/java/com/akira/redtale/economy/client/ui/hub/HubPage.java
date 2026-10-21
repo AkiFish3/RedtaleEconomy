@@ -16,6 +16,8 @@ public enum HubPage {
 	GUILD("guild", "协会", false, "minecraft:emerald"),
 	MAIL("mail", "邮件", false, "minecraft:paper"),
 	RANK("rank", "排行", false, "minecraft:gold_ingot"),
+	PAY("pay", "转账", false, "minecraft:emerald"),
+	TITLES("titles", "称号", false, "minecraft:name_tag"),
 	SETTINGS("settings", "设置", false, "minecraft:comparator");
 
 	public final String id;

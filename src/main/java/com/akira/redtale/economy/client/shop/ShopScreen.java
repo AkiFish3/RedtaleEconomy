@@ -33,6 +33,10 @@ public final class ShopScreen extends Screen {
 	private String query = "";
 	private int scroll;          // 页内起始行
 	private int selected = -1;    // 当前页内下标
+	/** T01：最近一笔买/卖（用于在状态行补「含税 x 铜」）。 */
+	private String tradedItem = "";
+	private long tradedAmount;
+	private boolean tradedBuy = true;
 	private int rows = 9;         // 一屏行数（服务端下发，超出屏幕会钳制）
 	private ShopProtocol.Page shown;
 	private long issuedAt;
@@ -144,7 +148,12 @@ public final class ShopScreen extends Screen {
 	private void trade(boolean buy, int count) {
 		ShopProtocol.Page p = shown;
 		if (p == null || selected < 0 || selected >= p.entries().size()) return;
-		String itemId = p.entries().get(selected).itemId();
+		var entry = p.entries().get(selected);
+		String itemId = entry.itemId();
+		// T01：记下这笔的金额，结算后好补税额
+		tradedItem = itemId;
+		tradedAmount = (buy ? entry.buyPrice() : entry.sellPrice()) * Math.max(1, count);
+		tradedBuy = buy;
 		if (buy) {
 			ShopClientNetworking.buy(shopId, itemId, count);
 		} else {
@@ -173,6 +182,13 @@ public final class ShopScreen extends Screen {
 			flash = Text.translatable(r.ok() ? "gui.redtale_economy.shop.ok" : r.messageKey()).getString();
 			if (!r.ok() && "shop.notEnoughMoney".equals(r.messageKey())) {
 				flash = flash + "（当前 " + r.balance() + " 铜 / 需要 " + r.stockRemaining() + " 铜）";
+			}
+			// T01：成功时补税额（标记来自行内，金额取服务端已成交的那件商品）
+			if (r.ok() && tradedAmount > 0) {
+				long tax = tradedBuy
+						? ShopClientState.tax().buyTax(tradedItem, tradedAmount)
+						: ShopClientState.tax().sellTax(tradedItem, tradedAmount);
+				if (tax > 0) flash = flash + "（" + (tradedBuy ? "含税 " : "扣税 ") + tax + " 铜）";
 			}
 			if (r.ok()) request(); // 成功后刷新当前页（库存/余额都变了）
 		}
@@ -227,6 +243,17 @@ public final class ShopScreen extends Screen {
 					e.canBuy() ? String.valueOf(e.buyPrice()) : "-",
 					e.canSell() ? String.valueOf(e.sellPrice()) : "-").getString();
 			ctx.drawText(textRenderer, price, left + 190, y + 5, e.canBuy() ? com.akira.redtale.economy.client.ui.UiStyle.ACCENT : com.akira.redtale.economy.client.ui.UiStyle.TEXT_FAINT, false);
+			// T01：含税加价标记（只标数字，位置不够就不画，避免压到库存列）
+			long buyTax = com.akira.redtale.economy.client.ShopClientState.tax()
+					.buyTax(e.itemId(), e.buyPrice());
+			if (buyTax > 0 && e.canBuy()) {
+				String mark = "+" + buyTax;
+				int mx = left + 190 + textRenderer.getWidth(price) + 3;
+				if (mx + textRenderer.getWidth(mark) < left + 290) {
+					ctx.drawText(textRenderer, mark, mx, y + 5,
+							com.akira.redtale.economy.client.ui.UiStyle.TEXT_DIM, false);
+				}
+			}
 
 			String stock = e.stock() < 0
 					? Text.translatable("gui.redtale_economy.shop.stockInf").getString()

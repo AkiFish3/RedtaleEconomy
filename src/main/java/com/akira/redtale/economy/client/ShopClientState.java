@@ -18,8 +18,25 @@ public final class ShopClientState {
 	private static volatile long lastActionAt;
 	/** 服务端 S2C_OPEN 指定的当前商店 id —— Hub 模式下 S2C_OPEN 只带 id 不带数据，必须记住它才请求得到页。 */
 	private static volatile String activeShop = "";
+	/** T01：服务端下发的税率（打开商店时到达；null/未到 = 不知道，不显示含税价）。 */
+	private static volatile ShopProtocol.TaxInfo tax = ShopProtocol.TaxInfo.none();
 
 	private ShopClientState() {
+	}
+
+	public static ShopProtocol.TaxInfo tax() {
+		return tax;
+	}
+
+	public static void setTax(ShopProtocol.TaxInfo t) {
+		tax = t == null ? ShopProtocol.TaxInfo.none() : t;
+		com.akira.redtale.economy.RedtaleEconomy.LOGGER.info("[shop] 收到税率 enabled={} buy={}%",
+				tax.enabled(), tax.buyPct());
+	}
+
+	/** 显示用含税价：买价 + 税；税率关/免税时等于原价。 */
+	public static long buyWithTax(String itemId, long price) {
+		return price + tax.buyTax(itemId, price);
 	}
 
 	public static String activeShop() {

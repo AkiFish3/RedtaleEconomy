@@ -31,7 +31,16 @@ public final class HubShopPage {
 	private static final int TREE_HEAD = 17;
 	private static final int TREE_ROW = 14;
 
-		
+	/**
+	 * 网格的纵向滚动行数（T44 截图暴露的缺口）。
+	 *
+	 * <p>服务端一页最多 {@code pageSize}（默认 40）条，而 427×240 逻辑像素下一屏只放得下
+	 * 2 列 × 2 行 = 4 张卡 —— 超过的行以前被 {@code break} 直接丢掉，翻页也翻不到
+	 * （第 1/1 页 · 共 9 项时中间 5 项彻底不可达）。滚动按「行」而不是像素，
+	 * 松手必然停在整行上，不会切半张卡。
+	 */
+	private static int scrollRow;
+
 	private HubShopPage() {
 	}
 
@@ -120,15 +129,31 @@ public final class HubShopPage {
 		int gw = gridW(w, page);
 		int cols = Math.max(1, (gw + GAP) / (CARD_W + GAP));
 		int cw = cardW(gw);
-		int startY = y + 38;
+		int startY = gridStartY(y);
+		int limitY = gridLimitY(y, h);
 		List<ShopProtocol.Entry> entries = page.entries();
+		int totalRows = (entries.size() + cols - 1) / cols;
+		int fitRows = rowsFit(y, h);
+		scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, totalRows - fitRows)));
+		// 超出部分要被裁掉：以前靠 break 不画，现在有了滚动位移，半行会压在分页条上
+		dc.enableScissor(gx, startY, gx + gw, limitY);
 		for (int i = 0; i < entries.size(); i++) {
 			int col = i % cols;
-			int row = i / cols;
+			int row = i / cols - scrollRow;
 			int cx = gx + col * (cw + GAP);
 			int cy = startY + row * (CARD_H + GAP);
-			if (cy + CARD_H > y + h - 34) break;
+			if (cy + CARD_H > limitY) break;
+			if (cy < startY) continue;
 			drawCard(dc, tr, cx, cy, cw, entries.get(i), i == selected, mouseX, mouseY);
+		}
+		dc.disableScissor();
+		if (totalRows > fitRows) {
+			// 右侧细滚动条（与仓储页同款：1px 轨道 + 3px 滑块）
+			int trackH = limitY - startY;
+			int barH = Math.max(10, trackH * fitRows / totalRows);
+			int barY = startY + (trackH - barH) * scrollRow / Math.max(1, totalRows - fitRows);
+			dc.fill(gx + gw - 2, startY, gx + gw - 1, limitY, HubTheme.LINE);
+			dc.fill(gx + gw - 2, barY, gx + gw - 1, barY + barH, HubTheme.MUTED);
 		}
 		if (entries.isEmpty()) {
 			boolean filtered = !ShopClientState.filter().isEmpty();
@@ -228,6 +253,50 @@ public final class HubShopPage {
 		return (w - (cols - 1) * GAP) / cols;
 	}
 
+	/** 网格起点 y（搜索行 18 + 筛选栏 18 + 卡片区顶部 2）。 */
+	private static int gridStartY(int y) {
+		return y + 38;
+	}
+
+	/** 卡片区底部边界：再往下是分页条（26 高）+ 8 px 留白。 */
+	private static int gridLimitY(int y, int h) {
+		return y + h - 34;
+	}
+
+	/** 一屏能完整放下几行卡（至少 1 行，否则小窗口全空更糟）。 */
+	private static int rowsFit(int y, int h) {
+		int avail = gridLimitY(y, h) - gridStartY(y);
+		return Math.max(1, (avail + GAP) / (CARD_H + GAP));
+	}
+
+	/** 网格列数（与渲染同一口径，不能被别处复制成第二套）。 */
+	private static int colsOf(int w, ShopProtocol.Page page) {
+		return Math.max(1, (gridW(w, page) + GAP) / (CARD_W + GAP));
+	}
+
+	/** 当前允许的最大滚动行数（0 = 不用滚）。 */
+	private static int maxScrollRow(int w, int y, int h) {
+		ShopProtocol.Page page = ShopClientState.page();
+		int entries = page == null || page.entries() == null ? 0 : page.entries().size();
+		int totalRows = (entries + colsOf(w, page) - 1) / colsOf(w, page);
+		return Math.max(0, totalRows - rowsFit(y, h));
+	}
+
+	/** 滚 {@code rows} 行（正数向下），自动钳到 [0, max]。 */
+	public static void scrollByRows(int rows, int w, int y, int h) {
+		scrollRow = Math.max(0, Math.min(maxScrollRow(w, y, h), scrollRow + rows));
+	}
+
+	/** 换页/换筛选时回到顶部，否则新一页只有 4 条却停在旧位置会看起来空。 */
+	public static void resetScroll() {
+		scrollRow = 0;
+	}
+
+	/** dev 夹具用：当前滚动行（写进截图日志作证据）。 */
+	public static int devScrollRow() {
+		return scrollRow;
+	}
+
 	private static void drawCard(DrawContext dc, TextRenderer tr, int x, int y, int cw,
 			ShopProtocol.Entry e, boolean selected, double mouseX, double mouseY) {
 		boolean hover = mouseX >= x && mouseX < x + cw && mouseY >= y && mouseY < y + CARD_H;
@@ -246,7 +315,20 @@ public final class HubShopPage {
 		}
 		String name = stack.isEmpty() ? shortId(e.itemId()) : stack.getName().getString();
 		dc.drawText(tr, Text.literal(trim(tr, name, cw - 26)), x + 22, y + 6, HubTheme.TEXT, false);
-		dc.drawText(tr, Text.literal(e.buyPrice() + " 铜"), x + 4, y + 26, HubTheme.GOLD, false);
+		int priceY = y + 26;
+		String price = e.buyPrice() + " 铜";
+		dc.drawText(tr, Text.literal(price), x + 4, priceY, HubTheme.GOLD, false);
+
+		// T01：标价旁显示含税价（税率关 / 本人免税 / 名单内免税时不画）
+		long tax = com.akira.redtale.economy.client.ShopClientState.tax().buyTax(e.itemId(), e.buyPrice());
+		if (tax > 0) {
+			String withTax = "含税 " + (e.buyPrice() + tax);
+			int tx = x + cw - 4 - tr.getWidth(withTax);
+			// 位置不够就不硬塞（窄窗口下会和单价压字）
+			if (tx > x + 6 + tr.getWidth(price)) {
+				dc.drawText(tr, Text.literal(withTax), tx, priceY, HubTheme.MUTED, false);
+			}
+		}
 
 		String stock = e.stock() < 0 ? "无限" : ("库存 " + e.stock());
 		int color = e.stock() == 0 ? HubTheme.DANGER : HubTheme.MUTED;
@@ -332,12 +414,16 @@ public final class HubShopPage {
 		int gw = gridW(w, page);
 		int cols = Math.max(1, (gw + GAP) / (CARD_W + GAP));
 		int cw = cardW(gw);
-		int startY = y + 38;
+		int startY = gridStartY(y);
+		int limitY = gridLimitY(y, h);
 		List<ShopProtocol.Entry> entries = page.entries();
+		int sr = Math.max(0, Math.min(scrollRow,
+				Math.max(0, (entries.size() + cols - 1) / cols - rowsFit(y, h))));
 		for (int i = 0; i < entries.size(); i++) {
 			int cx = gx + (i % cols) * (cw + GAP);
-			int cy = startY + (i / cols) * (CARD_H + GAP);
-			if (cy + CARD_H > y + h - 34) break;
+			int cy = startY + (i / cols - sr) * (CARD_H + GAP);
+			if (cy + CARD_H > limitY) break;
+			if (cy < startY) continue;
 			if (mx >= cx && mx < cx + cw && my >= cy && my < cy + CARD_H) {
 				outIndex[0] = i;
 				return Action.NONE;

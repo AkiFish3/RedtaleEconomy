@@ -149,6 +149,34 @@ public final class ShopNetworking {
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.error("[net] 下发打开商店失败：{}", e.getMessage());
 		}
+		// T01：税率跟着「打开」一起发，客户端才能在标价旁显示含税价
+		sendTax(player);
+	}
+
+	/**
+	 * T01：下发税率（按玩家算好免税，名单原样发过去让客户端精确判断单品）。
+	 *
+	 * <p>税率关掉时也照发（enabled=false），客户端据此不画含税价 —— 不发的话客户端
+	 * 会拿着上一次商店的旧税率继续显示。
+	 */
+	public static void sendTax(ServerPlayerEntity player) {
+		if (player == null) return;
+		ShopProtocol.TaxInfo info = new ShopProtocol.TaxInfo(
+				com.akira.redtale.economy.config.ShopConfig.taxEnabled(),
+				com.akira.redtale.economy.config.ShopConfig.taxBuyPercent(),
+				com.akira.redtale.economy.config.ShopConfig.taxSellPercent(),
+				com.akira.redtale.economy.shop.ShopTax.exempt(player.getUuid()),
+				com.akira.redtale.economy.config.ShopConfig.taxMode(),
+				com.akira.redtale.economy.config.ShopConfig.taxItems());
+		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
+		try {
+			ShopProtocol.writeTax(buf, info);
+			ServerPlayNetworking.send(player, PacketIds.S2C_SHOP_TAX, buf);
+			RedtaleEconomy.LOGGER.info("[shop] 下发税率 enabled={} buy={}% sell={}% exempt={}",
+					info.enabled(), info.buyPct(), info.sellPct(), info.exemptMine());
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[net] 下发税率失败：{}", e.getMessage());
+		}
 	}
 
 	/** 管理员：下发打开「可视化编辑」界面（R16a）。 */

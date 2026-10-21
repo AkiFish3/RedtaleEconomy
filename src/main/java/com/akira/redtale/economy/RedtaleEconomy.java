@@ -151,6 +151,8 @@ public class RedtaleEconomy implements ModInitializer {
 		com.akira.redtale.economy.net.BalanceNetworking.register();
 		com.akira.redtale.economy.net.RankNetworking.register();
 		com.akira.redtale.economy.net.WarehouseNetworking.register();
+		com.akira.redtale.economy.net.TitleNetworking.register();
+		com.akira.redtale.economy.net.PayNetworking.register();
 		com.akira.redtale.economy.net.MarketNetworking.register();
 
 		// R36：数据根目录两段式（spec §40.2）

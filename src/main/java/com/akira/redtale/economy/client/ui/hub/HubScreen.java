@@ -16,12 +16,6 @@ import net.minecraft.text.Text;
  */
 public class HubScreen extends Screen {
 
-
-	private static final int ROW_H = 24;
-	private static final int TOP_BAR = 24;
-	private static final int BOTTOM_BAR = 20;
-	private static final int PROFILE_H = 56;
-
 	private boolean autoCompact;
 
 	private boolean isVanilla() {
@@ -29,19 +23,21 @@ public class HubScreen extends Screen {
 	}
 
 	private int sidebarW() {
-		return (ClientUiConfig.showLabels && !autoCompact) ? 88 : 40;
+		return frame.sidebarW();
 	}
+
+	/** 面板几何（T32：所有坐标只算一次，见 {@link HubFrame}）。 */
+	private HubFrame frame;
+	private final HubSidebar sidebar = new HubSidebar();
+	private final HubStatusLine statusLine = new HubStatusLine();
 
 
 	private HubPage page = HubPage.CHECKIN;
-	private int sidebarScroll;
 	private int panelX;
 	private int panelY;
 	private int panelW;
 	private int panelH;
 
-	private String status = "";
-	private long statusUntil;
 	private int monthOffset;
 	private final StringBuilder shopQuery = new StringBuilder();
 	private int shopSelected = -1;
@@ -99,16 +95,20 @@ public class HubScreen extends Screen {
 	private long shownRaw = -1;
 	private long rawTarget = -1;
 	private long rawAnimAt;
-	private long rippleAt;
-	private int rippleRow = -1;
 	private boolean dragActive;
 	private int pendingIdx = -1;
 	private boolean pendingInv;
 	private boolean pendingAll;
 	private int pressKey = -9999;
+	private final StringBuilder payName = new StringBuilder();
+	private final StringBuilder payAmount = new StringBuilder();
+	private int payFocus;
 	private final java.util.List<Integer> dragSlots = new java.util.ArrayList<>();
-	private double rippleX, rippleY;
 	private long lastShopActionAt;
+	/** T01：最近一次点买/卖的商品与金额，用来在回包后补「含税 x 铜」。 */
+	private String lastTradeItem = "";
+	private long lastTradeAmount;
+	private boolean lastTradeBuy = true;
 	private long lastMarketActionAt;
 	/** §43.6：排行榜「同步」按钮 60 秒冷却（只读缓存，防刷）。 */
 	private long lastRankSyncAt;
@@ -138,29 +138,34 @@ public class HubScreen extends Screen {
 		HubScreen s = new HubScreen();
 		s.page = page == null ? HubPage.CHECKIN : page;
 		MinecraftClient.getInstance().setScreen(s);
+		// ★首屏也要拉数据★：以前只走 setPage 才请求，于是「直接打开 Hub 落在排行/商店页」
+		// （K 键、/rt rank、服务端 HUB_OPEN）会永远停在空态 —— 2026-10-21 专用服截图抓到的。
+		s.pullData(s.page);
 	}
 
 	/** U8b：/rt 切页时复用当前界面，别把搜索词和滚动位置清掉。 */
 	public void setPage(HubPage p) {
 		if (p == null || p == page) return;
 		this.page = p;
-		this.status = "";
-		this.statusUntil = 0;
+		statusLine.clear();
 		this.searchFocused = false;
 		this.rankDropdown = false;
-		// 切页顺手拉一次数据（服务端只回快照，不做写操作）
+		pullData(p);
+	}
+
+	/** 切到某页时顺手拉一次数据（服务端只回快照，不做写操作）。 */
+	private void pullData(HubPage p) {
 		var mc = MinecraftClient.getInstance();
-		if (mc.player != null) {
-			switch (p) {
-				case SHOP -> {
-					String sid = ShopClientState.shopIdToRequest();
-					if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
-				}
-				case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
-				case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
-				case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
-				default -> {
-				}
+		if (mc.player == null) return;
+		switch (p) {
+			case SHOP -> {
+				String sid = ShopClientState.shopIdToRequest();
+				if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
+			}
+			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
+			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
+			case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
+			default -> {
 			}
 		}
 	}
@@ -180,96 +185,29 @@ public class HubScreen extends Screen {
 		panelH = Math.max(180, Math.min(340, this.height - 20));
 		panelX = (this.width - panelW) / 2;
 		panelY = (this.height - panelH) / 2;
-		tipSwitchAt = System.currentTimeMillis() + Tips.intervalSeconds() * 1000L;
+		frame = new HubFrame(panelX, panelY, panelW, panelH, autoCompact);
+		statusLine.resetTipTimer();
 		// 只查询状态，不会触发签到（服务端 /checkin status 会下发快照）
 		var mc = MinecraftClient.getInstance();
 		if (mc.player != null) {
 			mc.player.networkHandler.sendChatCommand("checkin status");
 			com.akira.redtale.economy.client.balance.BalanceClientNetworking.request();
 			com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
+			com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
 		}
 		// 直接以商店页开场时（/rt shop、S2C_OPEN 打开）必须自己拉一次页，
 		// 否则只有侧边栏点击才会请求，页面永远停在上一份空快照。
 		if (page == HubPage.SHOP && !shopRequested) requestShopPage();
 	}
 
-	private int entryTop() {
-		return panelY + TOP_BAR + PROFILE_H;
-	}
-
-	private int entryBottom() {
-		return panelY + panelH - BOTTOM_BAR;
-	}
-
-	private int maxScroll() {
-		int visible = entryBottom() - entryTop();
-		int total = HubPage.values().length * ROW_H;
-		return Math.max(0, total - visible);
-	}
-
 	@Override
 	public void render(DrawContext dc, int mouseX, int mouseY, float delta) {
 		boolean vanilla = isVanilla();
-		if (vanilla) {
-			HubVanilla.background(dc, this.width, this.height);
-			HubVanilla.panel(dc, panelX, panelY, panelW, panelH);
-		} else {
-			this.renderBackground(dc);
-			dc.fill(panelX - 1, panelY - 1, panelX + panelW + 1, panelY + panelH + 1, HubTheme.LINE);
-			dc.fill(panelX, panelY, panelX + panelW, panelY + panelH, HubTheme.PANEL);
-		}
-
-		// 顶部：当前页名（左）；商店页带上店名，否则只有「商店」两个字看不出是哪家
-		String head = page.label;
-		if (page == HubPage.SHOP) {
-			ShopProtocol.Page sp = ShopClientState.page();
-			String sn = sp == null ? "" : sp.shopName();
-			if (sn != null && !sn.isBlank()) head = page.label + " · " + sn;
-		}
-		dc.drawText(textRenderer, Text.literal(head), panelX + 10, panelY + 8, HubTheme.TITLE, false);
-
-		// 顶部：状态（右）—— §37.3「标题左、状态右，不随内容滚动」
-		// 窄面板/紧凑模式下会挤掉标题，所以只在够宽时画。
-		long bal = com.akira.redtale.economy.client.balance.BalanceClientNetworking.RAW;
-		String balText = bal < 0 ? "" : com.akira.redtale.economy.economy.Currency.format(bal);
-		if (!balText.isEmpty()) {
-			int bw = textRenderer.getWidth(balText);
-			int bx = panelX + panelW - 24 - bw;
-			int titleEnd = panelX + 12 + textRenderer.getWidth(head);
-			if (bx > titleEnd + 8) {
-				dc.drawText(textRenderer, Text.literal(balText), bx, panelY + 8, HubTheme.GOLD, false);
-			}
-		}
-
-		// 右上角关闭
-		int closeSize = 12;
-		int closeX = panelX + panelW - closeSize - 4;
-		int closeY = panelY + 9;
-		boolean closeHover = mouseX >= closeX - 2 && mouseX < closeX + closeSize + 2
-				&& mouseY >= closeY - 2 && mouseY < closeY + closeSize + 2;
-		if (vanilla) {
-			HubVanilla.button(dc, closeX - 3, closeY - 3, closeSize + 6, 20, closeHover, false);
-		} else {
-			dc.fill(closeX - 2, closeY - 2, closeX + closeSize + 2, closeY + closeSize + 2,
-					closeHover ? HubTheme.DANGER_HOVER : HubTheme.INNER);
-		}
-		dc.drawText(textRenderer, Text.literal("×"), closeX + 2, closeY, HubTheme.TEXT, false);
-
-		// ★顶栏下 / 底栏上 / 侧边栏右 三条分隔线（三主题通用）★
-		dc.fill(panelX, panelY + TOP_BAR - 1, panelX + panelW, panelY + TOP_BAR, HubTheme.OUTLINE);
-		dc.fill(panelX, panelY + panelH - BOTTOM_BAR, panelX + panelW,
-				panelY + panelH - BOTTOM_BAR + 1, HubTheme.OUTLINE);
-		dc.fill(panelX + sidebarW() - 1, panelY + TOP_BAR, panelX + sidebarW(),
-				panelY + panelH - BOTTOM_BAR, HubTheme.OUTLINE);
-
-		// 侧边栏
-		if (!vanilla) {
-			dc.fill(panelX, panelY + TOP_BAR, panelX + sidebarW(), panelY + panelH - BOTTOM_BAR, HubTheme.BAR);
-		}
-		dc.fill(panelX + sidebarW(), panelY + TOP_BAR, panelX + sidebarW() + 1,
-				panelY + panelH - BOTTOM_BAR, HubTheme.LINE);
-		renderProfile(dc, mouseX, mouseY);
-		renderEntries(dc, mouseX, mouseY);
+		if (!vanilla) this.renderBackground(dc);
+		// 外框（面板/标题/余额/关闭/分隔线/侧栏底色）整块交给 HubChrome
+		HubChrome.render(dc, textRenderer, frame, page, vanilla, this.width, this.height,
+				HubChrome.headText(page), mouseX, mouseY);
+		sidebar.render(dc, textRenderer, frame, page, mouseX, mouseY);
 
 		// 内容区（切换页面时轻微滑入）
 		var mat = dc.getMatrices();
@@ -278,20 +216,32 @@ public class HubScreen extends Screen {
 		int slide = (int) (6 * (1 - t));
 		mat.push();
 		mat.translate(slide, 0, 0);
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
-		int cw = panelW - sidebarW() - 24;
-		int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
+		int cw = frame.contentW();
+		int ch = frame.contentH();
 		// 商店操作结果回显（买/卖成功或失败都进界面状态行，不进聊天）
 		if (page == HubPage.SHOP) {
 			if (ShopClientState.page() != lastShopPage) {
 				lastShopPage = ShopClientState.page();
 				shopSelected = -1;
+				// 换页 / 换筛选后回到网格顶部：旧滚动位置在新一页上多半是空的
+				HubShopPage.resetScroll();
 			}
 			var act = ShopClientState.lastAction();
 			if (act != null && ShopClientState.lastActionAt() > lastShopActionAt) {
 				lastShopActionAt = ShopClientState.lastActionAt();
-				setStatus(act.ok() ? "已购买" : net.minecraft.text.Text.translatable(act.messageKey()).getString());
+				String base = act.ok() ? "已购买"
+						: net.minecraft.text.Text.translatable(act.messageKey()).getString();
+				if (act.ok()) base = lastTradeBuy ? "已购买" : "已出售";
+				// T01：成功时补税额（失败不说税，免得看起来像被多收了）
+				if (act.ok() && lastTradeAmount > 0) {
+					long tax = lastTradeBuy
+							? ShopClientState.tax().buyTax(lastTradeItem, lastTradeAmount)
+							: ShopClientState.tax().sellTax(lastTradeItem, lastTradeAmount);
+					if (tax > 0) base = base + "（" + (lastTradeBuy ? "含税 " : "扣税 ") + tax + " 铜）";
+				}
+				setStatus(base);
 			}
 		}
 		if (page == HubPage.MARKET) {
@@ -311,6 +261,11 @@ public class HubScreen extends Screen {
 			HubGuildPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.MAIL) {
 			HubMailPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
+		} else if (page == HubPage.PAY) {
+			HubPayPage.render(dc, textRenderer, cx, cy, cw, ch, payName.toString(),
+					payAmount.toString(), payFocus, mouseX, mouseY);
+		} else if (page == HubPage.TITLES) {
+			HubTitlesPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.STORAGE) {
 			HubStoragePage.render(dc, textRenderer, cx, cy, cw, ch,
 					storageQuery.toString(), storageCat, storageScroll, mouseX, mouseY);
@@ -335,42 +290,22 @@ public class HubScreen extends Screen {
 
 		mat.pop();
 
-		// 搜索框统一重绘：聚焦时显示光标并隐藏占位文字
+		// 搜索框统一重绘（外观由 HubChrome 保证两页一致）
 		if (page == HubPage.SHOP || page == HubPage.STORAGE) {
-			int bx = panelX + sidebarW() + 12;
-			int by = panelY + TOP_BAR + 8 + (page == HubPage.SHOP ? 0 : 16);
-			int bw = panelW - sidebarW() - 24 - (page == HubPage.SHOP ? 40 : 92);
-			int bh = page == HubPage.SHOP ? 18 : 16;
-			String q = page == HubPage.SHOP ? shopQuery.toString() : storageQuery.toString();
-			if (isVanilla()) {
-				HubVanilla.field(dc, bx, by, bw, bh, searchFocused);
-			} else {
-				dc.fill(bx, by, bx + bw, by + bh, searchFocused ? 0xCC000000 : 0x99000000);
-				dc.fill(bx, by, bx + bw, by + 1, searchFocused ? HubTheme.GOLD : HubTheme.LINE);
-				dc.fill(bx, by + bh - 1, bx + bw, by + bh, HubTheme.LINE);
-			}
-			if (searchFocused) {
-				dc.drawText(textRenderer, Text.literal(q), bx + 4, by + (bh - 8) / 2,
-						isVanilla() ? 0xFFFFFFFF : HubTheme.TEXT, false);
-				boolean blink = (System.currentTimeMillis() / 500) % 2 == 0;
-				if (blink) {
-					int cx2 = bx + 4 + textRenderer.getWidth(q);
-					dc.fill(cx2, by + 3, cx2 + 1, by + bh - 3,
-							isVanilla() ? 0xFFFFFFFF : HubTheme.GOLD);
-				}
-			}
+			HubChrome.renderSearch(dc, textRenderer, frame, page,
+					page == HubPage.SHOP ? shopQuery.toString() : storageQuery.toString(),
+					searchFocused, vanilla);
 		}
 
-
 		// 底部：状态优先，空闲出 tip
-		renderBottom(dc);
+		statusLine.render(dc, textRenderer, frame);
 
 		// ★下拉最后画★，否则会被底栏/后面的元素盖住
 		if (page == HubPage.RANK && HubRankPage.needsDropdownOverlay()) {
-			int rx = panelX + sidebarW() + 12;
-			int ry = panelY + TOP_BAR + 8;
+			int rx = frame.contentX();
+			int ry = frame.contentY();
 			HubRankPage.drawDropdown(dc, textRenderer, rx, ry, rankBoard,
-					panelY + panelH - BOTTOM_BAR, mouseX, mouseY);
+					panelY + panelH - HubFrame.BOTTOM_BAR, mouseX, mouseY);
 		}
 		if (page == HubPage.STORAGE) {
 			long handle = MinecraftClient.getInstance().getWindow().getHandle();
@@ -384,10 +319,10 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (page == HubPage.STORAGE && dragActive) {
-			int cx2 = panelX + sidebarW() + 12;
-			int cy2 = panelY + TOP_BAR + 8;
-			int cw2 = panelW - sidebarW() - 24;
-			int ch2 = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx2 = frame.contentX();
+			int cy2 = frame.contentY();
+			int cw2 = frame.contentW();
+			int ch2 = frame.contentH();
 			var rr = HubStoragePage.click(mouseX, mouseY, cx2, cy2, cw2, ch2,
 					dragButton < 0 ? 0 : dragButton, storageScroll);
 			if (rr.hit() == HubStoragePage.Hit.STORAGE && rr.index() >= 0
@@ -396,9 +331,9 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (page == HubPage.STORAGE && HubStoragePage.needsCatOverlay()) {
-			int sx2 = panelX + sidebarW() + 12;
-			int sy2 = panelY + TOP_BAR + 8;
-			int sw2 = panelW - sidebarW() - 24;
+			int sx2 = frame.contentX();
+			int sy2 = frame.contentY();
+			int sw2 = frame.contentW();
 			HubStoragePage.drawCatDropdown(dc, textRenderer, sx2, sy2, sw2, storageCat,
 					mouseX, mouseY);
 		}
@@ -406,211 +341,18 @@ public class HubScreen extends Screen {
 		if (page == HubPage.STORAGE) {
 			HubStoragePage.drawCursor(dc, textRenderer, mouseX, mouseY);
 		}
+		// ★侧边栏 tooltip 也在最后画★：以前在侧栏内部画，会被内容区/底栏盖住
+		sidebar.drawPendingTooltip(dc, textRenderer, mouseX, mouseY);
 
 		super.render(dc, mouseX, mouseY, delta);
-	}
-
-	private void renderProfile(DrawContext dc, int mouseX, int mouseY) {
-		int x = panelX;
-		int y = panelY + TOP_BAR;
-		dc.fill(x, y, x + sidebarW(), y + PROFILE_H,
-				HubTheme.vanilla ? HubTheme.PANEL : HubTheme.BAR);
-		boolean withText = ClientUiConfig.showLabels && !autoCompact;
-		int headSize = withText ? 32 : 26;
-		int headX = withText ? x + 6 : x + (sidebarW() - headSize) / 2;
-		int headY = withText ? y + 6 : y + 8;
-		dc.fill(headX - 1, headY - 1, headX + headSize + 1, headY + headSize + 1,
-				HubTheme.vanilla ? HubTheme.LINE : HubTheme.SLOT);
-		drawHead(dc, headX, headY, headSize);
-		if (withText) {
-			MinecraftClient mc = MinecraftClient.getInstance();
-			String name = mc.player == null ? "—" : mc.player.getGameProfile().getName();
-			dc.drawText(textRenderer, Text.literal(trim(name, sidebarW() - 44)), x + 42, y + 8, HubTheme.TEXT, false);
-			long raw = com.akira.redtale.economy.client.balance.BalanceClientNetworking.RAW;
-			// 余额变化时做 250ms 数字滚动（l1ght 的 animatedBalance 同款手感）
-			long now = System.currentTimeMillis();
-			if (raw != rawTarget) {
-				rawTarget = raw;
-				if (shownRaw < 0) shownRaw = raw;
-				rawAnimAt = now;
-			}
-			long shown = rawTarget;
-			if (shownRaw >= 0 && now - rawAnimAt < 250) {
-				float k = (now - rawAnimAt) / 250f;
-				shown = shownRaw + (long) ((rawTarget - shownRaw) * k);
-			} else if (shownRaw >= 0) {
-				shownRaw = rawTarget;
-			}
-			drawCoins(dc, x + 4, y + 40, sidebarW() - 8, shown);
-		}
-		boolean hoverHead = withText
-				? false
-				: (mouseX >= headX && mouseX < headX + headSize
-						&& mouseY >= headY && mouseY < headY + headSize);
-		if (hoverHead) {
-			MinecraftClient mc2 = MinecraftClient.getInstance();
-			String nm = mc2.player == null ? "—" : mc2.player.getGameProfile().getName();
-			long raw2 = com.akira.redtale.economy.client.balance.BalanceClientNetworking.RAW;
-			String money2 = raw2 < 0 ? "…" : com.akira.redtale.economy.economy.Currency.format(raw2);
-			dc.drawTooltip(textRenderer,
-					java.util.List.of(Text.literal(nm), Text.literal(money2)), mouseX, mouseY);
-		}
-		dc.fill(x, y, x + sidebarW(), y + 1, HubTheme.LINE);              // 顶边
-		dc.fill(x, y, x + 1, y + PROFILE_H, HubTheme.LINE);              // 左边
-		dc.fill(x, y + PROFILE_H - 1, x + sidebarW(), y + PROFILE_H, HubTheme.LINE); // 底边
 	}
 
 	/**
 	 * 余额显示（§47.7）：装了 Numismatic 就画硬币图标 + 数量（金→银→铜，0 跳过）；
 	 * 没装则用紧凑文字「12银30铜」。宽度不够时自动跳过后面币种。
 	 */
-	private void drawCoins(DrawContext dc, int x, int y, int w, long raw) {
-		if (raw < 0) {
-			dc.drawText(textRenderer, Text.literal("…"), x, y, HubTheme.TEXT, false);
-			return;
-		}
-		long gc = Math.max(1, com.akira.redtale.economy.economy.Currency.goldInCopper());
-		long sc = Math.max(1, com.akira.redtale.economy.economy.Currency.silverInCopper());
-		long gold = raw / gc;
-		long rest = raw % gc;
-		long silver = rest / sc;
-		long copper = rest % sc;
-
-		boolean numis = net.fabricmc.loader.api.FabricLoader.getInstance()
-				.isModLoaded("numismatic-overhaul");
-		if (!numis) {
-			String txt = (gold > 0 ? gold + "金" : "") + (silver > 0 ? silver + "银" : "")
-					+ (copper > 0 || (gold == 0 && silver == 0) ? copper + "铜" : "");
-			dc.drawText(textRenderer, Text.literal(trim(txt, w)), x, y, HubTheme.TEXT, false);
-			return;
-		}
-		if (gold == 0 && silver == 0 && copper == 0) {
-			coin(dc, x, y, "numismatic-overhaul:bronze_coin", 0, x + w, true);
-			return;
-		}
-		int right = x + w;
-		int cx = coin(dc, x, y, "numismatic-overhaul:gold_coin", gold, right, false);
-		cx = coin(dc, cx, y, "numismatic-overhaul:silver_coin", silver, right, false);
-		coin(dc, cx, y, "numismatic-overhaul:bronze_coin", copper, right, false);
-	}
-
-	private int coin(DrawContext dc, int x, int y, String itemId, long value, int right, boolean force) {
-		if (value <= 0 && !force) return x;
-		String n = value >= 10000 ? (value / 1000) + "k" : String.valueOf(value);
-		int needW = 17 + textRenderer.getWidth(n);
-		// right 是**绝对坐标**的右边界（之前误把它当宽度，导致永远画不出来）
-		if (x + needW > right) return x;
-		try {
-			var item = net.minecraft.registry.Registries.ITEM.get(
-					new net.minecraft.util.Identifier(itemId));
-			if (item != null && item != net.minecraft.item.Items.AIR) {
-				dc.drawItem(new net.minecraft.item.ItemStack(item), x, y - 4);
-			}
-		} catch (Exception ignored) {
-			// 图标缺失只影响观感
-		}
-		dc.drawText(textRenderer, Text.literal(n), x + 17, y, HubTheme.TEXT, false);
-		return x + needW + 2;
-	}
-
 	/** 称号：取 Styled Chat 的 display_name 首段（拿不到就空）。 */
-	private String titleText() {
-		try {
-			MinecraftClient mc = MinecraftClient.getInstance();
-			if (mc.player == null) return "";
-			String dn = mc.player.getDisplayName().getString();
-			int i = dn.indexOf(']');
-			return i > 0 && dn.startsWith("[") ? dn.substring(0, i + 1) : "";
-		} catch (Exception ex) {
-			return "";
-		}
-	}
-
 	/** 玩家头像（用皮肤贴图的 8×8 脸部放大）。 */
-	private void drawHead(DrawContext dc, int x, int y, int size) {
-		try {
-			MinecraftClient mc = MinecraftClient.getInstance();
-			if (mc.player == null) throw new IllegalStateException();
-			var tex = mc.getSkinProvider().loadSkin(mc.player.getGameProfile());
-			var m = dc.getMatrices();
-			m.push();
-			m.translate(x, y, 0);
-			float k = size / 8f;
-			m.scale(k, k, 1f);
-			dc.drawTexture(tex, 0, 0, 8, 8, 8, 8, 64, 64);
-			// 外层（帽子）叠在脸上，位置 40,8
-			dc.drawTexture(tex, 0, 0, 40, 8, 8, 8, 64, 64);
-			m.pop();
-		} catch (Exception ex) {
-			dc.fill(x, y, x + size, y + size, HubTheme.SLOT);
-		}
-	}
-
-	private void drawIcon(DrawContext dc, String itemId, int x, int y) {
-		try {
-			var item = net.minecraft.registry.Registries.ITEM.get(new net.minecraft.util.Identifier(itemId));
-			if (item != null && item != net.minecraft.item.Items.AIR) {
-				dc.drawItem(new net.minecraft.item.ItemStack(item), x, y);
-			}
-		} catch (Exception ignored) {
-			// 图标缺失不影响文字
-		}
-	}
-
-	private void renderEntries(DrawContext dc, int mouseX, int mouseY) {
-		int top = entryTop();
-		int bottom = entryBottom();
-		// ★裁剪★：不让滚动时条目画到顶栏/底栏上
-		boolean clip = bottom > top;
-		if (clip) dc.enableScissor(panelX, top, panelX + sidebarW(), bottom);
-		int y = top - sidebarScroll;
-		for (HubPage p : HubPage.values()) {
-			if (y + ROW_H > top && y < bottom) {
-				boolean sel = p == page;
-				boolean hovered = mouseX >= panelX && mouseX < panelX + sidebarW()
-						&& mouseY >= y && mouseY < y + ROW_H;
-				if (isVanilla()) {
-					if (sel || hovered) {
-						HubVanilla.button(dc, panelX + 2, y + 2, sidebarW() - 4, 20, hovered, false);
-					}
-				} else if (sel) {
-					HubWidgets.roundRect(dc, panelX + 2, y + 2, sidebarW() - 4, ROW_H - 4, 2, HubTheme.SELECT);
-					HubWidgets.indicator(dc, panelX + 2, y + 2, ROW_H - 4);
-				} else if (hovered) {
-					HubWidgets.roundRect(dc, panelX + 2, y + 2, sidebarW() - 4, ROW_H - 4, 2, HubTheme.HOVER);
-				}
-				int color = sel ? HubTheme.PRIMARY_SOFT_TEXT : (hovered ? HubTheme.TITLE : HubTheme.TEXT);
-				drawIcon(dc, p.icon, panelX + (sidebarW() > 44 ? 8 : 11), y + 5);
-				if (sidebarW() > 44) {
-					dc.drawText(textRenderer, Text.literal(p.label), panelX + 28, y + 8, color, false);
-				} else if (mouseX >= panelX && mouseX < panelX + sidebarW()
-						&& mouseY >= y && mouseY < y + ROW_H) {
-					dc.drawTooltip(textRenderer, java.util.List.of(Text.literal(p.label)), mouseX, mouseY);
-				}
-			}
-			y += ROW_H;
-		}
-		// 溢出时画细滚动条
-		int ms = maxScroll();
-		if (ms > 0) {
-			int barH = Math.max(12, (bottom - top) * (bottom - top) / (HubPage.values().length * ROW_H));
-			int barY = top + (bottom - top - barH) * sidebarScroll / ms;
-			dc.fill(panelX + sidebarW() - 3, top, panelX + sidebarW() - 1, bottom, HubTheme.ROW_HOVER);
-			dc.fill(panelX + sidebarW() - 3, barY, panelX + sidebarW() - 1, barY + barH, HubTheme.MUTED);
-		}
-		if (rippleRow >= 0) {
-			long dt = System.currentTimeMillis() - rippleAt;
-			if (dt < 260) {
-				int ry = entryTop() - sidebarScroll + rippleRow * ROW_H;
-				HubWidgets.ripple(dc, panelX + 2, ry + 2, sidebarW() - 4, ROW_H - 4,
-						rippleX, rippleY, dt / 260f, 0xFFFFFF);
-			} else {
-				rippleRow = -1;
-			}
-		}
-		if (clip) dc.disableScissor();
-	}
-
 	private void renderPlaceholder(DrawContext dc, int cx, int cy, int cw) {
 		dc.fill(cx, cy, cx + cw, cy + 64, HubTheme.CARD);
 		dc.drawText(textRenderer, Text.literal("这一页正在迁移到新界面"), cx + 8, cy + 10, HubTheme.TEXT, false);
@@ -618,77 +360,9 @@ public class HubScreen extends Screen {
 		dc.drawText(textRenderer, Text.literal("侧边栏 / 顶栏 / 底部提示已生效"), cx + 8, cy + 44, HubTheme.MUTED, false);
 	}
 
-	private void renderSettings(DrawContext dc, int cx, int cy, int cw) {
-		String[][] rows = {
-				{"外观", "界面主题", "原版"},
-				{"外观", "按钮音效", "开"},
-				{"界面", "侧边栏显示文字", "开"},
-				{"界面", "界面缩放", "跟随原版"},
-				{"语言", "显示语言", "简体中文"},
-				{"按键", "打开主界面", "未设置"},
-				{"高级", "调试信息", "收起"},
-		};
-		String lastGroup = "";
-		int y = cy;
-		for (String[] r : rows) {
-			if (!r[0].equals(lastGroup)) {
-				lastGroup = r[0];
-				dc.drawText(textRenderer, Text.literal(r[0]), cx, y, HubTheme.HINT, false);
-				y += 14;
-			}
-			dc.fill(cx, y, cx + cw, y + 18, HubTheme.CARD);
-			dc.drawText(textRenderer, Text.literal(r[1]), cx + 6, y + 5, HubTheme.TEXT, false);
-			int w = textRenderer.getWidth(r[2]);
-			dc.drawText(textRenderer, Text.literal(r[2]), cx + cw - 6 - w, y + 5, HubTheme.MUTED, false);
-			y += 20;
-			if (y > panelY + panelH - BOTTOM_BAR - 30) break;
-		}
-	}
-
-	private void renderBottom(DrawContext dc) {
-		int y = panelY + panelH - BOTTOM_BAR;
-		if (!isVanilla()) {
-			dc.fill(panelX, y, panelX + panelW, panelY + panelH, HubTheme.BAR);
-			dc.fill(panelX, y, panelX + panelW, y + 1, HubTheme.LINE);
-		}
-
-		long now = System.currentTimeMillis();
-		boolean showStatus = now < statusUntil && !status.isEmpty();
-		String text;
-		int color;
-		if (showStatus) {
-			text = status;
-			color = HubTheme.MUTED;
-		} else if (!ClientUiConfig.tipsEnabled) {
-			return;
-		} else {
-			if (now > tipSwitchAt) {
-				tipIndex++;
-				tipSwitchAt = now + Tips.intervalSeconds() * 1000L;
-			}
-			Tips.Tip tip = Tips.at(tipIndex);
-			text = tip.text();
-			color = tip.ad() ? HubTheme.GOLD : HubTheme.MUTED;
-		}
-		if (!text.isEmpty()) {
-			int maxW = panelW - 20;
-			dc.drawText(textRenderer, Text.literal(trim(text, maxW)), panelX + 10, y + 6, color, false);
-		}
-	}
-
-	private String trim(String s, int maxWidth) {
-		if (textRenderer.getWidth(s) <= maxWidth) return s;
-		String out = s;
-		while (out.length() > 1 && textRenderer.getWidth(out + "…") > maxWidth) {
-			out = out.substring(0, out.length() - 1);
-		}
-		return out + "…";
-	}
-
 	/** 供页面调用的状态提示（§38：界面内提示，不进聊天）。 */
 	public void setStatus(String text) {
-		this.status = text == null ? "" : text;
-		this.statusUntil = System.currentTimeMillis() + 5000L;
+		statusLine.set(text);
 	}
 
 	/**
@@ -699,6 +373,11 @@ public class HubScreen extends Screen {
 	 */
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		// 关闭框几何只有一个来源（frame），命中判定与绘制共用 HubChrome.closeHit
+		if (HubChrome.closeHit(frame, mouseX, mouseY)) {
+			this.close();
+			return true;
+		}
 		boolean handled = handleClick(mouseX, mouseY, button);
 		if (handled && button == 0) ClientUiConfig.click();
 		return handled;
@@ -708,14 +387,14 @@ public class HubScreen extends Screen {
 	 * 仅 dev 截图夹具（{@code client.dev.UiShots}）使用：点侧边栏第 {@code index} 项。
 	 *
 	 * <p>故意走 {@link #mouseClicked} 而不是直接改 {@code page} —— 这样命中判定的坐标换算
-	 * （{@code sidebarScroll}、{@code ROW_H}、裁剪区）才是真被验证的那条代码路径。
+	 * （{@code sidebarScroll}、{@code HubFrame.ROW_H}、裁剪区）才是真被验证的那条代码路径。
 	 *
 	 * @return 是否命中
 	 */
 	public boolean devClickSidebar(int index) {
 		HubPage[] all = HubPage.values();
 		if (index < 0 || index >= all.length) return false;
-		double y = entryTop() - sidebarScroll + index * ROW_H + ROW_H / 2.0;
+		double y = sidebar.rowCenterY(frame, index);
 		return mouseClicked(panelX + sidebarW() / 2.0, y, 0);
 	}
 
@@ -734,10 +413,10 @@ public class HubScreen extends Screen {
 	 */
 	public boolean devClickSettingsRow(HubSettingsPage.Row row) {
 		if (page != HubPage.SETTINGS) return false;
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
-		int cw = panelW - sidebarW() - 24;
-		int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
+		int cw = frame.contentW();
+		int ch = frame.contentH();
 		double[] p = HubSettingsPage.rowCenter(row, cx, cy, cw, ch);
 		if (p == null) return false;
 		return mouseClicked(p[0], p[1], 0);
@@ -745,7 +424,7 @@ public class HubScreen extends Screen {
 
 	/** 仅 dev 夹具：设置页内容区高度（用于算滚动上限）。 */
 	public int devSettingsContentHeight() {
-		return panelH - TOP_BAR - BOTTOM_BAR - 16;
+		return panelH - HubFrame.TOP_BAR - HubFrame.BOTTOM_BAR - 16;
 	}
 
 	/** 仅 dev 夹具：设置页滚动上限（0 = 装得下，不需要滚）。 */
@@ -758,13 +437,27 @@ public class HubScreen extends Screen {
 		HubSettingsPage.scrollTo(v);
 	}
 
+	/**
+	 * 仅 dev 夹具（T44）：把商店网格滚到底，返回最终滚动行数。
+	 *
+	 * <p>不用 {@code mouseScrolled} 而是直接调 {@code scrollByRows}：滚轮事件的
+	 * 坐标/增量在夹具里没法逐格复现，而这里要验的是「被裁掉的卡片能不能到达」。
+	 */
+	public int devScrollShopBottom() {
+		if (page != HubPage.SHOP) return -1;
+		int cw = frame.contentW();
+		int ch = frame.contentH();
+		int cy = frame.contentY();
+		HubShopPage.scrollByRows(9999, cw, cy, ch);
+		return HubShopPage.devScrollRow();
+	}
+
 	/** 仅 dev 夹具：点商店左侧目录树第 {@code row} 行（走真实 mouseClicked 命中路径）。 */
-	public boolean devClickTreeRow(int row) {
-		if (page != HubPage.SHOP) return false;
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
-		int cw = panelW - sidebarW() - 24;
-		int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+	public boolean devClickTreeRow(int row) {		if (page != HubPage.SHOP) return false;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
+		int cw = frame.contentW();
+		int ch = frame.contentH();
 		double[] p = HubShopPage.treeRowCenter(cx, cy, ch, row);
 		if (p == null) return false;
 		return mouseClicked(p[0], p[1], 0);
@@ -778,8 +471,8 @@ public class HubScreen extends Screen {
 	 */
 	public boolean devClickRankToggle() {
 		if (page != HubPage.RANK) return false;
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
 		// 复选框矩形 = x..x+70 / y+22..y+36（render 里 sy=y+24，命中判定 -2/+12）
 		return mouseClicked(cx + 30, cy + 29, 0);
 	}
@@ -787,8 +480,8 @@ public class HubScreen extends Screen {
 	/** 仅 dev 夹具（U9/§48.6）：点排行页顶部的榜单下拉（验「其余榜为二级」的下拉是活的）。 */
 	public boolean devClickRankDropdown() {
 		if (page != HubPage.RANK) return false;
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
 		return mouseClicked(cx + 20, cy + 9, 0);
 	}
 
@@ -811,10 +504,10 @@ public class HubScreen extends Screen {
 	private boolean handleClick(double mouseX, double mouseY, int button) {
 		// ★确认条在搜索框上方★：必须先判它，否则点"确认"会变成聚焦搜索框
 		if (page == HubPage.STORAGE && HubStoragePage.confirmUpgrade) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			var r0 = HubStoragePage.click(mouseX, mouseY, cx, cy, cw, ch, button, storageScroll);
 			if (r0.hit() == HubStoragePage.Hit.CONFIRM_YES) {
 				HubStoragePage.confirmUpgrade = false;
@@ -832,16 +525,10 @@ public class HubScreen extends Screen {
 			return true;
 		}
 		searchFocused = false;
-		int cs = 12;
-		double cx2 = panelX + panelW - cs - 4;
-		double cy2 = panelY + 9;
-		if (button == 0 && mouseX >= cx2 - 2 && mouseX < cx2 + cs + 2
-				&& mouseY >= cy2 - 2 && mouseY < cy2 + cs + 2) {
-			this.close();
-			return true;
-		}
+		// 关闭框已在 mouseClicked 里判定（同一套 frame 坐标），这里原来还有一份 12px 的重复命中区，
+		// 永远走不到，删掉免得以后改布局只改一处。
 		if (button == 0 && mouseX >= panelX && mouseX < panelX + sidebarW()) {
-			int idx = ((int) mouseY - entryTop() + sidebarScroll) / ROW_H;
+			int idx = sidebar.rowAt(frame, mouseY);
 			HubPage[] all = HubPage.values();
 			if (idx >= 0 && idx < all.length) {
 				if (page != all[idx]) ClientUiConfig.click();
@@ -858,16 +545,17 @@ public class HubScreen extends Screen {
 				if (page == HubPage.GUILD) requestGuild();
 				if (page == HubPage.STORAGE) {
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
+			com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
 				}
 				return true;
 			}
 		}
 		// R40 市场：动作全部先改客户端视图状态，再发请求；服务端回包覆盖
 		if (button == 0 && page == HubPage.MARKET) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			int[] idx = {-1};
 			HubMarketPage.Action a = HubMarketPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch,
 					marketSelected, idx);
@@ -921,10 +609,10 @@ public class HubScreen extends Screen {
 			return true;
 		}
 		if (button == 0 && page == HubPage.MAIL) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			HubMailPage.Action a = HubMailPage.click(mouseX, mouseY, cx, cy, cw, ch);
 			var mc = MinecraftClient.getInstance();
 			if (a == HubMailPage.Action.OPEN_MAIL) {
@@ -937,11 +625,61 @@ public class HubScreen extends Screen {
 				return true;
 			}
 		}
+		if ((button == 0 || button == 1) && page == HubPage.PAY) {
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
+			var r = HubPayPage.click(mouseX, mouseY, cx, cy, cw, ch);
+			switch (r.hit()) {
+				case FIELD_NAME -> payFocus = 1;
+				case FIELD_AMOUNT -> payFocus = 2;
+				case CLEAR -> {
+					payName.setLength(0);
+					payAmount.setLength(0);
+					payFocus = 0;
+				}
+				case SEND -> {
+					long amt;
+					try {
+						amt = Long.parseLong(payAmount.toString().trim());
+					} catch (Exception e) {
+						amt = -1;
+					}
+					if (payName.length() == 0 || amt <= 0) {
+						setStatus("请填写玩家名和金额");
+					} else {
+						com.akira.redtale.economy.client.pay.PayClientNetworking.pay(
+								payName.toString().trim(), amt);
+						setStatus("已提交转账…");
+					}
+				}
+				default -> payFocus = 0;
+			}
+			return true;
+		}
+		if ((button == 0 || button == 1) && page == HubPage.TITLES) {
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
+			var r = HubTitlesPage.click(mouseX, mouseY, cx, cy, cw, ch, button);
+			var owned = com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.owned();
+			if (r.index() >= 0 && r.index() < owned.size()) {
+				String t = owned.get(r.index());
+				if (r.hit() == HubTitlesPage.Hit.REMOVE) {
+					com.akira.redtale.economy.client.title.TitlesClientNetworking.remove(t);
+				} else if (r.hit() == HubTitlesPage.Hit.SELECT) {
+					com.akira.redtale.economy.client.title.TitlesClientNetworking.select(t);
+				}
+			}
+			return true;
+		}
 		if ((button == 0 || button == 1) && page == HubPage.STORAGE) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			var r = HubStoragePage.click(mouseX, mouseY, cx, cy, cw, ch, button, storageScroll);
 			boolean shift = hasShiftDown();
 			var wnet = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.class;
@@ -1082,10 +820,10 @@ public class HubScreen extends Screen {
 			return true;
 		}
 		if (button == 0 && page == HubPage.PASS) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			HubPassPage.Claim c = HubPassPage.click(mouseX, mouseY, cx, cy, cw, ch, passScroll);
 			if (c != null) {
 				var mc = MinecraftClient.getInstance();
@@ -1098,10 +836,10 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (button == 0 && page == HubPage.BOUNTY) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			// 用几何判定，避免为了命中再画一次
 			int cardH = 44;
 			int idx = (int) ((mouseY - (cy + 16)) / (cardH + 4));
@@ -1119,10 +857,10 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (button == 0 && page == HubPage.SETTINGS) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			HubSettingsPage.Row row = HubSettingsPage.click(mouseX, mouseY, cx, cy, cw, ch);
 			if (row != null) {
 				ClientUiConfig.click();
@@ -1131,10 +869,10 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (button == 0 && page == HubPage.RANK) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int dd = HubRankPage.hitDropdown(mouseX, mouseY, cx, cy, rankDropdown, panelY + panelH - BOTTOM_BAR);
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int dd = HubRankPage.hitDropdown(mouseX, mouseY, cx, cy, rankDropdown, panelY + panelH - HubFrame.BOTTOM_BAR);
 			if (dd == -2) {
 				rankDropdown = !rankDropdown;
 				ClientUiConfig.click();
@@ -1151,7 +889,7 @@ public class HubScreen extends Screen {
 				return true;
 			}
 			HubRankPage.Action ra = HubRankPage.click(mouseX, mouseY, cx, cy, cw,
-					panelH - TOP_BAR - BOTTOM_BAR - 16, rankBoard);
+					panelH - HubFrame.TOP_BAR - HubFrame.BOTTOM_BAR - 16, rankBoard);
 			if (ra == HubRankPage.Action.ACTIVE_TOGGLE) {
 				rankActiveOnly = !rankActiveOnly;
 				ClientUiConfig.click();
@@ -1174,10 +912,10 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (button == 0 && page == HubPage.SHOP) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			int[] idx = {shopSelected};
 			String[] outCat = {""};
 			HubShopPage.Action a = HubShopPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch,
@@ -1203,6 +941,10 @@ public class HubScreen extends Screen {
 				case BUY -> {
 					if (shopSelected >= 0 && shopSelected < st.entries().size()) {
 						var e = st.entries().get(shopSelected);
+						// T01：记下这一笔的金额，结算回包后才能在状态行补「含税 x 铜」
+						lastTradeItem = e.itemId();
+						lastTradeAmount = e.buyPrice();
+						lastTradeBuy = true;
 						ShopClientNetworking.buy(st.shopId(), e.itemId(), 1);
 						setStatus("正在购买 " + e.itemId());
 					}
@@ -1210,6 +952,9 @@ public class HubScreen extends Screen {
 				case SELL -> {
 					if (shopSelected >= 0 && shopSelected < st.entries().size()) {
 						var e = st.entries().get(shopSelected);
+						lastTradeItem = e.itemId();
+						lastTradeAmount = e.sellPrice();
+						lastTradeBuy = false;
 						ShopClientNetworking.sell(st.shopId(), e.itemId(), 1);
 						setStatus("正在出售 " + e.itemId());
 					}
@@ -1248,10 +993,10 @@ public class HubScreen extends Screen {
 			if (a != HubShopPage.Action.NONE) return true;
 		}
 		if (button == 0 && page == HubPage.CHECKIN) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			HubCheckinPage.Action a = HubCheckinPage.click(mouseX, mouseY, cx, cy, cw, ch,
 					com.akira.redtale.economy.client.checkin.CheckinClientNetworking.LAST, monthOffset);
 			var mc = MinecraftClient.getInstance();
@@ -1286,16 +1031,12 @@ public class HubScreen extends Screen {
 
 	/** 鼠标是否落在当前页的搜索框里。 */
 	private boolean inSearchBox(double mx, double my) {
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
-		int cw = panelW - sidebarW() - 24;
-		if (page == HubPage.SHOP) {
-			return mx >= cx && mx < cx + cw - 40 && my >= cy && my < cy + 18;
-		}
-		if (page == HubPage.STORAGE) {
-			return mx >= cx && mx < cx + cw - 92 && my >= cy + 16 && my < cy + 32;
-		}
-		return false;
+		if (page != HubPage.SHOP && page != HubPage.STORAGE) return false;
+		// 与渲染共用 frame 的搜索框矩形，别再手写 cw-40 / cy+16
+		int x = frame.contentX();
+		int y = frame.searchY(page);
+		return mx >= x && mx < x + frame.searchW(page)
+				&& my >= y && my < y + frame.searchH(page);
 	}
 
 	/** 排行页「同步」还剩多少秒冷却（0 = 可点）；冷却秒数读客户端配置，0 表示不限。 */
@@ -1310,10 +1051,10 @@ public class HubScreen extends Screen {
 	/** 仅 dev 夹具：点榜单下拉里的第 {@code idx} 项（走 hitDropdown 同一套坐标）。 */
 	public boolean devClickRankBoard(int idx) {
 		if (page != HubPage.RANK) return false;
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
 		int listH = HubRankPage.BOARDS.length * 16;
-		int bottom = panelY + panelH - BOTTOM_BAR;
+		int bottom = panelY + panelH - HubFrame.BOTTOM_BAR;
 		int iy = (cy + 20 + listH <= bottom) ? cy + 20 : cy - listH;
 		return mouseClicked(cx + 20, iy + idx * 16 + 8, 0);
 	}
@@ -1326,9 +1067,9 @@ public class HubScreen extends Screen {
 	/** 仅 dev 夹具：点排行页的「同步」按钮（验 60 秒冷却与置灰）。 */
 	public boolean devClickRankSync() {
 		if (page != HubPage.RANK) return false;
-		int cx = panelX + sidebarW() + 12;
-		int cy = panelY + TOP_BAR + 8;
-		int cw = panelW - sidebarW() - 24;
+		int cx = frame.contentX();
+		int cy = frame.contentY();
+		int cw = frame.contentW();
 		// 命中区 = x+w-20..x+w / sy-2..sy+12（render 里 sy = cy+24）
 		return mouseClicked(cx + cw - 10, cy + 29, 0);
 	}
@@ -1362,6 +1103,15 @@ public class HubScreen extends Screen {
 
 	@Override
 	public boolean charTyped(char chr, int modifiers) {
+		if (page == HubPage.PAY && payFocus > 0 && !Character.isISOControl(chr)) {
+			if (payFocus == 1 && payName.length() < 24
+					&& (Character.isLetterOrDigit(chr) || chr == '_')) {
+				payName.append(chr);
+			} else if (payFocus == 2 && Character.isDigit(chr) && payAmount.length() < 12) {
+				payAmount.append(chr);
+			}
+			return true;
+		}
 		if (page == HubPage.STORAGE && searchFocused && !Character.isISOControl(chr)) {
 			storageQuery.append(chr);
 			return true;
@@ -1389,6 +1139,11 @@ public class HubScreen extends Screen {
 				storageQuery.setLength(0);
 				return true;
 			}
+		}
+		if (page == HubPage.PAY && keyCode == 259) {
+			if (payFocus == 1 && payName.length() > 0) payName.setLength(payName.length() - 1);
+			if (payFocus == 2 && payAmount.length() > 0) payAmount.setLength(payAmount.length() - 1);
+			return true;
 		}
 		if (!searchFocused && page == HubPage.STORAGE && keyCode == 81) { // Q
 			com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
@@ -1422,10 +1177,10 @@ public class HubScreen extends Screen {
 	@Override
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double dx, double dy) {
 		if (page == HubPage.STORAGE && dragPlacing) {
-			int cx = panelX + sidebarW() + 12;
-			int cy = panelY + TOP_BAR + 8;
-			int cw = panelW - sidebarW() - 24;
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
 			var r = HubStoragePage.click(mouseX, mouseY, cx, cy, cw, ch,
 					dragButton < 0 ? 0 : dragButton, storageScroll);
 			if (r.index() < 0 || r.index() == lastDragSlot) return true;
@@ -1496,6 +1251,14 @@ public class HubScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+		if (page == HubPage.SHOP && mouseX > panelX + sidebarW()) {
+			// T44：427×240 下一页 40 条只放得下 4 张卡 ⇒ 必须能滚，否则中间 36 条翻页也翻不到
+			int cw = frame.contentW();
+			int ch = frame.contentH();
+			int cy = frame.contentY();
+			HubShopPage.scrollByRows(-(int) Math.signum(amount), cw, cy, ch);
+			return true;
+		}
 		if (page == HubPage.STORAGE && mouseX > panelX + sidebarW()) {
 			storageScroll = Math.max(0, Math.min(
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.SLOT_COUNT,
@@ -1504,14 +1267,14 @@ public class HubScreen extends Screen {
 		}
 		if (page == HubPage.SETTINGS && mouseX > panelX + sidebarW()) {
 			// U10：Scale 2 下设置页内容区装不下全部行（管理员区会被裁掉），必须能滚
-			int ch = panelH - TOP_BAR - BOTTOM_BAR - 16;
+			int ch = frame.contentH();
 			if (HubSettingsPage.maxScroll(ch) > 0) {
 				HubSettingsPage.scrollBy(-(int) Math.signum(amount) * 20);
 				return true;
 			}
 		}
 		if (page == HubPage.PASS && mouseX > panelX + sidebarW()) {
-			int cw = panelW - sidebarW() - 24;
+			int cw = frame.contentW();
 			int max = HubPassPage.maxScroll(cw);
 			if (max > 0) {
 				passScroll = Math.max(0, Math.min(max, passScroll - (int) Math.signum(amount)));
@@ -1519,10 +1282,8 @@ public class HubScreen extends Screen {
 			}
 		}
 		if (mouseX >= panelX && mouseX < panelX + sidebarW()) {
-			int ms = maxScroll();
-			if (ms > 0) {
-				sidebarScroll -= (int) (amount * ROW_H);
-				sidebarScroll = Math.max(0, Math.min(ms, sidebarScroll));
+			if (frame.maxScroll() > 0) {
+				sidebar.scrollBy(frame, amount);
 				return true;
 			}
 		}
