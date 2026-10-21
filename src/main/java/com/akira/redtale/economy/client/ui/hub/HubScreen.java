@@ -16,42 +16,47 @@ import net.minecraft.text.Text;
  */
 public class HubScreen extends Screen {
 
-	private boolean autoCompact;
+	boolean autoCompact;
 
 	private boolean isVanilla() {
 		return "vanilla".equals(ClientUiConfig.theme);
 	}
 
-	private int sidebarW() {
+	int sidebarW() {
 		return frame.sidebarW();
 	}
 
+	/** T32 批次2：侧栏行号判定（侧栏实例不外露，只给 handler 一个查询口）。 */
+	int sidebarRowAt(double my) {
+		return sidebar.rowAt(frame, my);
+	}
+
 	/** 面板几何（T32：所有坐标只算一次，见 {@link HubFrame}）。 */
-	private HubFrame frame;
+	HubFrame frame;
 	private final HubSidebar sidebar = new HubSidebar();
 	private final HubStatusLine statusLine = new HubStatusLine();
 
 
-	private HubPage page = HubPage.CHECKIN;
-	private int panelX;
-	private int panelY;
-	private int panelW;
-	private int panelH;
+	HubPage page = HubPage.CHECKIN;
+	int panelX ;
+	int panelY ;
+	int panelW ;
+	int panelH ;
 
-	private int monthOffset;
-	private final StringBuilder shopQuery = new StringBuilder();
-	private int shopSelected = -1;
+	int monthOffset ;
+	final StringBuilder shopQuery = new StringBuilder();
+	int shopSelected = -1;
 	/** R40：市场页选中的行（-1 = 未选） */
-	private int marketSelected = -1;
+	int marketSelected = -1;
 	private boolean shopRequested;
-	private int passScroll;
-	private final StringBuilder storageQuery = new StringBuilder();
-	private int storageCat;
-	private int storageScroll;
-	private int lastSlotKey = -1;
-	private long lastSlotAt;
+	int passScroll;
+	final StringBuilder storageQuery = new StringBuilder();
+	int storageCat ;
+	int storageScroll ;
+	int lastSlotKey = -1;
+	long lastSlotAt ;
 	/** U11b：点击筛选 chip → 循环下一个取值（""/"全部" 也算一档，循环回得去）。 */
-	private void cycleFilter(int slot) {
+	void cycleFilter(int slot) {
 		var f = ShopClientState.filter();
 		var page = ShopClientState.page();
 		switch (slot) {
@@ -88,38 +93,38 @@ public class HubScreen extends Screen {
 		shopSelected = -1;
 	}
 
-	private boolean dragPlacing;
-	private int dragButton = -1;
-	private boolean searchFocused;
+	boolean dragPlacing ;
+	int dragButton = -1;
+	boolean searchFocused ;
 	private long pageAnimAt;
-	private boolean dragActive;
-	private int pendingIdx = -1;
-	private boolean pendingInv;
-	private boolean pendingAll;
-	private int pressKey = -9999;
-	private final StringBuilder payName = new StringBuilder();
-	private final StringBuilder payAmount = new StringBuilder();
-	private int payFocus;
-	private final java.util.List<Integer> dragSlots = new java.util.ArrayList<>();
+	boolean dragActive ;
+	int pendingIdx = -1;
+	boolean pendingInv ;
+	boolean pendingAll ;
+	int pressKey = -9999;
+	final StringBuilder payName = new StringBuilder();
+	final StringBuilder payAmount = new StringBuilder();
+	int payFocus ;
+	final java.util.List<Integer> dragSlots = new java.util.ArrayList<>();
 	private long lastShopActionAt;
 	/** T01：最近一次点买/卖的商品与金额，用来在回包后补「含税 x 铜」。 */
-	private String lastTradeItem = "";
-	private long lastTradeAmount;
-	private boolean lastTradeBuy = true;
+	String lastTradeItem = "";
+	long lastTradeAmount ;
+	boolean lastTradeBuy = true;
 	private long lastMarketActionAt;
 	/** §43.6：排行榜「同步」按钮 60 秒冷却（只读缓存，防刷）。 */
-	private long lastRankSyncAt;
+	long lastRankSyncAt ;
 	private Object lastShopPage;
-	private int lastDragSlot = -1;
-	private int rankBoard;
+	int lastDragSlot = -1;
+	int rankBoard ;
 	/**
 	 * 「只看活跃」开关。**默认 true**（spec §43.6：排行榜默认只统计 lastSeen 在 activeDays 内的人）。
 	 *
 	 * <p>曾经默认 false ⇒ 首次打开看到的是「含长期未上线」的全量榜，
 	 * 而 {@code /rt rank} 推下来的是活跃榜、复选框却画成未勾 ⇒ 界面状态和数据对不上。
 	 */
-	private boolean rankActiveOnly = true;
-	private boolean rankDropdown;
+	boolean rankActiveOnly = true;
+	boolean rankDropdown ;
 
 	public HubScreen() {
 		super(Text.literal("Redtale"));
@@ -503,578 +508,22 @@ public class HubScreen extends Screen {
 	}
 
 	private boolean handleClick(double mouseX, double mouseY, int button) {
-		// ★确认条在搜索框上方★：必须先判它，否则点"确认"会变成聚焦搜索框
-		if (page == HubPage.STORAGE && HubStoragePage.confirmUpgrade) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			var r0 = HubStoragePage.click(mouseX, mouseY, cx, cy, cw, ch, button, storageScroll);
-			if (r0.hit() == HubStoragePage.Hit.CONFIRM_YES) {
-				HubStoragePage.confirmUpgrade = false;
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.upgrade();
-				setStatus("正在扩容…");
-				return true;
-			}
-			if (r0.hit() == HubStoragePage.Hit.CONFIRM_NO) {
-				HubStoragePage.confirmUpgrade = false;
-				return true;
-			}
-		}
-		if (inSearchBox(mouseX, mouseY)) {
-			searchFocused = true;
-			return true;
-		}
-		searchFocused = false;
-		// 关闭框已在 mouseClicked 里判定（同一套 frame 坐标），这里原来还有一份 12px 的重复命中区，
-		// 永远走不到，删掉免得以后改布局只改一处。
-		if (button == 0 && mouseX >= panelX && mouseX < panelX + sidebarW()) {
-			int idx = sidebar.rowAt(frame, mouseY);
-			HubPage[] all = HubPage.values();
-			if (idx >= 0 && idx < all.length) {
-				if (page != all[idx]) ClientUiConfig.click();
-				searchFocused = false;
-				if (page == HubPage.STORAGE && all[idx] != HubPage.STORAGE) {
-					HubStoragePage.confirmUpgrade = false;
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
-				}
-				page = all[idx];
-				if (page == HubPage.SHOP) requestShopPage();
-				if (page == HubPage.MARKET) com.akira.redtale.economy.client.market.MarketClientNetworking.request();
-				if (page == HubPage.BOUNTY) requestBounty();
-				if (page == HubPage.BOARD) {
-					HubBoardPage.resetScroll();
-					com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
-					setStatus("正在读取委托板…");
-				}
-				if (page == HubPage.LEDGER) {
-					HubLedgerPage.reset();
-					com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
-					setStatus("正在读取流水…");
-				}
-				if (page == HubPage.PASS) requestPass();
-				if (page == HubPage.GUILD) requestGuild();
-				if (page == HubPage.STORAGE) {
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
-			com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
-				}
-				return true;
-			}
-		}
-		// R40 市场：动作全部先改客户端视图状态，再发请求；服务端回包覆盖
-		if (button == 0 && page == HubPage.MARKET) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			int[] idx = {-1};
-			HubMarketPage.Action a = HubMarketPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch,
-					marketSelected, idx);
-			var snap = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST;
-			switch (a) {
-				case TOGGLE_MINE -> {
-					com.akira.redtale.economy.client.market.MarketClientNetworking.request(0,
-							!snap.mineOnly(), com.akira.redtale.economy.client.market.MarketClientNetworking.query);
-					marketSelected = -1;
-				}
-				case SYNC -> {
-					com.akira.redtale.economy.client.market.MarketClientNetworking.request();
-					setStatus("正在刷新市场…");
-				}
-				case CYCLE_PRICE -> HubMarketPage.cyclePrice();
-				case SELL -> {
-					com.akira.redtale.economy.client.market.MarketClientNetworking.sell(HubMarketPage.price());
-					setStatus("正在挂单…");
-				}
-				case PREV -> {
-					com.akira.redtale.economy.client.market.MarketClientNetworking.request(
-							Math.max(0, snap.page() - 1), snap.mineOnly(),
-							com.akira.redtale.economy.client.market.MarketClientNetworking.query);
-					marketSelected = -1;
-				}
-				case NEXT -> {
-					com.akira.redtale.economy.client.market.MarketClientNetworking.request(
-							snap.page() + 1, snap.mineOnly(),
-							com.akira.redtale.economy.client.market.MarketClientNetworking.query);
-					marketSelected = -1;
-				}
-				case BUY -> {
-					if (marketSelected >= 0 && marketSelected < snap.offers().size()) {
-						com.akira.redtale.economy.client.market.MarketClientNetworking.buy(
-								snap.offers().get(marketSelected).id());
-						setStatus("正在购买…");
-					}
-				}
-				case CANCEL -> {
-					if (marketSelected >= 0 && marketSelected < snap.offers().size()) {
-						com.akira.redtale.economy.client.market.MarketClientNetworking.cancel(
-								snap.offers().get(marketSelected).id());
-						setStatus("正在撤单…");
-					}
-				}
-				default -> {
-					if (idx[0] >= 0) marketSelected = idx[0];
-				}
-			}
-			ClientUiConfig.click();
-			return true;
-		}
-		if (button == 0 && page == HubPage.MAIL) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			HubMailPage.Action a = HubMailPage.click(mouseX, mouseY, cx, cy, cw, ch);
-			var mc = MinecraftClient.getInstance();
-			if (a == HubMailPage.Action.OPEN_MAIL) {
-				if (mc.player != null) mc.player.networkHandler.sendChatCommand("mail");
-				return true;
-			}
-			if (a == HubMailPage.Action.CLAIM) {
-				if (mc.player != null) mc.player.networkHandler.sendChatCommand("mail claim");
-				setStatus("正在领取邮件附件…");
-				return true;
-			}
-		}
-		if ((button == 0 || button == 1) && page == HubPage.PAY) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			var r = HubPayPage.click(mouseX, mouseY, cx, cy, cw, ch);
-			switch (r.hit()) {
-				case FIELD_NAME -> payFocus = 1;
-				case FIELD_AMOUNT -> payFocus = 2;
-				case CLEAR -> {
-					payName.setLength(0);
-					payAmount.setLength(0);
-					payFocus = 0;
-				}
-				case SEND -> {
-					long amt;
-					try {
-						amt = Long.parseLong(payAmount.toString().trim());
-					} catch (Exception e) {
-						amt = -1;
-					}
-					if (payName.length() == 0 || amt <= 0) {
-						setStatus("请填写玩家名和金额");
-					} else {
-						com.akira.redtale.economy.client.pay.PayClientNetworking.pay(
-								payName.toString().trim(), amt);
-						setStatus("已提交转账…");
-					}
-				}
-				default -> payFocus = 0;
-			}
-			return true;
-		}
-		if ((button == 0 || button == 1) && page == HubPage.TITLES) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			var r = HubTitlesPage.click(mouseX, mouseY, cx, cy, cw, ch, button);
-			var owned = com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.owned();
-			if (r.index() >= 0 && r.index() < owned.size()) {
-				String t = owned.get(r.index());
-				if (r.hit() == HubTitlesPage.Hit.REMOVE) {
-					com.akira.redtale.economy.client.title.TitlesClientNetworking.remove(t);
-				} else if (r.hit() == HubTitlesPage.Hit.SELECT) {
-					com.akira.redtale.economy.client.title.TitlesClientNetworking.select(t);
-				}
-			}
-			return true;
-		}
-		if ((button == 0 || button == 1) && page == HubPage.STORAGE) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			var r = HubStoragePage.click(mouseX, mouseY, cx, cy, cw, ch, button, storageScroll);
-			boolean shift = hasShiftDown();
-			var wnet = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.class;
-			if (r.hit() == HubStoragePage.Hit.UPGRADE) {
-				if (button == 0) {
-					if (com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.NEXT_SLOTS <= 0) {
-						setStatus("仓储已是最大格数");
-						return true;
-					}
-					HubStoragePage.confirmUpgrade = true;
-				}
-				return true;
-			}
-			if (r.hit() == HubStoragePage.Hit.CONFIRM_YES) {
-				HubStoragePage.confirmUpgrade = false;
-				com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.upgrade();
-				setStatus("正在扩容…");
-				return true;
-			}
-			if (r.hit() == HubStoragePage.Hit.CONFIRM_NO) {
-				HubStoragePage.confirmUpgrade = false;
-				return true;
-			}
-			if (r.hit() == HubStoragePage.Hit.SORT) {
-				if (button == 0) {
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localSort();
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.sort();
-					setStatus("正在整理…");
-				}
-				return true;
-			}
-			if (r.hit() == HubStoragePage.Hit.CAT) {
-				if (button == 0) {
-					int hit = HubStoragePage.hitCat(mouseX, mouseY, cx, cy, cw);
-					if (hit == -2) {
-						HubStoragePage.catOpen = !HubStoragePage.catOpen;
-						ClientUiConfig.click();
-					} else if (hit >= 0) {
-						storageCat = hit;
-						HubStoragePage.catOpen = false;
-						ClientUiConfig.click();
-					}
-				}
-				return true;
-			}
-			if (r.hit() == HubStoragePage.Hit.STORAGE || r.hit() == HubStoragePage.Hit.INV) {
-				int idx = r.index();
-				int key = (r.hit() == HubStoragePage.Hit.STORAGE ? 1000 : 0) + idx;
-				long now = System.currentTimeMillis();
-				boolean dbl = now - lastSlotAt < 400 && !dragPlacing;
-				lastSlotKey = key;
-				lastSlotAt = now;
+		return HubClicks.handle(this, mouseX, mouseY, button);
+	}
 
-				// ★必须用镜像 CURSOR★：LAST.cursor() 要等服务端回包，会滞后一帧导致“抓起来又当成空手”
-				var cur = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.CURSOR;
-				boolean holding = cur != null && !cur.isEmpty();
-
-				if (dbl && holding) {
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localCollect();
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.collect();
-					return true;
-				}
-				if (r.hit() == HubStoragePage.Hit.STORAGE) {
-					var snap = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.LAST;
-					if (idx >= 0 && idx < snap.stacks().size()) {
-						var st = snap.stacks().get(idx);
-						if (st != null && !st.isEmpty()
-								&& !HubStoragePage.visible(st, storageQuery.toString(), storageCat)) {
-							return true;
-						}
-					}
-					if (shift) {
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localQuickOut(idx);
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.quick(idx);
-						dragPlacing = true;
-						dragActive = true;
-						dragButton = button;
-						lastDragSlot = (r.hit() == HubStoragePage.Hit.STORAGE ? 1000 : 0) + idx;
-					} else if (holding) {
-						// ★按下不放下★：先进入拖拽态，松手时若没拖动才整叠放下
-						dragActive = true;
-						dragButton = button;
-						pendingIdx = idx;
-						pendingInv = false;
-						pendingAll = button == 0;
-						pressKey = 1000 + idx;
-						lastDragSlot = pressKey;
-						dragSlots.clear();
-						dragSlots.add(idx);
-					} else {
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localPick(
-								idx, button == 1);
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.pick(
-								idx, button == 1);
-						dragPlacing = true;
-						dragActive = true;
-						dragButton = button;
-						lastDragSlot = (r.hit() == HubStoragePage.Hit.STORAGE ? 1000 : 0) + idx;
-					}
-				} else {
-					final int realSlot = HubStoragePage.displayToSlot(idx);
-					var mc2 = MinecraftClient.getInstance();
-					if (mc2.player != null) {
-						var st2 = mc2.player.getInventory().getStack(realSlot);
-						if (!st2.isEmpty()
-								&& !HubStoragePage.visible(st2, storageQuery.toString(), storageCat)) {
-							return true;
-						}
-					}
-					if (shift) {
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localQuickIn(realSlot);
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.quickInv(realSlot);
-						dragPlacing = true;
-						dragActive = true;
-						dragButton = button;
-						lastDragSlot = (r.hit() == HubStoragePage.Hit.STORAGE ? 1000 : 0) + idx;
-					} else if (!holding) {
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.localInvPick(
-								realSlot, button == 1);
-						com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.invPick(
-								realSlot, button == 1);
-						dragPlacing = true;
-						dragActive = true;
-						dragButton = button;
-						lastDragSlot = (r.hit() == HubStoragePage.Hit.STORAGE ? 1000 : 0) + idx;
-					} else {
-						dragActive = true;
-						dragButton = button;
-						pendingIdx = realSlot;
-						pendingInv = true;
-						pendingAll = button == 0;
-						pressKey = realSlot;
-						lastDragSlot = realSlot;
-					}
-				}
-				return true;
-			}
-			return true;
-		}
-		if (button == 0 && page == HubPage.PASS) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			HubPassPage.Claim c = HubPassPage.click(mouseX, mouseY, cx, cy, cw, ch, passScroll);
-			if (c != null) {
-				var mc = MinecraftClient.getInstance();
-				String cmd = "premium".equals(c.track())
-						? "pass claim " + c.level() + " premium"
-						: "pass claim " + c.level();
-				if (mc.player != null) mc.player.networkHandler.sendChatCommand(cmd);
-				setStatus("正在领取 Lv" + c.level() + " · " + ("premium".equals(c.track()) ? "付费" : "免费"));
-				return true;
-			}
-		}
-		if (button == 0 && page == HubPage.BOUNTY) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			// 用几何判定，避免为了命中再画一次
-			int cardH = 44;
-			int idx = (int) ((mouseY - (cy + 16)) / (cardH + 4));
-			var list = com.akira.redtale.economy.client.bounty.BountyClientNetworking.LAST.entries();
-			if (idx >= 0 && idx < list.size()) {
-				var e = list.get(idx);
-				if (!e.claimed() && e.done()) {
-					var mc = MinecraftClient.getInstance();
-					if (mc.player != null) {
-						mc.player.networkHandler.sendChatCommand("bounty claim " + e.index());
-						setStatus("正在领取：" + e.id());
-					}
-				}
-				return true;
-			}
-		}
-		if (button == 0 && page == HubPage.LEDGER) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			if (HubLedgerPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch)) {
-				com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
-				setStatus("正在按新条件筛选…");
-				return true;
-			}
-			return true; // 只读页：点了空白也别穿透到底下的东西
-		}
-		if (button == 0 && page == HubPage.BOARD) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			int[] idx = {-1};
-			HubBoardPage.Action a = HubBoardPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch, idx);
-			var list = com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.LAST.entries();
-			var mc = MinecraftClient.getInstance();
-			if (a == HubBoardPage.Action.REFRESH) {
-				com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
-				setStatus("正在刷新委托板…");
-				return true;
-			}
-			if (a != HubBoardPage.Action.NONE && idx[0] >= 0 && idx[0] < list.size() && mc.player != null) {
-				String id = list.get(idx[0]).id();
-				String cmd = switch (a) {
-					case ACCEPT -> "board accept " + id;
-					case DELIVER -> "board deliver " + id;
-					case CANCEL -> "board cancel " + id;
-					default -> "";
-				};
-				if (!cmd.isEmpty()) {
-					mc.player.networkHandler.sendChatCommand(cmd);
-					setStatus(switch (a) {
-						case ACCEPT -> "正在接单：" + id;
-						case DELIVER -> "正在交付：" + id;
-						default -> "正在撤销：" + id;
-					});
-					// 动作回包后由服务端快照覆盖列表；这里不本地改状态，避免与服务端不一致
-					return true;
-				}
-			}
-			if (idx[0] >= 0) return true;
-		}
-		if (button == 0 && page == HubPage.SETTINGS) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			HubSettingsPage.Row row = HubSettingsPage.click(mouseX, mouseY, cx, cy, cw, ch);
-			if (row != null) {
-				ClientUiConfig.click();
-				setStatus(HubSettingsPage.toggle(row));
-				return true;
-			}
-		}
-		if (button == 0 && page == HubPage.RANK) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int dd = HubRankPage.hitDropdown(mouseX, mouseY, cx, cy, rankDropdown, panelY + panelH - HubFrame.BOTTOM_BAR);
-			if (dd == -2) {
-				rankDropdown = !rankDropdown;
-				ClientUiConfig.click();
-				return true;
-			}
-			if (dd >= 0) {
-				rankBoard = dd;
-				rankDropdown = false;
-				ClientUiConfig.click();
-				return true;
-			}
-			if (rankDropdown) {
-				rankDropdown = false;
-				return true;
-			}
-			HubRankPage.Action ra = HubRankPage.click(mouseX, mouseY, cx, cy, cw,
-					panelH - HubFrame.TOP_BAR - HubFrame.BOTTOM_BAR - 16, rankBoard);
-			if (ra == HubRankPage.Action.ACTIVE_TOGGLE) {
-				rankActiveOnly = !rankActiveOnly;
-				ClientUiConfig.click();
-				// U9：开关要真的影响数据 —— 带参数重新请求，服务端挑另一份缓存
-				com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
-				setStatus(rankActiveOnly ? "只显示活跃玩家" : "显示全部玩家（含长期未上线）");
-				return true;
-			}
-			if (ra == HubRankPage.Action.SYNC) {
-				int left = rankSyncCooldownLeft();
-				if (left > 0) {
-					// 冷却中只更新界面内提示，不重发请求（§43.6 防刷）
-					setStatus("同步冷却中，还需 " + left + " 秒");
-					return true;
-				}
-				lastRankSyncAt = System.currentTimeMillis();
-				com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
-				setStatus("正在同步榜单…");
-				return true;
-			}
-		}
-		if (button == 0 && page == HubPage.SHOP) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			int[] idx = {shopSelected};
-			String[] outCat = {""};
-			HubShopPage.Action a = HubShopPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch,
-					shopSelected, idx, outCat);
-			if (a == HubShopPage.Action.NONE && idx[0] != shopSelected) {
-				shopSelected = idx[0];
-				return true;
-			}
-			var st = ShopClientState.page();
-			switch (a) {
-				case SYNC -> {
-					requestShopPage();
-					setStatus("正在同步商品…");
-				}
-				case PREV -> {
-					ShopClientNetworking.requestPage(st.shopId(), Math.max(0, st.page() - 1), shopQuery.toString());
-					shopSelected = -1;
-				}
-				case NEXT -> {
-					ShopClientNetworking.requestPage(st.shopId(), st.page() + 1, shopQuery.toString());
-					shopSelected = -1;
-				}
-				case BUY -> {
-					if (shopSelected >= 0 && shopSelected < st.entries().size()) {
-						var e = st.entries().get(shopSelected);
-						// T01：记下这一笔的金额，结算回包后才能在状态行补「含税 x 铜」
-						lastTradeItem = e.itemId();
-						lastTradeAmount = e.buyPrice();
-						lastTradeBuy = true;
-						ShopClientNetworking.buy(st.shopId(), e.itemId(), 1);
-						setStatus("正在购买 " + e.itemId());
-					}
-				}
-				case SELL -> {
-					if (shopSelected >= 0 && shopSelected < st.entries().size()) {
-						var e = st.entries().get(shopSelected);
-						lastTradeItem = e.itemId();
-						lastTradeAmount = e.sellPrice();
-						lastTradeBuy = false;
-						ShopClientNetworking.sell(st.shopId(), e.itemId(), 1);
-						setStatus("正在出售 " + e.itemId());
-					}
-				}
-				// U11b：筛选变化一律回到第 1 页，条件随请求发服务端
-				case FILTER_MOD -> {
-					cycleFilter(0);
-					requestShopPage();
-				}
-				case FILTER_CAT -> {
-					cycleFilter(1);
-					requestShopPage();
-				}
-				case FILTER_PRICE -> {
-					cycleFilter(2);
-					requestShopPage();
-				}
-				case FILTER_STOCK -> {
-					cycleFilter(3);
-					requestShopPage();
-				}
-				// U11：目录树下钻 / 回上一级 —— 树位置即筛选条件，一次点击同时完成两件事
-				case TREE_NODE, TREE_UP -> {
-					var f = ShopClientState.filter();
-					ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
-							f.modOrEmpty(), outCat[0], f.minPrice(), f.maxPrice(), f.inStockOnly()));
-					shopSelected = -1;
-					requestShopPage();
-					setStatus(outCat[0].isEmpty() ? "已回到全部分类"
-							: "分类：" + String.join(" › ",
-									com.akira.redtale.economy.shop.ShopTree.crumbs(outCat[0])));
-				}
-				default -> {
-				}
-			}
-			if (a != HubShopPage.Action.NONE) return true;
-		}
-		if (button == 0 && page == HubPage.CHECKIN) {
-			int cx = frame.contentX();
-			int cy = frame.contentY();
-			int cw = frame.contentW();
-			int ch = frame.contentH();
-			HubCheckinPage.Action a = HubCheckinPage.click(mouseX, mouseY, cx, cy, cw, ch,
-					com.akira.redtale.economy.client.checkin.CheckinClientNetworking.LAST, monthOffset);
-			var mc = MinecraftClient.getInstance();
-			switch (a) {
-				case PREV_MONTH -> monthOffset = Math.max(-12, monthOffset - 1);
-				case NEXT_MONTH -> monthOffset = Math.min(0, monthOffset + 1);
-				case CHECKIN -> {
-					if (mc.player != null) mc.player.networkHandler.sendChatCommand("checkin");
-					setStatus("正在签到…");
-				}
-				case MAKEUP -> {
-					if (mc.player != null) mc.player.networkHandler.sendChatCommand("checkin make-up");
-					setStatus("正在补签…");
-				}
-				default -> {
-				}
-			}
-			if (a != HubCheckinPage.Action.NONE) return true;
-		}
+	/** 兜底：转发到 Screen.mouseClicked（handler 不认领时走原逻辑）。 */
+	boolean fallbackClick(double mouseX, double mouseY, int button) {
 		return super.mouseClicked(mouseX, mouseY, button);
+	}
+
+	/** 字体渲染器给 handler 用（Screen.textRenderer 是 protected）。 */
+	net.minecraft.client.font.TextRenderer text() {
+		return this.textRenderer;
+	}
+
+	/** 供 handler 用（Screen.hasShiftDown 是 protected static）。 */
+	boolean shiftDown() {
+		return hasShiftDown();
 	}
 
 	@Override
@@ -1088,7 +537,7 @@ public class HubScreen extends Screen {
 	}
 
 	/** 鼠标是否落在当前页的搜索框里。 */
-	private boolean inSearchBox(double mx, double my) {
+	boolean inSearchBox(double mx, double my) {
 		if (page != HubPage.SHOP && page != HubPage.STORAGE) return false;
 		// 与渲染共用 frame 的搜索框矩形，别再手写 cw-40 / cy+16
 		int x = frame.contentX();
@@ -1098,7 +547,7 @@ public class HubScreen extends Screen {
 	}
 
 	/** 排行页「同步」还剩多少秒冷却（0 = 可点）；冷却秒数读客户端配置，0 表示不限。 */
-	private int rankSyncCooldownLeft() {
+	int rankSyncCooldownLeft() {
 		int cd = ClientUiConfig.rankSyncCooldownSeconds;
 		if (cd <= 0 || lastRankSyncAt <= 0) return 0;
 		long left = cd * 1000L - (System.currentTimeMillis() - lastRankSyncAt);
@@ -1137,22 +586,22 @@ public class HubScreen extends Screen {
 		return rankSyncCooldownLeft();
 	}
 
-	private void requestGuild() {
+	void requestGuild() {
 		var mc = MinecraftClient.getInstance();
 		if (mc.player != null) mc.player.networkHandler.sendChatCommand("guild");
 	}
 
-	private void requestPass() {
+	void requestPass() {
 		var mc = MinecraftClient.getInstance();
 		if (mc.player != null) mc.player.networkHandler.sendChatCommand("pass");
 	}
 
-	private void requestBounty() {
+	void requestBounty() {
 		var mc = MinecraftClient.getInstance();
 		if (mc.player != null) mc.player.networkHandler.sendChatCommand("bounty list");
 	}
 
-	private void requestShopPage() {
+	void requestShopPage() {
 		shopRequested = true;
 		String sid = ShopClientState.shopIdToRequest();
 		if (sid.isEmpty()) return;   // 还没收到 S2C_OPEN，等它到了再请求，别发空 id 换回空页
