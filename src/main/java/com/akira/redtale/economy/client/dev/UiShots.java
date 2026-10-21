@@ -60,6 +60,12 @@ public final class UiShots {
 	private static final int WIN_H = 480;
 	/** 强制 GUI 缩放（0=自动，2=固定）。 */
 	private static final int GUI_SCALE = 2;
+
+	// ——— T44 轮转：本档位（由 flag 文件内容覆盖，默认 = Aki 定的窗口口径） ———
+	/** 生效的 guiScale / 窗口尺寸；{@code scale=0} 表示「自动」。 */
+	private static int guiScale = GUI_SCALE;
+	private static int winW = WIN_W;
+	private static int winH = WIN_H;
 	/**
 	 * 切分辨率后的 settle（tick）。
 	 *
@@ -80,6 +86,8 @@ public final class UiShots {
 	private static boolean resReady;
 	/** 请求切全屏的那个 tick；-1 表示当前没有待生效的切换。 */
 	private static int fsToggleAt = -1;
+	/** 本次全屏里是否已经重新应用过 guiScale（窗口态会被钳制，必须进全屏后再设一次）。 */
+	private static boolean fsScaleApplied;
 	/** 成对率统计：窗口版 / 全屏版各存了几张。 */
 	private static int winShots;
 	private static int fsShots;
@@ -94,6 +102,27 @@ public final class UiShots {
 			return;
 		}
 		active = true;
+		// T44 轮转：flag 内容可覆盖档位，例如 "scale=3" 或 "win=1280x720\nscale=0"。
+		// 组合来自 _shot_plan.py next（fs:s3 / fs:auto 等），不再需要改代码重编。
+		try {
+			String body = Files.readString(gameDir.resolve(FLAG), StandardCharsets.UTF_8).trim();
+			for (String line : body.split("[\\r\\n]+")) {
+				String s = line.trim();
+				if (s.startsWith("scale=")) {
+					guiScale = Integer.parseInt(s.substring(6).trim());
+					LOG.add("flag override guiScale=" + guiScale);
+				} else if (s.startsWith("win=")) {
+					String[] wh = s.substring(4).trim().split("[xX]");
+					if (wh.length == 2) {
+						winW = Integer.parseInt(wh[0].trim());
+						winH = Integer.parseInt(wh[1].trim());
+						LOG.add("flag override window=" + winW + "x" + winH);
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOG.add("flag parse failed (" + e.getMessage() + "), use default scale=" + GUI_SCALE);
+		}
 		LOG.add("shots start, gameDir=" + gameDir.toAbsolutePath());
 		ClientTickEvents.END_CLIENT_TICK.register(UiShots::onTick);
 	}
@@ -433,10 +462,10 @@ public final class UiShots {
 			// 上一轮可能停在全屏，先回窗口，否则 setWindowedSize 不生效
 			win.toggleFullscreen();
 		}
-		mc.options.getGuiScale().setValue(GUI_SCALE);
-		win.setWindowedSize(WIN_W, WIN_H);
+		mc.options.getGuiScale().setValue(guiScale);
+		win.setWindowedSize(winW, winH);
 		mc.onResolutionChanged();
-		LOG.add("resolution pinned to " + WIN_W + "x" + WIN_H + " guiScale=" + GUI_SCALE
+		LOG.add("resolution pinned to " + winW + "x" + winH + " guiScale=" + guiScale
 				+ " (fb=" + win.getFramebufferWidth() + "x" + win.getFramebufferHeight()
 				+ ", logical=" + win.getScaledWidth() + "x" + win.getScaledHeight() + ")");
 	}
@@ -468,8 +497,21 @@ public final class UiShots {
 			save(mc, name, false);
 			win.toggleFullscreen();
 			fsToggleAt = tick;
+			fsScaleApplied = false;
 			stepAt = tick + RES_SETTLE;
 			LOG.add("toggle fullscreen at tick " + tick);
+			return;
+		}
+		// ★全屏后必须重设 guiScale★：窗口态 854x480 会被 MC 钳到 scale≤2（最小 320x240），
+		// 所以 flag 里写 scale=3 在窗口态拿不到，只有进了 2560x1440 全屏才允许。设完再等一轮 settle。
+		if (!fsScaleApplied) {
+			fsScaleApplied = true;
+			int before = mc.options.getGuiScale().getValue();
+			mc.options.getGuiScale().setValue(guiScale);
+			mc.onResolutionChanged();
+			stepAt = tick + RES_SETTLE;
+			LOG.add("fullscreen scale " + before + " -> " + mc.options.getGuiScale().getValue()
+					+ " (requested " + guiScale + ") at tick " + tick);
 			return;
 		}
 		save(mc, name, true);
