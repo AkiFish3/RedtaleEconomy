@@ -18,15 +18,11 @@ public class REHandlers {
     public static final ExtendedScreenHandlerType<PackageChooseHandler> PACKAGE_CHOOSE_SCREEN =
             Registry.register(Registries.SCREEN_HANDLER, LegacyInit.id("package_choose"),
                     new ExtendedScreenHandlerType<>(
-                            (syncId, inventory, buf) -> {
-                                // 🔥 关键日志：确认客户端是否收到了创建请求
-                                System.err.println("🔥🔥 [REHandlers] FACTORY CALLED! syncId=" + syncId);
-                                return new PackageChooseHandler(syncId, inventory, buf);
-                            }
+                            (syncId, inventory, buf) -> new PackageChooseHandler(syncId, inventory, buf)
                     )
             );
 
     public static void register() {
-        LegacyInit.LOGGER.info("✅ Registered LegacyInit screen handlers");
+        LegacyInit.LOGGER.info("[legacy] ScreenHandler 注册完成（package_edit / package_choose）");
     }
 }
