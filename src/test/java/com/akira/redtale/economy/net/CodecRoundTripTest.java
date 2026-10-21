@@ -87,7 +87,8 @@ class CodecRoundTripTest {
 
 		all.add(of("title/snapshot",
 				Codec.of("title/snapshot", TitleProtocol::write, TitleProtocol::read),
-				() -> new TitleProtocol.Snapshot(true, "titles.carpenter",
+				() -> new TitleProtocol.Snapshot(true, "titles.carpenter", "工匠", true,
+						0xFFD700, 0x8A2BE2,
 						List.of("titles.newbie", "titles.carpenter"))));
 
 		all.add(of("market/snapshot",

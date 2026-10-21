@@ -21,8 +21,19 @@ public final class TitleConfig {
 					"styledchat set {player} display_name {value}",
 					"实际执行的命令（不带斜杠）；{player}=玩家名，{value}=格式化后的 display_name"))
 			.field("displayNameTemplate", ConfigSchema.string(
-					"<white>[</white><c:gold>{title}</c><white>]</white> <white>{player}</white>",
-					"称号模板：{title}=称号文本，{player}=玩家名；用 StyledChat 的标签语法"))
+					"<white>[</white>{title}<white>]</white> <white>{player}</white>{suffix}",
+					"称号模板：{title}=前缀（已带颜色/渐变标签），{suffix}=后缀块（没后缀时是空串），"
+							+ "{player}=玩家名；用 StyledChat 的标签语法"))
+			.field("styling", ConfigSchema.obj("颜色 / 渐变（T23）")
+					.field("enabled", ConfigSchema.bool(true,
+							"是否把颜色写进聊天名；关闭=聊天只出纯文本（界面预览仍有颜色）"))
+					.field("chatGradient", ConfigSchema.bool(true,
+							"聊天里是否逐字渲染渐变（display_name 会显著变长；关闭=用起始色）"))
+					.field("defaultColor1", ConfigSchema.string("#FFD700",
+							"新称号的起始色（#RRGGBB）"))
+					.field("defaultColor2", ConfigSchema.string("#8A2BE2",
+							"渐变终止色（#RRGGBB）"))
+					.field("maxSuffixLength", ConfigSchema.integer(12, 1, 64, "后缀文本最大长度")))
 			.field("restoreTemplate", ConfigSchema.string(
 					"<white>[</white><c:green>玩家</c><white>]</white> <white>${vanillaDisplayName}</white>",
 					"清除称号时还原成的 display_name（StyledChat 默认样式）"))
@@ -63,9 +74,38 @@ public final class TitleConfig {
 		return store().getString("commandTemplate", "styledchat set {player} display_name {value}");
 	}
 
+	/** T23 之前的默认模板把颜色写死成 {@code <c:gold>{title}</c>}，升级后自动换成新默认，
+	 *  否则 TitleStyle 生成的配色会被外层金标签盖掉。管理员自定义过的模板原样保留。 */
+	private static final String LEGACY_TEMPLATE =
+			"<white>[</white><c:gold>{title}</c><white>]</white> <white>{player}</white>";
+	private static final String DEFAULT_TEMPLATE =
+			"<white>[</white>{title}<white>]</white> <white>{player}</white>{suffix}";
+
 	public static String displayNameTemplate() {
-		return store().getString("displayNameTemplate",
-				"<white>[</white><c:gold>{title}</c><white>]</white> <white>{player}</white>");
+		String raw = store().getString("displayNameTemplate", DEFAULT_TEMPLATE);
+		return LEGACY_TEMPLATE.equals(raw.trim()) ? DEFAULT_TEMPLATE : raw;
+	}
+
+	// ---------------------------------------------------------------- T23 样式
+
+	public static boolean stylingEnabled() {
+		return store().getPathBool("styling.enabled", true);
+	}
+
+	public static boolean chatGradient() {
+		return store().getPathBool("styling.chatGradient", true);
+	}
+
+	public static String defaultColor1() {
+		return store().getPathString("styling.defaultColor1", "#FFD700");
+	}
+
+	public static String defaultColor2() {
+		return store().getPathString("styling.defaultColor2", "#8A2BE2");
+	}
+
+	public static int maxSuffixLength() {
+		return (int) store().getPathLong("styling.maxSuffixLength", 12);
 	}
 
 	public static String restoreTemplate() {

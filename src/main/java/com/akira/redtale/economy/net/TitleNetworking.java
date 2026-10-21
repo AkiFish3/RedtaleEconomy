@@ -16,9 +16,10 @@ public final class TitleNetworking {
 	public static void send(ServerPlayerEntity player) {
 		if (player == null) return;
 		List<String> owned = TitleModule.owned(player.getUuid());
+		TitleModule.TitleData d = TitleModule.data(player.getUuid());
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		TitleProtocol.write(buf, new TitleProtocol.Snapshot(
-				TitleModule.enabled(), TitleModule.current(player.getUuid()), owned));
+				TitleModule.enabled(), d.title, d.suffix, d.gradient, d.color1, d.color2, owned));
 		ServerPlayNetworking.send(player, PacketIds.S2C_TITLES, buf);
 	}
 

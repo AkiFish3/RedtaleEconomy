@@ -57,7 +57,16 @@ public final class TitleModule implements RedtaleModule {
 
 	/** 单个玩家的称号记录。 */
 	public static final class TitleData {
+		/** 前缀（= 原来的 title，字段名保留以兼容 v1 存档）。 */
 		public String title = "";
+		/** T23：后缀（可与前缀同时存在）。 */
+		public String suffix = "";
+		/** T23：起始色（0xRRGGBB）。 */
+		public int color1 = TitleStyle.GOLD;
+		/** T23：渐变终止色。 */
+		public int color2 = TitleStyle.VIOLET;
+		/** T23：是否渐变（false=纯起始色）。 */
+		public boolean gradient = false;
 		public String originalDisplayName = "";
 		public String updatedAt = "";
 		/** 已拥有的称号（去重、保序）。当前生效的那个一定在里面。 */
@@ -65,8 +74,12 @@ public final class TitleModule implements RedtaleModule {
 
 		String toJson() {
 			JsonObject o = new JsonObject();
-			o.addProperty("_version", 1);
+			o.addProperty("_version", 2);
 			o.addProperty("title", title);
+			o.addProperty("suffix", suffix);
+			o.addProperty("color1", TitleStyle.hex(color1));
+			o.addProperty("color2", TitleStyle.hex(color2));
+			o.addProperty("gradient", gradient);
 			o.addProperty("originalDisplayName", originalDisplayName);
 			o.addProperty("updatedAt", updatedAt);
 			com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
@@ -81,6 +94,14 @@ public final class TitleModule implements RedtaleModule {
 				JsonObject o = GSON.fromJson(json, JsonObject.class);
 				if (o == null) return d;
 				d.title = o.has("title") ? o.get("title").getAsString() : "";
+				d.suffix = o.has("suffix") ? o.get("suffix").getAsString() : "";
+				d.color1 = TitleStyle.parse(o.has("color1") ? o.get("color1").getAsString() : null,
+						TitleStyle.GOLD);
+				d.color2 = TitleStyle.parse(o.has("color2") ? o.get("color2").getAsString() : null,
+						TitleStyle.VIOLET);
+				d.gradient = o.has("gradient") && o.get("gradient").isJsonPrimitive()
+						&& o.get("gradient").getAsJsonPrimitive().isBoolean()
+						&& o.get("gradient").getAsBoolean();
 				d.originalDisplayName = o.has("originalDisplayName") ? o.get("originalDisplayName").getAsString() : "";
 				d.updatedAt = o.has("updatedAt") ? o.get("updatedAt").getAsString() : "";
 				if (o.has("owned") && o.get("owned").isJsonArray()) {
@@ -239,11 +260,84 @@ public final class TitleModule implements RedtaleModule {
 
 	// ---------------------------------------------------------------- 设置 / 还原
 
-	/** 渲染 display_name。 */
+	/** 渲染 display_name（旧签名，纯文本前缀 + 默认配色；命令/物品仍走它）。 */
 	public static String render(String title, String playerName) {
+		return render(title, "", playerName, false, TitleStyle.GOLD, TitleStyle.VIOLET);
+	}
+
+	/**
+	 * 渲染 display_name（T23）。
+	 *
+	 * <p>{@code {title}} 注入带颜色标签的前缀，{@code {suffix}} 注入「[后缀]」块（没有则空串）。
+	 * {@code styling.enabled=false} 时两者都注入纯文本 ⇒ 聊天里看不出样式，但界面预览仍有颜色。
+	 */
+	public static String render(String prefix, String suffix, String playerName,
+			boolean gradient, int color1, int color2) {
+		boolean chat = TitleConfig.stylingEnabled();
+		boolean grad = gradient && TitleConfig.chatGradient();
+		String p = prefix == null ? "" : prefix;
+		String s = suffix == null ? "" : suffix;
+		String styledPrefix = chat ? TitleStyle.chat(p, grad, color1, color2) : TitleStyle.escape(p);
+		String suffixBlock = s.isEmpty() ? ""
+				: " <white>[</white>" + (chat ? TitleStyle.chat(s, grad, color1, color2) : TitleStyle.escape(s))
+						+ "<white>]</white>";
 		return TitleConfig.displayNameTemplate()
-				.replace("{title}", title == null ? "" : title)
+				.replace("{title}", styledPrefix)
+				.replace("{suffix}", suffixBlock)
 				.replace("{player}", playerName == null ? "" : playerName);
+	}
+
+	/** 用记录里的样式渲染（前缀为空时返回空串，由调用方决定还原）。 */
+	public static String render(TitleData d, String playerName) {
+		if (d == null || d.title.isBlank()) return "";
+		return render(d.title, d.suffix, playerName, d.gradient, d.color1, d.color2);
+	}
+
+	/** 把当前记录重新写进聊天名（前缀为空 ⇒ 还原）。 */
+	public static synchronized void apply(ServerPlayerEntity player) {
+		if (player == null) return;
+		TitleData d = data(player.getUuid());
+		if (d.title.isBlank()) {
+			clearTitle(player);
+			return;
+		}
+		d.updatedAt = now();
+		save(player.getUuid(), d);
+		if (!appliesToChat()) return;
+		runStyledChat(player.getGameProfile().getName(), render(d, player.getGameProfile().getName()));
+	}
+
+	/** 设置后缀（空串 = 清除）；前缀未装备时不改聊天（只存）。 */
+	public static synchronized boolean setSuffix(ServerPlayerEntity player, String suffix) {
+		if (player == null || !enabled()) return false;
+		String clean = suffix == null ? "" : suffix.trim();
+		int max = TitleConfig.maxSuffixLength();
+		if (clean.length() > max) clean = clean.substring(0, max);
+		TitleData d = data(player.getUuid());
+		d.suffix = clean;
+		save(player.getUuid(), d);
+		if (d.title.isBlank()) return false;
+		apply(player);
+		return appliesToChat();
+	}
+
+	/** 设置颜色（gradient=true 时 c2 生效）。 */
+	public static synchronized boolean setStyle(ServerPlayerEntity player,
+			boolean gradient, int color1, int color2) {
+		if (player == null || !enabled()) return false;
+		TitleData d = data(player.getUuid());
+		d.gradient = gradient;
+		d.color1 = color1 & 0xFFFFFF;
+		d.color2 = color2 & 0xFFFFFF;
+		save(player.getUuid(), d);
+		if (d.title.isBlank()) return false;
+		apply(player);
+		return appliesToChat();
+	}
+
+	private static String now() {
+		return java.time.LocalDateTime.now()
+				.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 	}
 
 	/** 给玩家上称号；返回是否真的改了聊天（false = 只记录）。 */
@@ -259,21 +353,20 @@ public final class TitleModule implements RedtaleModule {
 			d.originalDisplayName = TitleConfig.restoreTemplate();
 		}
 		d.title = clean;
-		d.updatedAt = java.time.LocalDateTime.now()
-				.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+		d.updatedAt = now();
 		save(player.getUuid(), d);
 		if (!appliesToChat()) return false;
-		return runStyledChat(player.getGameProfile().getName(), render(clean, player.getGameProfile().getName()));
+		return runStyledChat(player.getGameProfile().getName(), render(d, player.getGameProfile().getName()));
 	}
 
-	/** 清除称号并还原 display_name。 */
+	/** 清除称号（前缀 + 后缀一起清）并还原 display_name。 */
 	public static synchronized void clearTitle(ServerPlayerEntity player) {
 		if (player == null) return;
 		TitleData d = data(player.getUuid());
 		String restore = d.originalDisplayName.isEmpty() ? TitleConfig.restoreTemplate() : d.originalDisplayName;
 		d.title = "";
-		d.updatedAt = java.time.LocalDateTime.now()
-				.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+		d.suffix = "";
+		d.updatedAt = now();
 		save(player.getUuid(), d);
 		if (!appliesToChat()) return;
 		runStyledChat(player.getGameProfile().getName(), restore);

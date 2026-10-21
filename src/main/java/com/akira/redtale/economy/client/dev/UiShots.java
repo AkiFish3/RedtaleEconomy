@@ -636,6 +636,27 @@ public final class UiShots {
 				com.akira.redtale.economy.client.ui.hub.ModulesClientNetworking.set("shop", true);
 				LOG.add("modules restore shop=on");
 			});
+			// ---- T23 称号颜色/渐变 + 前后缀双槽位 ----
+			// 119 先给本机种一份「前缀 + 后缀 + 渐变」数据（单机主机是 OP4，直接走命令）。
+			case 119 -> act(mc, () -> {
+				mc.setScreen(null);
+				if (mc.player == null) {
+					LOG.add("titles seed skipped: no player");
+					return;
+				}
+				String self = mc.player.getGameProfile().getName();
+				mc.player.networkHandler.sendChatCommand("titles set " + self + " 木匠");
+				mc.player.networkHandler.sendChatCommand("titles suffix " + self + " 赤物语");
+				mc.player.networkHandler.sendChatCommand("titles style " + self + " gradient #FFD700:#FF3B3B");
+				LOG.add("titles seed for " + self);
+			});
+			case 120 -> act(mc, () -> open(mc, HubPage.CHECKIN, "rt checkin"));
+			case 121 -> act(mc, () -> clickEntry(mc, "称号", 11));
+			case 122 -> shotKeep(mc, "u6-64-titles-style.png",
+					() -> LOG.add("titles snapshot=" + com.akira.redtale.economy.client.title
+							.TitlesClientNetworking.LAST.prefix() + "|"
+							+ com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.suffix()
+							+ "|" + com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.gradient()));
 			default -> finish(mc);
 		}
 	}
