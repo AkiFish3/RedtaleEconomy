@@ -22,9 +22,12 @@ public class RECommands {
     };
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+        // 挂在 /redtale bound 子树下：经济侧已有 /redtale 根与 reload 等子节点，
+        // Brigadier 对同名节点做合并、保留先注册者的 executes ⇒ 直接注册旧根会被静默吞掉（T36 §2.4 / D5）。
         dispatcher.register(literal("redtale")
-                .requires(source -> source.hasPermissionLevel(4))
-                .then(literal("reload")
+                .then(literal("bound")
+                        .requires(source -> source.hasPermissionLevel(4))
+                        .then(literal("reload")
                         .executes(context -> {
                             ServerCommandSource source = context.getSource();
                             try {
@@ -40,7 +43,7 @@ public class RECommands {
                         })
                 )
                 .then(literal("add")
-                        .then(argument("item", StringArgumentType.word())
+                        .then(argument("item", StringArgumentType.string())
                                 .suggests(ITEM_SUGGESTIONS)
                                 .executes(context -> {
                                     String input = StringArgumentType.getString(context, "item");
@@ -80,7 +83,7 @@ public class RECommands {
                         )
                 )
                 .then(literal("remove")
-                        .then(argument("item", StringArgumentType.word())
+                        .then(argument("item", StringArgumentType.string())
                                 .suggests((context, builder) -> {
                                     for (String id : BoundItemsConfig.getBoundItems()) {
                                         builder.suggest(id);
@@ -108,6 +111,7 @@ public class RECommands {
                             source.sendFeedback(() -> Text.translatable("command.redtale_economy.list.header", list), false);
                             return 1;
                         })
+                )
                 )
         );
     }
