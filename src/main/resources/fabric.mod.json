@@ -15,7 +15,8 @@
 	"icon": "assets/redtale_economy/icon.png",
 	"environment": "*",
 	"mixins": [
-		"redtale_economy.mixins.json"
+		"redtale_economy.mixins.json",
+		"redtale_economy.legacy.mixins.json"
 	],
 	"entrypoints": {
 		"main": [
