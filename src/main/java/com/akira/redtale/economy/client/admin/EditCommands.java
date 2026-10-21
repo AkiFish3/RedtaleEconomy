@@ -33,4 +33,19 @@ public final class EditCommands {
 	public static String add(String shopId, String itemId, long buy, long sell) {
 		return "shop admin add " + shopId + " " + itemId + " " + Math.max(0, buy) + " " + Math.max(0, sell);
 	}
+
+	/**
+	 * T11：批量上架/移除。id 串由服务端 {@code BatchIds.parse} 解析（逗号/空格都行），
+	 * 这里只保证「界面拼出来的东西和命令参数是同一个串」——分隔符写错会导致
+	 * 界面勾了 N 件、服务端只处理 1 件。
+	 */
+	public static String batchAdd(String shopId, long buy, long sell, java.util.Collection<String> ids) {
+		return "shop admin batch add " + shopId + " " + Math.max(0, buy) + " " + Math.max(0, sell) + " "
+				+ com.akira.redtale.economy.shop.BatchIds.join(ids);
+	}
+
+	public static String batchRemove(String shopId, java.util.Collection<String> ids) {
+		return "shop admin batch remove " + shopId + " "
+				+ com.akira.redtale.economy.shop.BatchIds.join(ids);
+	}
 }

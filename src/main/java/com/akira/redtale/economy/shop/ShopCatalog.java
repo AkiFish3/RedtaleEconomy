@@ -21,7 +21,9 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -503,6 +505,208 @@ public final class ShopCatalog implements ShopSource {
 		ConfigManager.logEdit("shop/" + file.getFileName(), "admin remove " + shopId + "/" + itemId,
 				"moved to " + TRASH_DIR);
 		return true;
+	}
+
+	/** 批量删除结果：{@code removed} 实际删掉数，{@code missing} 没找到的 id，{@code trash} 回收站文件。 */
+	public record BatchRemoveReport(int removed, List<String> missing, Path trash) {
+	}
+
+	/** 批量上架结果：{@code added} 新增数，{@code existing} 已存在跳过，{@code rejected} 被价格护栏等拒绝。 */
+	public record BatchAddReport(int added, List<String> existing, List<String> rejected) {
+	}
+
+	/**
+	 * T11：批量删除商品 —— 一次读盘、一次写盘、一次 {@code reload()}。
+	 *
+	 * <p>与 {@link #removeItem} 的差别只有「批」：
+	 * <ul>
+	 *   <li>所有被删商品的完整定义写进<b>同一个</b>回收站文件（{@code items-…-<shop>-batch.json}），
+	 *       手工还原时整批复制回去即可</li>
+	 *   <li>某个 id 不存在只记进 {@code missing}，不中断整批</li>
+	 *   <li>回收站写失败 ⇒ 整批一个都不删（同单件语义：先能还原，再动数据）</li>
+	 * </ul>
+	 */
+	public static synchronized BatchRemoveReport removeItems(String shopId, Collection<String> ids) {
+		LinkedHashSet<String> want = new LinkedHashSet<>();
+		for (String id : ids) {
+			if (id != null && !id.isBlank()) want.add(id.trim());
+		}
+		List<String> missing = new ArrayList<>();
+		if (want.isEmpty()) return new BatchRemoveReport(0, missing, null);
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null || def.file() == null) {
+			missing.addAll(want);
+			return new BatchRemoveReport(0, missing, null);
+		}
+		Path file = def.file();
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 批量删除前读取 {} 失败：{}", file.getFileName(), e.getMessage());
+			missing.addAll(want);
+			return new BatchRemoveReport(0, missing, null);
+		}
+		if (root == null || !root.has("shops")) {
+			missing.addAll(want);
+			return new BatchRemoveReport(0, missing, null);
+		}
+		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
+		if (shopEl == null || !shopEl.isJsonObject()) {
+			missing.addAll(want);
+			return new BatchRemoveReport(0, missing, null);
+		}
+		JsonElement itemsEl = shopEl.getAsJsonObject().get("items");
+		if (itemsEl == null || !itemsEl.isJsonArray()) {
+			missing.addAll(want);
+			return new BatchRemoveReport(0, missing, null);
+		}
+		JsonArray items = itemsEl.getAsJsonArray();
+		JsonArray removedDefs = new JsonArray();
+		LinkedHashSet<String> found = new LinkedHashSet<>();
+		// 收集定义（先收集、后按倒序删，避免下标漂移）
+		for (JsonElement el : items) {
+			if (!el.isJsonObject()) continue;
+			JsonObject o = el.getAsJsonObject();
+			String id = str(o, "id", "");
+			if (id.isEmpty() || !want.contains(id)) continue;
+			if (found.add(id)) removedDefs.add(o.deepCopy());
+		}
+		for (String w : want) {
+			if (!found.contains(w)) missing.add(w);
+		}
+		if (removedDefs.size() == 0) {
+			return new BatchRemoveReport(0, missing, null);
+		}
+		JsonObject bundle = new JsonObject();
+		bundle.addProperty("shopId", shopId);
+		bundle.addProperty("removedAt", LocalDateTime.now().withNano(0).toString());
+		bundle.addProperty("count", removedDefs.size());
+		bundle.addProperty("restore", "把 items 数组整段复制回该商店的 items 即可");
+		bundle.add("items", removedDefs);
+		Path trash = trashPath("items", shopId + "-batch");
+		if (!writeTrashFile(trash, shopId, file, bundle)) return new BatchRemoveReport(0, missing, null);
+		for (int i = items.size() - 1; i >= 0; i--) {
+			JsonElement el = items.get(i);
+			if (el.isJsonObject() && found.contains(str(el.getAsJsonObject(), "id", ""))) items.remove(i);
+		}
+		if (!writeWithBackup(file, root)) return new BatchRemoveReport(0, missing, null);
+		reload();
+		for (String id : found) ShopStock.forget(shopId, id);
+		int n = removedDefs.size();
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin batch remove " + shopId,
+				"n=" + n + " missing=" + missing.size() + " → " + TRASH_DIR);
+		return new BatchRemoveReport(n, missing, trash);
+	}
+
+	/**
+	 * T11：批量上架（一次读盘、一次写盘、一次 reload）。
+	 *
+	 * <p>已存在的商品<b>保持原样</b>（不覆盖价格/库存），只把缺失的追加进来 ——
+	 * 这样「把背包整包上架」可以反复跑，不会把手工调过的价格冲回输入框里的值。
+	 *
+	 * @return 结果；{@code rejected} 非空说明该 id 被价格护栏或 id 格式拒绝（其余照常上架）
+	 */
+	public static synchronized BatchAddReport addItems(String shopId, Collection<String> ids, long buy, long sell) {
+		List<String> existing = new ArrayList<>();
+		List<String> rejected = new ArrayList<>();
+		LinkedHashSet<String> want = new LinkedHashSet<>();
+		for (String id : ids) {
+			if (id == null || id.isBlank()) continue;
+			String t = id.trim();
+			if (t.indexOf(':') < 0) {
+				rejected.add(t + "（缺命名空间）");
+				continue;
+			}
+			want.add(t);
+		}
+		if (want.isEmpty()) return new BatchAddReport(0, existing, rejected);
+		String priceError = PricePolicy.check(buy, sell);
+		if (priceError != null) {
+			rejected.add(priceError);
+			return new BatchAddReport(0, existing, rejected);
+		}
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null || def.file() == null) {
+			rejected.add("商店不存在：" + shopId);
+			return new BatchAddReport(0, existing, rejected);
+		}
+		Path file = def.file();
+		JsonObject root;
+		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			root = GSON.fromJson(r, JsonObject.class);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 批量上架前读取 {} 失败：{}", file.getFileName(), e.getMessage());
+			rejected.add("读取商店文件失败");
+			return new BatchAddReport(0, existing, rejected);
+		}
+		if (root == null || !root.has("shops")) {
+			rejected.add("商店文件结构异常");
+			return new BatchAddReport(0, existing, rejected);
+		}
+		JsonElement shopEl = root.getAsJsonObject("shops").get(shopId);
+		if (shopEl == null || !shopEl.isJsonObject()) {
+			rejected.add("商店不在该文件中");
+			return new BatchAddReport(0, existing, rejected);
+		}
+		JsonObject shop = shopEl.getAsJsonObject();
+		JsonElement itemsEl = shop.get("items");
+		JsonArray items;
+		if (itemsEl != null && itemsEl.isJsonArray()) {
+			items = itemsEl.getAsJsonArray();
+		} else {
+			items = new JsonArray();
+			shop.add("items", items);
+		}
+		LinkedHashSet<String> have = new LinkedHashSet<>();
+		for (JsonElement el : items) {
+			if (el.isJsonObject()) have.add(str(el.getAsJsonObject(), "id", ""));
+		}
+		int added = 0;
+		for (String id : want) {
+			if (have.contains(id)) {
+				existing.add(id);
+				continue;
+			}
+			JsonObject it = new JsonObject();
+			it.addProperty("id", id);
+			it.addProperty("category", "");
+			it.addProperty("buy", buy);
+			it.addProperty("sell", sell);
+			it.addProperty("stock", -1);
+			it.addProperty("dailyBuyLimit", -1);
+			items.add(it);
+			have.add(id);
+			added++;
+		}
+		if (added == 0) return new BatchAddReport(0, existing, rejected);
+		if (!writeWithBackup(file, root)) {
+			rejected.add("写入商店文件失败");
+			return new BatchAddReport(0, existing, rejected);
+		}
+		reload();
+		ConfigManager.logEdit("shop/" + file.getFileName(), "admin batch add " + shopId,
+				"n=" + added + " buy=" + buy + " sell=" + sell + " skipped=" + existing.size());
+		return new BatchAddReport(added, existing, rejected);
+	}
+
+	/** 把 {@code body} 写到指定回收站路径（批量版；失败返回 false 让调用方放弃写入）。 */
+	private static boolean writeTrashFile(Path trash, String shopId, Path source, JsonObject body) {
+		try {
+			Files.createDirectories(trash.getParent());
+			JsonObject wrapper = new JsonObject();
+			wrapper.addProperty("shopId", shopId);
+			wrapper.addProperty("source", source.toString());
+			wrapper.addProperty("removedAt", LocalDateTime.now().withNano(0).toString());
+			wrapper.add("body", body);
+			try (Writer w = Files.newBufferedWriter(trash, StandardCharsets.UTF_8)) {
+				GSON.toJson(wrapper, w);
+			}
+			return true;
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[shop] 写回收站 {} 失败：{}", trash.getFileName(), e.getMessage());
+			return false;
+		}
 	}
 
 	/** 删除整家商店：定义进回收站；文件里没有别的商店了就把文件本身也移进回收站。 */

@@ -527,6 +527,9 @@ public final class RedtaleCommands {
 		boolean ok = switch (t.action()) {
 			case "shop.remove" -> parts.length == 2
 					&& com.akira.redtale.economy.shop.ShopCatalog.removeItem(parts[0], parts[1]);
+			case "shop.remove.batch" -> parts.length == 2
+					&& com.akira.redtale.economy.shop.ShopCatalog.removeItems(parts[0],
+							com.akira.redtale.economy.shop.BatchIds.parse(parts[1])).removed() > 0;
 			case "shop.removeshop" -> parts.length >= 1
 					&& com.akira.redtale.economy.shop.ShopCatalog.removeShop(parts[0]);
 			case "player.rename" -> {

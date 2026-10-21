@@ -161,6 +161,23 @@ public final class ShopAdminCommands {
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
 										.executes(ShopAdminCommands::removeShop)))
+						// T11：批量上架/批量移除（表格编辑器用；一次读盘一次写盘，id 用逗号或空格分隔）
+						.then(CommandManager.literal("batch")
+								.then(CommandManager.literal("add")
+										.then(CommandManager.argument("shopId", StringArgumentType.word())
+												.suggests(shops())
+												.then(CommandManager.argument("buy", LongArgumentType.longArg(0))
+														.then(CommandManager.argument("sell",
+																		LongArgumentType.longArg(0))
+																.then(CommandManager.argument("ids",
+																				StringArgumentType.greedyString())
+																		.executes(ShopAdminCommands::batchAdd))))))
+								.then(CommandManager.literal("remove")
+										.then(CommandManager.argument("shopId", StringArgumentType.word())
+												.suggests(shops())
+												.then(CommandManager.argument("ids",
+																StringArgumentType.greedyString())
+														.executes(ShopAdminCommands::batchRemove)))))
 						// T08：限时折扣表诊断 + 热重载
 						.then(CommandManager.literal("discount")
 								.executes(ShopAdminCommands::discountInfo)
@@ -327,6 +344,56 @@ public final class ShopAdminCommands {
 
 	private static boolean isAdmin(ServerCommandSource src) {
 		return Permissions.has(src, Permissions.NODE_ADMIN);
+	}
+
+	// ---------------------------------------------------------------- T11 批量上架/移除
+
+	private static int batchAdd(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		String shopId = StringArgumentType.getString(ctx, "shopId");
+		long buy = LongArgumentType.getLong(ctx, "buy");
+		long sell = LongArgumentType.getLong(ctx, "sell");
+		List<String> ids = com.akira.redtale.economy.shop.BatchIds
+				.parse(StringArgumentType.getString(ctx, "ids"));
+		if (ids.isEmpty()) {
+			src.sendError(Text.literal("§c没有可上架的 id（逗号或空格分隔）"));
+			return 0;
+		}
+		ShopCatalog.BatchAddReport rep = ShopCatalog.addItems(shopId, ids, buy, sell);
+		if (rep.added() == 0 && !rep.rejected().isEmpty()) {
+			src.sendError(Text.literal("§c整批被拒绝：" + String.join("；", rep.rejected())));
+			return 0;
+		}
+		src.sendFeedback(() -> Text.literal("§a批量上架 §f" + rep.added() + " §a件 → §f" + shopId
+				+ (rep.existing().isEmpty() ? "" : " §7（已存在跳过 " + rep.existing().size() + "）")
+				+ (rep.rejected().isEmpty() ? "" : " §c（拒绝 " + rep.rejected().size() + "：" 
+						+ String.join("；", rep.rejected()) + "）")), true);
+		return rep.added() > 0 ? 1 : 0;
+	}
+
+	private static int batchRemove(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		String shopId = StringArgumentType.getString(ctx, "shopId");
+		List<String> ids = com.akira.redtale.economy.shop.BatchIds
+				.parse(StringArgumentType.getString(ctx, "ids"));
+		if (ids.isEmpty()) {
+			src.sendError(Text.literal("§c没有可移除的 id（逗号或空格分隔）"));
+			return 0;
+		}
+		if (ConfirmTickets.required()) {
+			return requireConfirm(ctx, "shop.remove.batch",
+					shopId + "|" + com.akira.redtale.economy.shop.BatchIds.join(ids));
+		}
+		ShopCatalog.BatchRemoveReport rep = ShopCatalog.removeItems(shopId, ids);
+		if (rep.removed() == 0) {
+			src.sendError(Text.literal("§c一件都没删："
+					+ (rep.missing().isEmpty() ? "文件不可写" : "商品不存在 " + rep.missing())));
+			return 0;
+		}
+		src.sendFeedback(() -> Text.literal("§a已批量移除 §f" + rep.removed() + " §a件自 §f" + shopId
+				+ (rep.missing().isEmpty() ? "" : " §7（未找到 " + rep.missing().size() + "）")
+				+ " §7（定义在 config/redtale/" + ShopCatalog.TRASH_DIR + "/，整批可还原）"), true);
+		return 1;
 	}
 
 	// ---------------------------------------------------------------- 玩家侧

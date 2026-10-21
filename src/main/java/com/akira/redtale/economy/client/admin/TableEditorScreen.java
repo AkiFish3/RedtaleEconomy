@@ -69,7 +69,7 @@ public final class TableEditorScreen extends Screen {
 	}
 
 	private int panelH() {
-		return 26 + rows() * ROW_H + 56;
+		return 26 + rows() * ROW_H + 78;
 	}
 
 	@Override
@@ -95,6 +95,11 @@ public final class TableEditorScreen extends Screen {
 
 		button(left + 144, top + panelH() - 52, 60, "gui.redtale_economy.table.searchBtn", b -> applySearch());
 		button(left + 208, top + panelH() - 52, 88, "gui.redtale_economy.table.batch", b -> batchPrice());
+		// T11：批量上架/批量移除（服务端一次读盘一次写盘；界面只拼一条命令，不逐行发）
+		addDrawableChild(ButtonWidget.builder(Text.literal("批量上架"), b -> batchAddSelected())
+				.dimensions(left + 4, top + panelH() - 74, 96, 20).build());
+		addDrawableChild(ButtonWidget.builder(Text.literal("批量移除"), b -> batchRemoveSelected())
+				.dimensions(left + 104, top + panelH() - 74, 96, 20).build());
 		button(left + 220, top + panelH() - 32, 76, "gui.redtale_economy.table.add", b -> addOne());
 		button(left, top + panelH() - 12, 56, "gui.redtale_economy.edit.prev", b -> turn(-1));
 		button(left + 62, top + panelH() - 12, 56, "gui.redtale_economy.table.copy", b -> copyFirst());
@@ -161,6 +166,55 @@ public final class TableEditorScreen extends Screen {
 		flash("gui.redtale_economy.table.batchDone");
 		selected.clear();
 		if (n == 0) flash("gui.redtale_economy.table.noSelection");
+	}
+
+	/**
+	 * T11 批量上架：id 来源优先「物品输入框里的逗号列表」，为空则取背包里所有非空堆叠
+	 * （按物品去重）。价格取买/卖两个输入框，留空按 0。
+	 *
+	 * <p>只发 <b>一条</b> 命令 —— 服务端 {@code ShopCatalog.addItems} 一次读盘一次写盘，
+	 * 避免逐行发命令时「第 7 件失败但前 6 件已经写盘」的中间态。
+	 */
+	private void batchAddSelected() {
+		List<String> ids = new ArrayList<>(
+				com.akira.redtale.economy.shop.BatchIds.parse(fItem.getText()));
+		if (ids.isEmpty()) {
+			net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+			if (mc.player != null) {
+				var inv = mc.player.getInventory();
+				for (int i = 0; i < inv.size(); i++) {
+					var st = inv.getStack(i);
+					if (st == null || st.isEmpty()) continue;
+					ids.add(net.minecraft.registry.Registries.ITEM.getId(st.getItem()).toString());
+				}
+			}
+		}
+		if (ids.isEmpty()) {
+			toast("没有可上架的物品：输入框为空，背包也空");
+			return;
+		}
+		long buy = parseOr(fBuy.getText(), 0);
+		long sell = parseOr(fSell.getText(), 0);
+		send(EditCommands.batchAdd(shopId, buy, sell, ids));
+		toast("已发批量上架：" + ids.size() + " 件（价格买 " + buy + " / 卖 " + sell + "）");
+	}
+
+	/** T11 批量移除：只对勾选行生效（未勾选时明确提示，不做「整页删」这种危险默认）。 */
+	private void batchRemoveSelected() {
+		List<String> ids = new ArrayList<>(selected);
+		if (ids.isEmpty()) {
+			toast("先勾选要移除的行（点行左侧方框）");
+			return;
+		}
+		send(EditCommands.batchRemove(shopId, ids));
+		toast("已发批量移除：" + ids.size() + " 件（服务端整批写回收站）");
+		selected.clear();
+	}
+
+	/** 界面自己的提示串（中文直接给，不走 lang：assets 归 B 队列）。 */
+	private void toast(String s) {
+		flash = s;
+		flashAt = System.currentTimeMillis();
 	}
 
 	/** 复制选中第一行的价格到输入框（再配合批量改价即可「一处定价、全店套用」）。 */
