@@ -100,8 +100,21 @@ public class PackageChooseHandler extends ScreenHandler {
         }
     }
 
+    /**
+     * ★每 tick 由服务端判定★：旧实现恒 true ⇒ 包裹实体因超距离/超时被 discard 之后，
+     * 界面还挂在玩家屏幕上（点什么都没反应、也不报错），看起来像"卡界面"。
+     * 现在实体没了 / 已选完 / 不是本人 / 走太远都直接关窗。
+     */
     @Override
-    public boolean canUse(PlayerEntity player) { return true; }
+    public boolean canUse(PlayerEntity player) {
+        if (entityId < 0) return true; // 客户端侧构造器没有实体 id
+        if (!(player.getWorld().getEntityById(entityId) instanceof com.akira.redtale.economy.legacy.entity.PackageEntity pkg)) {
+            return false;
+        }
+        if (!pkg.isChooseModeActive()) return false;
+        if (pkg.getOwnerUuid() != null && !pkg.getOwnerUuid().equals(player.getUuid())) return false;
+        return player.squaredDistanceTo(pkg) <= 256.0;
+    }
     @Override
     public ItemStack quickMove(PlayerEntity player, int slotIndex) { return ItemStack.EMPTY; }
 

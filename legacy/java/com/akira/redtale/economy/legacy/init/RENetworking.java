@@ -64,48 +64,51 @@ public class RENetworking {
             int index = buf.readInt();
             int entityId = buf.readInt();
             server.execute(() -> {
-                ItemStack mainHand = player.getStackInHand(Hand.MAIN_HAND);
-                ItemStack offHand = player.getStackInHand(Hand.OFF_HAND);
-                ItemStack usedPack = null;
-                Hand usedHand = null;
+                net.minecraft.entity.Entity entity = player.getWorld().getEntityById(entityId);
+                if (!(entity instanceof PackageEntity pkgEntity)) {
+                    LegacyInit.LOGGER.warn("select_item rejected: entity {} not found or not a PackageEntity", entityId);
+                    return;
+                }
+                if (!isAllowedToInteract(player, pkgEntity, "select_item")) return;
 
-                if (isPackage(mainHand)) {
-                    usedPack = mainHand;
-                    usedHand = Hand.MAIN_HAND;
-                } else if (isPackage(offHand)) {
-                    usedPack = offHand;
-                    usedHand = Hand.OFF_HAND;
+                // ★奖励真值取「实体上的 packageStack」而不是手牌★：
+                // 界面是 HandledScreen，玩家在界面开着时可以随意挪自己的背包 —— 旧实现每次 select 都
+                // 重新读手牌，只要把另一个内容更好的 CHOOSE 包裹换到手上，就能用 A 的界面领 B 的奖励，
+                // 而且被扣掉（decrement）的也是 B。实体创建时就 `stack.copy()` 过，它才是这次交互的唯一依据。
+                if (!pkgEntity.isChooseModeActive()) {
+                    LegacyInit.LOGGER.warn("select_item rejected: entity {} is not in choose mode", entityId);
+                    return;
+                }
+                if (pkgEntity.isActivated()) {
+                    LegacyInit.LOGGER.warn("Duplicate SELECT_ITEM packet ignored for entity {}", entityId);
+                    return;
                 }
 
-                PackageData data = usedPack == null ? null : PackageData.fromNbt(usedPack.getNbt());
+                ItemStack entityPack = pkgEntity.getPackageStack();
+                PackageData data = entityPack.isEmpty() ? null : PackageData.fromNbt(entityPack.getNbt());
+                if (data == null || data.mode() != PackageData.PackageMode.CHOOSE) {
+                    LegacyInit.LOGGER.warn("select_item rejected: entity {} has no CHOOSE package data", entityId);
+                    return;
+                }
                 // ★index 必须按「界面同一份过滤列表」解释★（见 PackageChooseHandler#extractItemsFromNbt）：
                 // 旧写法用 data.items().get(index)，包裹 NBT 里只要有一个空 item 就会错位给错东西。
-                java.util.List<ItemStack> choosable = PackageChooseHandler.extractItemsFromNbt(usedPack == null ? null : usedPack.getNbt());
-
-                if (data == null || data.mode() != PackageData.PackageMode.CHOOSE ||
-                        index < 0 || index >= choosable.size()) {
-                    LegacyInit.LOGGER.warn("Invalid select_item request from player {}", player.getGameProfile().getName());
+                java.util.List<ItemStack> choosable = PackageChooseHandler.extractItemsFromNbt(entityPack.getNbt());
+                if (index < 0 || index >= choosable.size()) {
+                    LegacyInit.LOGGER.warn("Invalid select_item request from player {} (index={}, size={})",
+                            player.getGameProfile().getName(), index, choosable.size());
                     return;
                 }
 
-                net.minecraft.entity.Entity entity = player.getWorld().getEntityById(entityId);
-                if (entity instanceof PackageEntity pkgEntity) {
-                    if (!isAllowedToInteract(player, pkgEntity, "select_item")) return;
-                    if (pkgEntity.isActivated()) {
-                        LegacyInit.LOGGER.warn("Duplicate SELECT_ITEM packet ignored for entity {}", entityId);
-                        return;
-                    }
-                    pkgEntity.setSelectedItem(new PackageData.PackageItem(choosable.get(index).copy(), 1));
-                } else {
-                    LegacyInit.LOGGER.warn("Entity {} not found or not a PackageEntity", entityId);
+                // ★先扣件再发奖★：扣不到同款包裹就整单拒绝，避免「改个客户端就能白嫖」。
+                // 不限定手牌：玩家可能在界面开着时把包裹拖进背包，只要背包里还有同一件就算数。
+                if (!player.isCreative() && !consumeOnePackage(player, entityPack)) {
+                    LegacyInit.LOGGER.warn("select_item rejected: {} has no matching package in inventory",
+                            player.getGameProfile().getName());
                     return;
                 }
 
+                pkgEntity.setSelectedItem(new PackageData.PackageItem(choosable.get(index).copy(), 1));
                 player.closeHandledScreen();
-
-                if (usedHand != null && !player.isCreative()) {
-                    player.getStackInHand(usedHand).decrement(1);
-                }
             });
         });
 
@@ -125,6 +128,27 @@ public class RENetworking {
             return false;
         }
         return true;
+    }
+
+    /** 从玩家身上扣掉一件与 {@code template} 同款（物品 + NBT）的包裹；扣不到返回 false。 */
+    private static boolean consumeOnePackage(ServerPlayerEntity player, ItemStack template) {
+        // 手持优先：绝大多数情况下包裹就在手上，省一次 41 格扫描。
+        for (Hand hand : Hand.values()) {
+            ItemStack held = player.getStackInHand(hand);
+            if (ItemStack.canCombine(held, template)) {
+                held.decrement(1);
+                return true;
+            }
+        }
+        PlayerInventory inventory = player.getInventory();
+        for (int i = 0; i < inventory.size(); i++) {
+            ItemStack slot = inventory.getStack(i);
+            if (ItemStack.canCombine(slot, template)) {
+                slot.decrement(1);
+                return true;
+            }
+        }
+        return false;
     }
 
     public static boolean isPackage(ItemStack stack) {

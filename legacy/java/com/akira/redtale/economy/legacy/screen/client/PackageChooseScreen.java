@@ -16,7 +16,9 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
 
     public PackageChooseScreen(PackageChooseHandler handler, PlayerInventory inventory, Text title) {
         super(handler, inventory, title);
-        this.backgroundHeight = 17 + handler.rows * 18 + 14 + 96;
+        // 与原版 ChestScreen 完全同口径（114 + rows*18）：旧值 127+rows*18 比实际绘制内容高 14px，
+        // 面板因此被顶高 7px、底部留一条空白 —— 格子贴图与物品图标也整体错 1px。
+        this.backgroundHeight = 114 + handler.rows * 18;
         this.playerInventoryTitleY = 17 + handler.rows * 18 + 3;
     }
 
@@ -25,14 +27,16 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
         int x = (this.width - this.backgroundWidth) / 2;
         int y = (this.height - this.backgroundHeight) / 2;
 
+        // 槽位坐标来自 handler（x=8+col*18, y=17+row*18）⇒ 背景必须从 y+17 开始画，
+        // 旧值 y+16 让每一行都压到上一行 1px，物品图标看起来偏下。
         context.drawTexture(TEXTURE, x, y, 0, 0, 176, 17);
-        int contentY = y + 16;
+        int contentY = y + 17;
         int contentHeight = handler.rows * 18;
         for (int i = 0; i < handler.rows; i++) {
             context.drawTexture(TEXTURE, x, contentY + i * 18, 0, 17, 176, 18);
         }
         int playerInvY = contentY + contentHeight;
-        context.drawTexture(TEXTURE, x, playerInvY, 0, 125, 176, 96);
+        context.drawTexture(TEXTURE, x, playerInvY, 0, 126, 176, 96);
     }
 
     @Override
@@ -44,6 +48,11 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // ★只吃左键★：旧实现不判 button ⇒ 右键/中键点格子也会发 select_item 并消耗包裹，
+        // 玩家习惯性右键查看物品时直接白丢一个礼包（客户端看不出任何异常）。
+        if (button != 0) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         int slotsStartX = (this.width - this.backgroundWidth) / 2 + 8;
         int slotsStartY = (this.height - this.backgroundHeight) / 2 + 17;
         int slotsEndY = slotsStartY + handler.rows * 18;
