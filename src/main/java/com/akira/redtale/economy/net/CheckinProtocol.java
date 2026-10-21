@@ -19,15 +19,25 @@ public final class CheckinProtocol {
 	public record Point(int day, long money, boolean done, boolean current) {
 	}
 
-	public record Snapshot(String lastDate, int streak, int loopDays, int loopIndex,
-			int totalDays, int makeupLeft, long makeupCost, List<Point> points,
-			List<Integer> milestones) {
-		public static Snapshot empty() {
-			return new Snapshot("", 0, 7, 1, 0, 0, 0, List.of(), List.of(7, 14, 28));
-		}
+	/**
+	 * 连登里程碑（T57）：{@code day} 天那天的门槛、{@code money} 是那天档位的奖励额、
+	 * {@code reached} 由服务端按当前连续天数算好。
+	 *
+	 * <p>以前只下发天数（{@code List<Integer>}），客户端画得出刻点却<b>说不出到达后给多少</b>，
+	 * 所以「里程碑提示」只能写死「7/14/28」。现在带上金额，提示行才能写「还差 3 天 · 200铜」。
+	 */
+	public record Milestone(int day, long money, boolean reached) {
 	}
 
-	private static final Codec<Integer> INT = Codecs.VAR_INT;
+	public record Snapshot(String lastDate, int streak, int loopDays, int loopIndex,
+			int totalDays, int makeupLeft, long makeupCost, List<Point> points,
+			List<Milestone> milestones) {
+		public static Snapshot empty() {
+			return new Snapshot("", 0, 7, 1, 0, 0, 0, List.of(), List.of(
+					new Milestone(7, 0, false), new Milestone(14, 0, false),
+					new Milestone(28, 0, false)));
+		}
+	}
 
 	private static final Codec<Point> POINT = Codec.of("checkin/point",
 			(buf, p) -> {
@@ -37,6 +47,14 @@ public final class CheckinProtocol {
 				buf.writeBoolean(p.current());
 			},
 			buf -> new Point(buf.readVarInt(), buf.readLong(), buf.readBoolean(), buf.readBoolean()));
+
+	private static final Codec<Milestone> MILESTONE = Codec.of("checkin/milestone",
+			(buf, m) -> {
+				buf.writeVarInt(Math.max(0, m.day()));
+				buf.writeLong(Math.max(0, m.money()));
+				buf.writeBoolean(m.reached());
+			},
+			buf -> new Milestone(buf.readVarInt(), buf.readLong(), buf.readBoolean()));
 
 	/** 里程碑条数 / 天数格条数上限（读完即丢）。 */
 	private static final int MAX_MILESTONES = 32;
@@ -53,7 +71,7 @@ public final class CheckinProtocol {
 		buf.writeVarInt(Math.max(0, s.totalDays()));
 		buf.writeVarInt(Math.max(0, s.makeupLeft()));
 		buf.writeLong(Math.max(0, s.makeupCost()));
-		Codecs.writeList(buf, s.milestones(), INT);
+		Codecs.writeList(buf, s.milestones(), MILESTONE);
 		Codecs.writeList(buf, s.points(), POINT);
 	}
 
@@ -65,7 +83,7 @@ public final class CheckinProtocol {
 		int totalDays = buf.readVarInt();
 		int makeupLeft = buf.readVarInt();
 		long makeupCost = buf.readLong();
-		List<Integer> miles = Codecs.readList(buf, MAX_MILESTONES, INT);
+		List<Milestone> miles = Codecs.readList(buf, MAX_MILESTONES, MILESTONE);
 		List<Point> points = Codecs.readList(buf, MAX_POINTS, POINT);
 		return new Snapshot(lastDate, streak, loopDays, loopIndex, totalDays, makeupLeft, makeupCost,
 				points, miles);

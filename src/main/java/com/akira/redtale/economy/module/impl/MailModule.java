@@ -57,6 +57,8 @@ public final class MailModule implements RedtaleModule {
 	public void onLoad(ConfigManager cfg) {
 		resolveDir();
 		installHooks();
+		// T62：Hub 邮件页的服务端收包（重复 onLoad/热重载无害，register 内部幂等）
+		com.akira.redtale.economy.net.MailNetworking.register();
 		if (!ContactMail.available()) {
 			RedtaleEconomy.LOGGER.info("[mail] 未检测到 Contact，物品奖励改为进待领取队列");
 		}

@@ -44,7 +44,17 @@ class CodecRoundTripTest {
 				() -> new CheckinProtocol.Snapshot("2026-10-20", 12, 7, 4, 36, 2, 500,
 						List.of(new CheckinProtocol.Point(1, 100, true, false),
 								new CheckinProtocol.Point(4, 250, false, true)),
-						List.of(7, 14, 28))));
+						List.of(new CheckinProtocol.Milestone(7, 500, true),
+								new CheckinProtocol.Milestone(14, 800, false)))));
+
+		all.add(of("mail/snapshot",
+				Codec.of("mail/snapshot", MailProtocol::write, MailProtocol::read),
+				() -> new MailProtocol.Snapshot("contact", false, 1234, 1,
+						List.of(new MailProtocol.Entry(-1, MailProtocol.KIND_MONEY,
+										"待领取货币", "系统", 1234, List.of()),
+								new MailProtocol.Entry(0, MailProtocol.KIND_ITEM,
+										"石头", "系统", 0,
+										List.of(new MailProtocol.Part("minecraft:stone", 12, "石头")))))));
 
 		all.add(of("task/snapshot",
 				Codec.of("task/snapshot", TaskProtocol::write, TaskProtocol::read),

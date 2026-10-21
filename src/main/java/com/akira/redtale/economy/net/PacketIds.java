@@ -71,6 +71,16 @@ public final class PacketIds {
 	public static final Identifier C2S_ADMIN_REQ = RedtaleEconomy.id("admin/request");
 	public static final Identifier S2C_ADMIN = RedtaleEconomy.id("admin/snapshot");
 
+	/**
+	 * T62：邮件页（左列表 + 右详情）。
+	 *
+	 * <p>只覆盖「系统待领取」（货币 / 未投出的物品）；Contact 信箱里的信件本体仍在 Contact
+	 * 自己的界面里（页面上有直达按钮），否则同一封信会有两个入口、两套读状态。
+	 */
+	public static final Identifier C2S_MAIL_REQ = RedtaleEconomy.id("mail/request");
+	public static final Identifier C2S_MAIL_CLAIM = RedtaleEconomy.id("mail/claim");
+	public static final Identifier S2C_MAIL = RedtaleEconomy.id("mail/snapshot");
+
 	/** T51：模块总开关（请求快照 / 切换单模块 / 下发快照）。 */
 	public static final Identifier C2S_MODULES_REQ = RedtaleEconomy.id("modules/request");
 	public static final Identifier C2S_MODULE_SET = RedtaleEconomy.id("modules/set");

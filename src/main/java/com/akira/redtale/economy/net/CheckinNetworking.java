@@ -43,18 +43,27 @@ public final class CheckinNetworking {
 			int maxPerMonth = (int) CheckinModule.store().getPathLong("makeup.maxPerMonth", 0);
 			int left = Math.max(0, maxPerMonth - st.makeupUsedMonth);
 
-			List<Integer> miles = new ArrayList<>();
+			// T57：里程碑带上「到达那天给多少」，客户端才能写「还差 3 天 · 200铜」。
+			// 金额直接问 tierOf（配置改档位，提示跟着变），不在这里存第二份档位表。
+			List<Integer> days = new ArrayList<>();
 			try {
 				var arr = CheckinModule.store().root().has("milestones")
 						? CheckinModule.store().root().getAsJsonArray("milestones") : null;
-				if (arr != null) for (var e : arr) if (e.isJsonPrimitive()) miles.add(e.getAsInt());
+				if (arr != null) for (var e : arr) if (e.isJsonPrimitive()) days.add(e.getAsInt());
 			} catch (Exception ignored) {
 				// 配置缺失用默认
 			}
-			if (miles.isEmpty()) {
-				miles.add(7);
-				miles.add(14);
-				miles.add(28);
+			if (days.isEmpty()) {
+				days.add(7);
+				days.add(14);
+				days.add(28);
+			}
+			List<CheckinProtocol.Milestone> miles = new ArrayList<>();
+			for (int day : days) {
+				if (day <= 0) continue;
+				CheckinModule.Tier tier = CheckinModule.tierOf(day);
+				long money = tier == null ? 0 : tier.money();
+				miles.add(new CheckinProtocol.Milestone(day, money, st.streak >= day));
 			}
 			CheckinProtocol.Snapshot snap = new CheckinProtocol.Snapshot(
 					st.lastDate == null ? "" : st.lastDate, st.streak, loop, idx,

@@ -13,16 +13,35 @@ final class HubMailPayClicks {
 			int cy = host.frame.contentY();
 			int cw = host.frame.contentW();
 			int ch = host.frame.contentH();
-			HubMailPage.Action a = HubMailPage.click(mouseX, mouseY, cx, cy, cw, ch);
+			HubMailPage.Result r = HubMailPage.click(mouseX, mouseY, cx, cy, cw, ch);
 			var mc = MinecraftClient.getInstance();
-			if (a == HubMailPage.Action.OPEN_MAIL) {
-				if (mc.player != null) mc.player.networkHandler.sendChatCommand("mail");
-				return HubClicks.R.HANDLED;
-			}
-			if (a == HubMailPage.Action.CLAIM) {
-				if (mc.player != null) mc.player.networkHandler.sendChatCommand("mail claim");
-				host.setStatus("正在领取邮件附件…");
-				return HubClicks.R.HANDLED;
+			switch (r.action()) {
+				case OPEN_MAIL -> {
+					if (mc.player != null) mc.player.networkHandler.sendChatCommand("mail");
+					return HubClicks.R.HANDLED;
+				}
+				case CLAIM -> {
+					// T62：按下标领（服务端按 kind+index 定位队列条目，不按金额/名字匹配）
+					var snap = MailClientNetworking.LAST;
+					int idx = Math.max(0, Math.min(r.index() < 0 ? 0 : r.index(),
+							Math.max(0, snap.entries().size() - 1)));
+					if (snap.entries().isEmpty()) {
+						host.setStatus("没有可领取的邮件");
+						return HubClicks.R.HANDLED;
+					}
+					var e = snap.entries().get(idx);
+					// 货币条目 index 固定 -1 ⇒ 用条目自带的 index 发包，不用列表下标
+					MailClientNetworking.claim(e.kind(), e.index());
+					host.setStatus(e.kind() == com.akira.redtale.economy.net.MailProtocol.KIND_MONEY
+							? "正在领取货币…" : "正在取出物品…");
+					return HubClicks.R.HANDLED;
+				}
+				case SELECT -> {
+					return HubClicks.R.HANDLED;
+				}
+				default -> {
+					return HubClicks.R.PASS;
+				}
 			}
 		}
 		if ((button == 0 || button == 1) && host.page == HubPage.PAY) {

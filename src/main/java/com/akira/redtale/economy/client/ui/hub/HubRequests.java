@@ -32,6 +32,7 @@ final class HubRequests {
 			case LEDGER -> LedgerClientNetworking.request();
 			case ADMIN -> AdminClientNetworking.request();
 			case CHECKIN -> chat("checkin status");
+			case MAIL -> MailClientNetworking.request();
 			default -> {
 			}
 		}
