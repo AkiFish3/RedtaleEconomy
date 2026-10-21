@@ -181,4 +181,21 @@ public final class HubDev {
 	public static int rankSyncCooldownLeftVal(HubScreen host) {
 		return host.rankSyncCooldownLeft();
 	}
+
+	/**
+	 * T61 夹具：点战令滚动条最右端（走真实 mouseClicked，验证「点得到、滚得动」）。
+	 *
+	 * <p>返回 {@code false} 有两种：当前不在战令页，或整条奖励装得下（没有滚动条）。
+	 */
+	public static boolean clickPassBarEnd(HubScreen host) {
+		if (host.page != HubPage.PASS) return false;
+		double[] p = HubPassPage.barEndCenter(host.frame.contentX(), host.frame.contentY(),
+				host.frame.contentW(), host.frame.contentH());
+		if (p == null) return false;
+		return host.mouseClicked(p[0], p[1], 0);
+	}
+
+	public static int passScrollVal(HubScreen host) {
+		return host.passScroll;
+	}
 }

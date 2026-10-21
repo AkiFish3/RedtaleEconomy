@@ -60,7 +60,7 @@ public final class UiShots {
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
 	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2 + T44 商店滚动 1，到 89）。 */
-	private static final int LAST_STEP = 237;
+	private static final int LAST_STEP = 241;
 	/**
 	 * 多人模式（连专用服务器）的起点 step。
 	 *
@@ -763,6 +763,25 @@ public final class UiShots {
 					() -> openFresh(mc, HubPage.MARKET, "rt market"));
 			// T70/T67 证据：硬币走贴图还是几何圆片，日志里给 true/false，别靠肉眼量 1 像素。
 			case 237 -> act(mc, () -> LOG.add("money " + HubMoney.texProbe()));
+			// ★T61 回归★：战令滚动条点到最右端。上一版滚动条钉在内容区最底、正好压在付费轨上，
+			// 427×240 下点它命中不到（也确实看不见）。这一对图用来证明「看得见 + 点得中」。
+			// 238 先把页切回来（230/231 的邮件页把它切走了；同 tick 内换页还没到位，不能就地点击）。
+			// ★HubScreen.page 是包内字段，本包（client/dev）读不到★ ⇒ 用 HubDev.pageId 字符串判。
+			case 238 -> act(mc, () -> {
+				boolean onPass = mc.currentScreen instanceof HubScreen hs
+						&& HubPage.PASS.id.equals(HubDev.pageId(hs));
+				if (!onPass) openFresh(mc, HubPage.PASS, "rt pass");
+			});
+			case 239 -> act(mc, () -> {
+				if (mc.currentScreen instanceof HubScreen hs) {
+					boolean hit = HubDev.clickPassBarEnd(hs);
+					LOG.add("pass bar hit=" + hit + " scroll=" + HubDev.passScrollVal(hs));
+				}
+			});
+			case 240 -> shotKeep(mc, "u6-81-hub-pass-bottom.png", () -> { });
+			// 末尾必须是纯 act 步：最后一步若是 shotKeep 的全屏态，客户端会卡在 toggle windowed 前（见 _LESSONS）
+			case 241 -> act(mc, () -> LOG.add("pass tail scroll="
+					+ (mc.currentScreen instanceof HubScreen hs ? HubDev.passScrollVal(hs) : -1)));
 			// ★稀疏编号★：这个 step 号没有动作时直接跳下一个，不要 finish。
 			// 以前是 `default -> finish`，于是「在末尾追加 218+」会被 123 这个空号直接截断
 			// （整轮只跑到 122 就退出，新步骤永远不执行、也不报错）。

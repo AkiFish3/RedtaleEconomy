@@ -17,6 +17,11 @@ import java.util.List;
  * <p>★滚动只有一份真相★：{@code scroll}（int，宿主持有）是目标值；
  * {@code smooth} 是渲染用的动画值，逐帧逼近目标。命中判定**永远用目标值**，
  * 不用动画值 —— 否则「动画还在走的时候点一下」会点错格子。
+ *
+ * <p>★纵向几何只有一份真相★：{@link Layout}。以前渲染写 {@code row1 = y+44}、
+ * 命中写 {@code row1 = y+34}（差 10px），窗口态下点轨道永远偏一格；而且格子高固定 52、
+ * 滚动条钉在内容区最底部，427×240 时付费轨被面板底边裁掉、滚动条正好压在格子上。
+ * 现在整块按可用高度算：格子高在 30~52 之间自适应，滚动条紧贴轨底且不越过内容区。
  */
 public final class HubPassPage {
 
@@ -24,9 +29,16 @@ public final class HubPassPage {
 	private static final int CELL_H = 52;
 	private static final int GAP = 4;
 
-	/** 滚动条厚度与离底距离。 */
+	/** 滚动条厚度与离轨底距离。 */
 	private static final int BAR_H = 4;
 	private static final int BAR_GAP = 5;
+
+	/** 标题行 + 经验条（含右侧经验文字）占用的高度。 */
+	private static final int TOP_H = 26;
+	/** 轨道标签（免费/付费）高度。 */
+	private static final int LABEL_H = 10;
+	/** 经验条右侧留给「0 / 1000 经验」的宽度。 */
+	private static final int XP_TEXT_W = 64;
 
 	/**
 	 * 动画用：当前视觉偏移（小数）。
@@ -54,43 +66,73 @@ public final class HubPassPage {
 		}
 	}
 
+	/**
+	 * 纵向布局（渲染与命中唯一来源）。
+	 *
+	 * @param cellH 格子高度（30~52 自适应）
+	 * @param row1  免费轨顶边
+	 * @param row2  付费轨顶边
+	 * @param barY  滚动条顶边
+	 */
+	record Layout(int cellH, int row1, int row2, int barY) {
+	}
+
+	static Layout layout(int y, int h) {
+		int barBand = BAR_H + 4;
+		int minGap = 6;
+		int avail = h - TOP_H - LABEL_H * 2 - minGap - barBand;
+		int cellH = Math.max(30, Math.min(CELL_H, avail / 2));
+		int slack = Math.max(0, avail - cellH * 2);
+		int extra = Math.min(40, slack);
+		int gap = minGap + extra;
+		slack -= extra;
+		int topPad = Math.min(12, slack / 2);
+
+		int row1 = y + TOP_H + topPad + LABEL_H;
+		int row2 = row1 + cellH + gap + LABEL_H;
+		int barY = Math.max(row2 + cellH + 3, y + h - BAR_H - 4);
+		barY = Math.min(barY, y + h - BAR_H);
+		return new Layout(cellH, row1, row2, barY);
+	}
+
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			int scroll, double mouseX, double mouseY) {
 		PassProtocol.Snapshot s = PassClientNetworking.LAST;
+		Layout lo = layout(y, h);
 
 		dc.drawText(tr, Text.literal(s.season().isEmpty() ? "战令" : s.season()), x, y, HubTheme.TITLE, false);
 		String lv = "等级 " + s.level();
 		dc.drawText(tr, Text.literal(lv), x + w - tr.getWidth(lv), y, HubTheme.GOLD, false);
 
-		// 经验条
+		// 经验条：右侧留出经验文字位置，字与条同一行（省一行高度，窗口态原本就是被这行挤爆的）
 		int barY = y + 14;
-		dc.fill(x, barY, x + w, barY + 6, HubTheme.TRACK);
+		int barW = Math.max(20, w - XP_TEXT_W);
+		dc.fill(x, barY, x + barW, barY + 6, HubTheme.TRACK);
 		long need = Math.max(1, s.xpNext());
-		int fill = (int) (w * Math.min(1.0, (double) s.xp() / need));
+		int fill = (int) (barW * Math.min(1.0, (double) s.xp() / need));
 		dc.fill(x, barY, x + fill, barY + 6, HubTheme.GOLD);
 		String xpTxt = s.xp() + " / " + need + " 经验";
-		dc.drawText(tr, Text.literal(xpTxt), x, barY + 10, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal(xpTxt), x + w - tr.getWidth(xpTxt), barY - 1, HubTheme.MUTED, false);
 
 		float sc = animate(scroll, visibleCells(w));
 
 		// 免费轨
-		int row1 = y + 44;
-		dc.drawText(tr, Text.literal("免费"), x, row1 - 12, HubTheme.TEXT, false);
-		drawTrack(dc, tr, x, row1, w, s.free(), s.claimedFree(), sc, s.level(), true, true,
-				mouseX, mouseY);
+		dc.drawText(tr, Text.literal("免费"), x, lo.row1() - LABEL_H, HubTheme.TEXT, false);
+		drawTrack(dc, tr, x, lo.row1(), w, lo.cellH(), s.free(), s.claimedFree(), sc,
+				s.level(), true, true, mouseX, mouseY);
 
 		// 付费轨
-		int row2 = row1 + CELL_H + 24;
-		dc.drawText(tr, Text.literal("付费"), x, row2 - 12, HubTheme.GOLD, false);
-		drawTrack(dc, tr, x, row2, w, s.prem(), s.claimedPrem(), sc, s.level(), s.premium(), false,
-				mouseX, mouseY);
+		dc.drawText(tr, Text.literal("付费"), x, lo.row2() - LABEL_H, HubTheme.GOLD, false);
+		drawTrack(dc, tr, x, lo.row2(), w, lo.cellH(), s.prem(), s.claimedPrem(), sc,
+				s.level(), s.premium(), false, mouseX, mouseY);
 
-		// T61：滚动条（整条奖励装得下时不画）
+		// T61：滚动条（整条奖励装得下时不画）；位置由 layout 保证不压格子
 		int size = maxSize();
-		if (size > visibleCells(w)) {
-			int tTop = barTop(y, h);
+		int visible = visibleCells(w);
+		if (size > visible) {
+			int tTop = lo.barY();
 			dc.fill(x, tTop, x + w, tTop + BAR_H, HubTheme.TRACK);
-			int[] th = thumbRect(x, w, scroll, size, visibleCells(w));
+			int[] th = thumbRect(x, w, scroll, size, visible);
 			boolean hot = mouseX >= th[0] && mouseX < th[0] + th[1]
 					&& mouseY >= tTop - 2 && mouseY < tTop + BAR_H + 2;
 			dc.fill(th[0], tTop, th[0] + th[1], tTop + BAR_H, hot ? HubTheme.GOLD : HubTheme.PRIMARY);
@@ -99,11 +141,11 @@ public final class HubPassPage {
 		// 未解锁时整条付费轨已经画暗，不再额外写文字（Aki 要求）
 	}
 
-	private static void drawTrack(DrawContext dc, TextRenderer tr, int x, int y, int w,
+	private static void drawTrack(DrawContext dc, TextRenderer tr, int x, int y, int w, int cellH,
 			List<PassProtocol.Reward> rewards, List<Integer> claimed, float scroll, int level,
 			boolean unlocked, boolean freeTrack, double mouseX, double mouseY) {
 		if (rewards.isEmpty()) {
-			dc.fill(x, y, x + w, y + CELL_H, HubTheme.CARD);
+			dc.fill(x, y, x + w, y + cellH, HubTheme.CARD);
 			dc.drawText(tr, Text.literal("奖励未配置"), x + 6, y + 8, HubTheme.MUTED, false);
 			return;
 		}
@@ -115,20 +157,20 @@ public final class HubPassPage {
 		int last = Math.min(rewards.size(), first + visible + 1);
 
 		// 动画期间首尾格会探出内容区 ⇒ 必须裁剪，否则会画到侧栏/边框上
-		dc.enableScissor(x, y, x + w, y + CELL_H);
+		dc.enableScissor(x, y, x + w, y + cellH);
 		for (int i = first; i < last; i++) {
 			PassProtocol.Reward r = rewards.get(i);
 			int cx = x + (i - first) * (CELL_W + GAP) - off;
 			boolean done = r.level() <= level;
 			boolean got = claimed.contains(r.level());
 			boolean can = unlocked && done && !got;
-			boolean hover = mouseX >= cx && mouseX < cx + CELL_W && mouseY >= y && mouseY < y + CELL_H;
+			boolean hover = mouseX >= cx && mouseX < cx + CELL_W && mouseY >= y && mouseY < y + cellH;
 
 			int bg = got ? HubTheme.DISABLED_BG : (can ? HubTheme.SELECT : (unlocked ? HubTheme.CARD : HubTheme.INNER));
-			dc.fill(cx, y, cx + CELL_W, y + CELL_H, bg);
+			dc.fill(cx, y, cx + CELL_W, y + cellH, bg);
 			int edge = can ? HubTheme.GOLD : (hover ? HubTheme.EDGE_HOVER : HubTheme.LINE);
 			dc.fill(cx, y, cx + CELL_W, y + 1, edge);
-			dc.fill(cx, y + CELL_H - 1, cx + CELL_W, y + CELL_H, edge);
+			dc.fill(cx, y + cellH - 1, cx + CELL_W, y + cellH, edge);
 
 			String lvl = String.valueOf(r.level());
 			dc.drawText(tr, Text.literal(lvl), cx + 4, y + 4, done ? HubTheme.TEXT : HubTheme.MUTED, false);
@@ -136,7 +178,11 @@ public final class HubPassPage {
 			String reward = r.money() > 0 ? ("+" + shortNum(r.money())) : (r.items().isEmpty() ? "—" : "×" + r.items().get(0).count());
 			dc.drawText(tr, Text.literal(reward), cx + 4, y + 20, HubTheme.GOLD, false);
 			String state = got ? "已领" : (done ? (unlocked ? "可领" : "锁定") : "未达");
-			dc.drawText(tr, Text.literal(state), cx + 4, y + 36, can ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
+			// 格子被压到 30px 时第三行会溢出 ⇒ 只在放得下时画状态行
+			if (cellH >= 44) {
+				dc.drawText(tr, Text.literal(state), cx + 4, y + 36,
+						can ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
+			}
 			if (!freeTrack && !unlocked) {
 				dc.fill(cx + CELL_W - 10, y + 4, cx + CELL_W - 4, y + 10, HubTheme.GOLD);
 			}
@@ -177,11 +223,6 @@ public final class HubPassPage {
 		return Math.max(PassClientNetworking.LAST.free().size(), PassClientNetworking.LAST.prem().size());
 	}
 
-	/** 滚动条纵坐标。 */
-	private static int barTop(int y, int h) {
-		return y + h - BAR_H - BAR_GAP;
-	}
-
 	/** 滑块 {左, 宽}；{@code scroll}/{@code size} 都是目标值，和命中口径一致。 */
 	static int[] thumbRect(int x, int w, int scroll, int size, int visible) {
 		int max = Math.max(0, size - visible);
@@ -204,8 +245,20 @@ public final class HubPassPage {
 	public static boolean hitBar(double mx, double my, int x, int y, int w, int h) {
 		int size = maxSize();
 		if (size <= visibleCells(w)) return false;
-		int t = barTop(y, h);
+		int t = layout(y, h).barY();
 		return mx >= x && mx < x + w && my >= t - 2 && my < t + BAR_H + 2;
+	}
+
+	/**
+	 * T61 夹具：滚动条右端中心点（{@code null} = 整条装得下、没有滚动条）。
+	 *
+	 * <p>坐标由 layout 算，夹具不写死 —— 上一版滚动条钉在内容区最底，改布局后
+	 * 写死的 y 会点到付费轨上，还会「验证成功」。
+	 */
+	static double[] barEndCenter(int x, int y, int w, int h) {
+		if (maxSize() <= visibleCells(w)) return null;
+		Layout lo = layout(y, h);
+		return new double[]{x + w - 6, lo.barY() + BAR_H / 2.0};
 	}
 
 	/** 拖拽期间每帧调用（宿主在 mouseDragged 里）。 */
@@ -217,28 +270,27 @@ public final class HubPassPage {
 	public static Result click(double mx, double my, int x, int y, int w, int h, int scroll) {
 		PassProtocol.Snapshot s = PassClientNetworking.LAST;
 		int visible = visibleCells(w);
+		Layout lo = layout(y, h);
 
-		// T61：先判滚动条（它压在内容底部，和奖励格不重叠）
+		// T61：先判滚动条（它在轨下方，和奖励格不重叠）
 		if (hitBar(mx, my, x, y, w, h)) {
 			return new Result(null, scrollFromX(mx, x, w, maxSize(), visible));
 		}
 
-		int row1 = y + 34;
-		int row2 = row1 + CELL_H + 22;
-
-		int idx = hitCell(mx, my, x, row1, w, visible, s.free().size(), scroll);
+		int idx = hitCell(mx, my, x, lo.row1(), w, lo.cellH(), visible, s.free().size(), scroll);
 		if (idx >= 0 && idx < s.free().size()) {
 			return new Result(new Claim("free", s.free().get(idx).level()), -1);
 		}
-		idx = hitCell(mx, my, x, row2, w, visible, s.prem().size(), scroll);
+		idx = hitCell(mx, my, x, lo.row2(), w, lo.cellH(), visible, s.prem().size(), scroll);
 		if (idx >= 0 && idx < s.prem().size()) {
 			return new Result(new Claim("premium", s.prem().get(idx).level()), -1);
 		}
 		return Result.NONE;
 	}
 
-	private static int hitCell(double mx, double my, int x, int rowY, int w, int visible, int size, int scroll) {
-		if (my < rowY || my >= rowY + CELL_H) return -1;
+	private static int hitCell(double mx, double my, int x, int rowY, int w, int cellH, int visible,
+			int size, int scroll) {
+		if (my < rowY || my >= rowY + cellH) return -1;
 		int start = Math.max(0, Math.min(scroll, Math.max(0, size - visible)));
 		for (int i = start; i < Math.min(size, start + visible); i++) {
 			int cx = x + (i - start) * (CELL_W + GAP);
