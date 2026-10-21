@@ -67,7 +67,27 @@ public final class TitleCommands {
 										// （string()/word() 只吃 0-9A-Za-z_.+-），所以颜色用一个
 										// greedy 参数收，再按 ':' 或空格拆两段。
 										.then(CommandManager.argument("colors", StringArgumentType.greedyString())
-												.executes(TitleCommands::gradient))))));
+												.executes(TitleCommands::gradient)))))
+				// T60：槽位解锁（1..slots.max，0 = 回到配置默认）
+				.then(CommandManager.literal("slots")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("player", EntityArgumentType.player())
+								.then(CommandManager.argument("count",
+										com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 3))
+										.executes(TitleCommands::slots))))
+				// T60：卸下某一槽
+				.then(CommandManager.literal("unequip")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("player", EntityArgumentType.player())
+								.then(CommandManager.argument("slot",
+										com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 2))
+										.executes(TitleCommands::unequip))))
+				// T66：强制称号（id 来自 title.json 的 forced[]；"-" = 全部取消）
+				.then(CommandManager.literal("force")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("player", EntityArgumentType.player())
+								.then(CommandManager.argument("id", StringArgumentType.greedyString())
+										.executes(TitleCommands::force)))));
 	}
 
 	private static int self(CommandContext<ServerCommandSource> ctx) {
@@ -78,12 +98,24 @@ public final class TitleCommands {
 			src.sendError(Text.literal(Lang.msg("title.disabled")));
 			return 0;
 		}
-		String t = TitleModule.current(p.getUuid());
-		if (t == null || t.isEmpty()) {
+		var d = TitleModule.data(p.getUuid());
+		var parts = TitleModule.effectiveParts(d);
+		if (parts.isEmpty()) {
 			src.sendFeedback(() -> Text.literal(Lang.msg("title.none")), false);
 		} else {
-			src.sendFeedback(() -> Text.literal(Lang.msg("title.current", t)), false);
+			StringBuilder sb = new StringBuilder();
+			for (TitleModule.Part part : parts) {
+				if (sb.length() > 0) sb.append("·");
+				sb.append(part.text());
+			}
+			String shown = sb.toString();
+			src.sendFeedback(() -> Text.literal(Lang.msg("title.current", shown)), false);
 		}
+		// T60：槽位使用情况（管理员排查「为什么第二个称号不显示」时最常看这行）
+		int slots = TitleModule.slotsOf(d);
+		String slotInfo = "槽位 " + Math.min(d.equipped.size(), slots) + "/" + slots
+				+ (d.forced.isEmpty() ? "" : " · 强制 " + d.forced.size());
+		src.sendFeedback(() -> Text.literal(slotInfo), false);
 		return 1;
 	}
 
@@ -201,6 +233,62 @@ public final class TitleCommands {
 					? "配色已设为渐变 " + TitleStyle.hex(c1) + " → " + TitleStyle.hex(c2)
 					: "配色已设为纯色 " + TitleStyle.hex(c1);
 			src.sendFeedback(() -> Text.literal(msg), false);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal(String.valueOf(e.getMessage())));
+			return 0;
+		}
+	}
+
+	// ---------------------------------------------------------------- T60 槽位 / T66 强制
+
+	private static int slots(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+			int want = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "count");
+			int now = TitleModule.setSlots(target, want);
+			src.sendFeedback(() -> Text.literal(target.getName().getString() + " 的称号槽位：" + now
+					+ (want == 0 ? "（配置默认）" : "")), false);
+			com.akira.redtale.economy.net.TitleNetworking.send(target);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal(String.valueOf(e.getMessage())));
+			return 0;
+		}
+	}
+
+	private static int unequip(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+			int slot = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "slot");
+			TitleModule.unequipSlot(target, slot);
+			src.sendFeedback(() -> Text.literal(target.getName().getString() + " 已卸下槽位 " + (slot + 1)), false);
+			com.akira.redtale.economy.net.TitleNetworking.send(target);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal(String.valueOf(e.getMessage())));
+			return 0;
+		}
+	}
+
+	private static int force(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+			String id = StringArgumentType.getString(ctx, "id");
+			boolean clearing = id == null || id.isBlank() || "-".equals(id.trim());
+			if (!clearing && com.akira.redtale.economy.config.TitleConfig.forcedById(id.trim()) == null) {
+				src.sendError(Text.literal("title.json 的 forced[] 里没有这个 id：" + id.trim()));
+				return 0;
+			}
+			var now = TitleModule.setForced(target, clearing ? "-" : id.trim());
+			String msg = now.isEmpty()
+					? target.getName().getString() + " 的强制称号已清空"
+					: target.getName().getString() + " 的强制称号：" + String.join(", ", now);
+			src.sendFeedback(() -> Text.literal(msg), false);
+			com.akira.redtale.economy.net.TitleNetworking.send(target);
 			return 1;
 		} catch (Exception e) {
 			src.sendError(Text.literal(String.valueOf(e.getMessage())));

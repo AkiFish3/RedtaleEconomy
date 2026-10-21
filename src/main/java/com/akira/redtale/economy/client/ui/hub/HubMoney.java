@@ -1,8 +1,11 @@
 package com.akira.redtale.economy.client.ui.hub;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 /**
  * T55：货币显示的<b>唯一出口</b>（图标优先 + 三段分解）。
@@ -15,9 +18,13 @@ import net.minecraft.text.Text;
  *   <li>{@link #text}：纯文字兜底，只给状态行/聊天这类「只能塞字符串」的地方</li>
  * </ul>
  *
- * <p>★图标一律几何绘制★：不依赖字形（默认字体没有 ▸/∞ 这类符号，会渲染成豆腐块），
- * 也不依赖配套模组的物品贴图（没装 Numismatic 时同样是空的）。
- * 7×7 圆片 + 1px 描边，纵向 y+1 与 9px 字形基线对齐。
+ * <p>★图标来源两档（T70）★：优先用 <b>Numismatic 的原始硬币贴图</b>
+ * （{@code numismatic-overhaul:textures/item/{gold,silver,bronze}_coin.png}，运行时读，不复制进本模组资源），
+ * 模组没装 / 贴图缺失时回退 7×7 几何圆片 + 1px 描边，纵向 y+1 与 9px 字形基线对齐。
+ * 可用性**缓存**：不每次绘制都查资源包；未命中时每 5 秒重试一次（资源重载后能自己恢复）。
+ *
+ * <p>★T67（字体）★：聊天/HUD 那种「只能塞字符串」的位置用 {@link #asText}，
+ * 字体 {@code redtale_economy:coins} 存在时走 {@code \uE000-\uE002} 字形，否则退回纯文字。
  */
 public final class HubMoney {
 
@@ -27,6 +34,26 @@ public final class HubMoney {
 	private static final int ICON_TEXT = 2;
 	/** 两个币种之间的间距。 */
 	private static final int SEG_GAP = 5;
+
+	/** T70：Numismatic 原始贴图（顺序 = 金/银/铜，与 split() 的 [0][1][2] 对齐）。 */
+	private static final Identifier[] COIN_TEX = {
+			Identifier.tryParse("numismatic-overhaul:textures/item/gold_coin.png"),
+			Identifier.tryParse("numismatic-overhaul:textures/item/silver_coin.png"),
+			Identifier.tryParse("numismatic-overhaul:textures/item/bronze_coin.png"),
+	};
+
+	/** T70：贴图可用性缓存（null=还没查过）。命中后永不再查。 */
+	private static final Boolean[] TEX_OK = new Boolean[3];
+	/** 上次查询失败的时间戳：失败后 5 秒才重试，避免每帧查资源包。 */
+	private static final long[] TEX_RETRY = new long[3];
+
+	/** T67：硬币字体的字形（\uE000 金 / \uE001 银 / \uE002 铜）。 */
+	private static final char[] COIN_GLYPH = {'\uE000', '\uE001', '\uE002'};
+	/** T67：字体 id（B 提供 assets/redtale_economy/font/coins.json）。 */
+	private static final Identifier COIN_FONT = Identifier.tryParse("redtale_economy:coins");
+	/** T67：字体可用性缓存（同上：查到就用，查不到 5 秒后重试）。 */
+	private static Boolean fontOk;
+	private static long fontRetry;
 
 	private HubMoney() {
 	}
@@ -51,6 +78,53 @@ public final class HubMoney {
 		return sb.toString();
 	}
 
+	/**
+	 * T67：硬币字体可用时的「字形 + 数字」文本（金 \uE000 / 银 \uE001 / 铜 \uE002）。
+	 *
+	 * <p>字体 {@code redtale_economy:coins} 由 B 提供（{@code assets/redtale_economy/font/coins.json}
+	 * + 一张 3 格宽的位图）。**缺失时自动退回纯文字**，调用方不用判断。
+	 *
+	 * @param full true = 三段全显（余额），false = 零值段隐藏（单价）
+	 */
+	public static Text asText(long raw, boolean full) {
+		if (raw < 0) return Text.literal("…");
+		if (!fontReady()) return Text.literal(full ? fullText(raw) : text(raw));
+		long[] p = split(raw);
+		net.minecraft.text.MutableText out = Text.empty();
+		boolean any = false;
+		for (int i = 0; i < 3; i++) {
+			boolean show = full || p[i] > 0 || (i == 2 && p[0] == 0 && p[1] == 0);
+			if (!show) continue;
+			if (any) out.append(Text.literal(" "));
+			Style st = Style.EMPTY.withFont(COIN_FONT).withColor(i == 0 ? 0xFFD700 : 0xFFFFFF);
+			out.append(Text.literal(String.valueOf(COIN_GLYPH[i])).setStyle(st));
+			out.append(Text.literal(Long.toString(p[i]))
+					.setStyle(Style.EMPTY.withColor(i == 0 ? 0xFFD700 : 0xFFFFFF)));
+			any = true;
+		}
+		return any ? out : Text.literal(full ? fullText(raw) : text(raw));
+	}
+
+	/** T67：硬币字体是否可用（同样缓存 + 5 秒重试）。 */
+	public static boolean fontReady() {
+		if (fontOk != null && fontOk) return true;
+		long now = System.currentTimeMillis();
+		if (fontOk != null && now - fontRetry < 5000L) return false;
+		boolean found = false;
+		try {
+			MinecraftClient mc = MinecraftClient.getInstance();
+			found = COIN_FONT != null && mc != null
+					&& mc.getResourceManager()
+							.getResource(new Identifier(COIN_FONT.getNamespace(), "font/" + COIN_FONT.getPath() + ".json"))
+							.isPresent();
+		} catch (Exception ignored) {
+			found = false;
+		}
+		fontOk = found;
+		fontRetry = now;
+		return found;
+	}
+
 	/** 三段全显的文字（余额口径）：{@code 0金0银5铜}。 */
 	public static String fullText(long raw) {
 		long[] p = split(raw);
@@ -60,9 +134,10 @@ public final class HubMoney {
 	/** 三段全显的宽（供右侧对齐/预算判断）。 */
 	public static int fullWidth(TextRenderer tr, long raw) {
 		long[] p = split(raw);
-		int w = ICON + ICON_TEXT + tr.getWidth(Long.toString(p[0]));
-		w += SEG_GAP + ICON + ICON_TEXT + tr.getWidth(Long.toString(p[1]));
-		w += SEG_GAP + ICON + ICON_TEXT + tr.getWidth(Long.toString(p[2]));
+		int ic = iconW();
+		int w = ic + ICON_TEXT + tr.getWidth(Long.toString(p[0]));
+		w += SEG_GAP + ic + ICON_TEXT + tr.getWidth(Long.toString(p[1]));
+		w += SEG_GAP + ic + ICON_TEXT + tr.getWidth(Long.toString(p[2]));
 		return w;
 	}
 
@@ -71,11 +146,12 @@ public final class HubMoney {
 		long[] p = split(raw);
 		int w = 0;
 		int segs = 0;
+		int ic = iconW();
 		for (int i = 0; i < 3; i++) {
 			boolean show = p[i] > 0 || (i == 2 && p[0] == 0 && p[1] == 0);
 			if (!show) continue;
 			if (segs++ > 0) w += SEG_GAP;
-			w += ICON + ICON_TEXT + tr.getWidth(Long.toString(p[i]));
+			w += ic + ICON_TEXT + tr.getWidth(Long.toString(p[i]));
 		}
 		return w;
 	}
@@ -104,25 +180,66 @@ public final class HubMoney {
 		long[] p = split(raw);
 		int cx = x;
 		int drawn = 0;
+		int ic = iconW();
 		for (int i = 0; i < 3; i++) {
 			boolean show = full || p[i] > 0 || (i == 2 && p[0] == 0 && p[1] == 0);
 			if (!show) continue;
 			String n = Long.toString(p[i]);
-			int need = ICON + ICON_TEXT + tr.getWidth(n);
+			int need = ic + ICON_TEXT + tr.getWidth(n);
 			if (drawn > 0) need += SEG_GAP;
 			if (maxW > 0 && cx - x + need > maxW) break;
 			if (drawn > 0) cx += SEG_GAP;
 			coin(dc, cx, y + 1, i);
-			dc.drawText(tr, Text.literal(n), cx + ICON + ICON_TEXT, y,
+			dc.drawText(tr, Text.literal(n), cx + ic + ICON_TEXT, y,
 					i == 0 ? HubTheme.GOLD : HubTheme.TEXT, false);
-			cx += ICON + ICON_TEXT + tr.getWidth(n);
+			cx += ic + ICON_TEXT + tr.getWidth(n);
 			drawn++;
 		}
 		return cx - x;
 	}
 
-	/** 几何硬币：1px 描边 + 实心面，7×7，四角切掉（圆形近似）。 */
+	/** 硬币图标宽：有原版贴图时 8（16×16 缩一半），否则 7。 */
+	private static int iconW() {
+		return texOk(0) ? 8 : ICON;
+	}
+
+	/**
+	 * T70：Numismatic 贴图是否可用（缓存 + 失败重试）。
+	 *
+	 * <p>★不能在每次绘制里查资源包★：一次查包在 60fps 下就是每秒 60 次。
+	 * 命中后永久缓存；未命中每 5 秒重试一次，资源重载完成后能自己恢复。
+	 */
+	private static boolean texOk(int kind) {
+		int k = kind < 0 || kind > 2 ? 0 : kind;
+		Boolean ok = TEX_OK[k];
+		if (ok != null && ok) return true;
+		long now = System.currentTimeMillis();
+		if (ok != null && now - TEX_RETRY[k] < 5000L) return false;
+		boolean found = false;
+		try {
+			Identifier id = COIN_TEX[k];
+			MinecraftClient mc = MinecraftClient.getInstance();
+			found = id != null && mc != null && mc.getResourceManager().getResource(id).isPresent();
+		} catch (Exception ignored) {
+			found = false;
+		}
+		TEX_OK[k] = found;
+		TEX_RETRY[k] = now;
+		return found;
+	}
+
+	/** 硬币图标：优先原版贴图（缩放绘制，不改资源），缺失则几何圆片。 */
 	private static void coin(DrawContext dc, int x, int y, int kind) {
+		if (texOk(kind)) {
+			int s = iconW();
+			dc.drawTexture(COIN_TEX[kind], x, y, 0, 0, s, s, 16, 16);
+			return;
+		}
+		coinGeometry(dc, x, y, kind);
+	}
+
+	/** 几何硬币：1px 描边 + 实心面，7×7，四角切掉（圆形近似）。 */
+	private static void coinGeometry(DrawContext dc, int x, int y, int kind) {
 		int face = switch (kind) {
 			case 0 -> HubTheme.COIN_GOLD;
 			case 1 -> HubTheme.COIN_SILVER;

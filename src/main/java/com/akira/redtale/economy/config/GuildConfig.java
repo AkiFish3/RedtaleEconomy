@@ -61,6 +61,25 @@ public final class GuildConfig {
 					.field("bountySlotsPerRank", ConfigSchema.integer(1, 0, 9, "每级多几个悬赏位"))
 					.field("maxBountySlots", ConfigSchema.integer(9, 1, 9, "悬赏位上限"))
 					.field("teleportDiscountPerRank", ConfigSchema.decimal(0.05, 0, 1, "每级传送折扣")))
+			// T59：声望可以扣（负值），带冷却与每日上限，避免被恶意刷
+			.field("repLoss", ConfigSchema.obj("扣声望（T59）")
+					.field("enabled", ConfigSchema.bool(true, "是否允许扣声望（关掉=只增不减，回到老行为）"))
+					.field("floor", ConfigSchema.integer(-2000, -1_000_000, 0, "声望下限（再扣也止于此）"))
+					.field("dailyCap", ConfigSchema.integer(300, 0, 1_000_000, "每人每天最多扣多少（0 = 不限制）"))
+					.field("cooldownSeconds", ConfigSchema.integer(60, 0, 86400,
+							"同来源两次扣声望的最小间隔（秒）"))
+					.field("sources", ConfigSchema.obj("扣声望来源（每次 -N）")
+							.field("death", ConfigSchema.integer(10, 0, 100000, "普通死亡"))
+							.field("bountyExpire", ConfigSchema.integer(30, 0, 100000, "悬赏超时未完成"))
+							.field("admin", ConfigSchema.integer(100, 0, 100000, "管理员/事件手动扣"))))
+			// T64：负声望的负面效果（阈值可配）
+			.field("negative", ConfigSchema.obj("负声望效果（T64）")
+					.field("lightBelow", ConfigSchema.integer(-100, -1_000_000, 1, "轻度阈值（rep 小于等于它起算）"))
+					.field("lightTax", ConfigSchema.decimal(0.05, 0, 3, "轻度：商店加税比例（0.05 = +5%）"))
+					.field("severeBelow", ConfigSchema.integer(-500, -1_000_000, 1, "重度阈值"))
+					.field("severeTax", ConfigSchema.decimal(0.15, 0, 3, "重度：商店加税比例"))
+					.field("severeDeny", ConfigSchema.bool(true,
+							"重度：拒绝商店购买（关掉=只加税不封店）")))
 			.field("titles", ConfigSchema.rawList(nodeArray(defaultTitles()),
 					"等级 → 称号（R34 用）：[{id,title}]"));
 
@@ -145,5 +164,51 @@ public final class GuildConfig {
 			}
 		}
 		return "";
+	}
+
+	// ---------------------------------------------------------------- T59 扣声望
+
+	public static boolean repLossEnabled() {
+		return store().getPathBool("repLoss.enabled", true);
+	}
+
+	public static long repFloor() {
+		return store().getPathLong("repLoss.floor", -2000);
+	}
+
+	/** 每日扣声望上限；0 = 不限制。 */
+	public static long repLossDailyCap() {
+		return store().getPathLong("repLoss.dailyCap", 300);
+	}
+
+	public static int repLossCooldownSeconds() {
+		return (int) store().getPathLong("repLoss.cooldownSeconds", 60);
+	}
+
+	/** 某来源单次扣多少（未配置 = 0 = 不扣）。 */
+	public static long repLoss(String source) {
+		return store().getPathLong("repLoss.sources." + source, 0);
+	}
+
+	// ---------------------------------------------------------------- T64 负声望效果
+
+	public static long negativeLightBelow() {
+		return store().getPathLong("negative.lightBelow", -100);
+	}
+
+	public static double negativeLightTax() {
+		return store().getPathDouble("negative.lightTax", 0.05);
+	}
+
+	public static long negativeSevereBelow() {
+		return store().getPathLong("negative.severeBelow", -500);
+	}
+
+	public static double negativeSevereTax() {
+		return store().getPathDouble("negative.severeTax", 0.15);
+	}
+
+	public static boolean negativeSevereDeny() {
+		return store().getPathBool("negative.severeDeny", true);
 	}
 }

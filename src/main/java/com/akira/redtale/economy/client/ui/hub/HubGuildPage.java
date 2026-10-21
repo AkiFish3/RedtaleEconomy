@@ -21,7 +21,8 @@ public final class HubGuildPage {
 
 		String cur = s.currentName().isEmpty() ? "无档位" : s.currentName();
 		dc.drawText(tr, Text.literal(cur), x, y, HubTheme.TITLE, false);
-		String rep = s.rep() + " 声望";
+		// T59/T64：声望可为负 —— 负值染红并标注，避免和「进度条没动」混为一谈
+		String rep = s.rep() + " 声望" + (s.rep() < 0 ? "（负）" : "");
 		dc.drawText(tr, Text.literal(rep), x + w - tr.getWidth(rep), y, HubTheme.GOLD, false);
 
 		// 到下一档的进度
@@ -37,7 +38,8 @@ public final class HubGuildPage {
 		dc.fill(x, barY, x + w, barY + 6, HubTheme.TRACK);
 		if (nextRep > 0) {
 			long base = ranks.get(s.currentIndex()).rep();
-			double p = Math.min(1.0, (double) (s.rep() - base) / Math.max(1, nextRep - base));
+			// 负声望时 (rep-base) 为负 ⇒ 必须夹到 [0,1]，否则 fill 会画出负宽度
+			double p = Math.max(0.0, Math.min(1.0, (double) (s.rep() - base) / Math.max(1, nextRep - base)));
 			dc.fill(x, barY, x + (int) (w * p), barY + 6, HubTheme.GOLD);
 			dc.drawText(tr, Text.literal("距 " + nextName + " 还差 " + Math.max(0, nextRep - s.rep())),
 					x, barY + 9, HubTheme.MUTED, false);

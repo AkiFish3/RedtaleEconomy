@@ -95,6 +95,11 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 		ShopCatalog.ShopDef def = ShopCatalog.shop(shopId);
 		boolean premium = def != null && def.requirePremium();
 
+		// T64：重度负声望（默认 <= -500）拒绝服务；赞助点商品不受协会声望影响
+		if (!premium && GuildModule.denied(player.getUuid())) {
+			return fail(player, "shop.repDenied", balance);
+		}
+
 		long price = e.buyPrice() * count;
 		// R32：协会等级商店折扣（只影响普通货币，赞助点商品不打折）
 		if (!premium) price = GuildModule.applyShopDiscount(player.getUuid(), price);

@@ -83,13 +83,22 @@ final class HubMailPayClicks {
 			int cw = host.frame.contentW();
 			int ch = host.frame.contentH();
 			var r = HubTitlesPage.click(mouseX, mouseY, cx, cy, cw, ch, button);
-			var owned = com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST.owned();
-			if (r.index() >= 0 && r.index() < owned.size()) {
-				String t = owned.get(r.index());
+			var snap = com.akira.redtale.economy.client.title.TitlesClientNetworking.LAST;
+			if (r.hit() == HubTitlesPage.Hit.SLOT) {
+				// T60：点槽位条 = 卸下该槽
+				com.akira.redtale.economy.client.title.TitlesClientNetworking.unequipSlot(r.index());
+			} else if (r.index() >= 0 && r.index() < snap.owned().size()) {
+				String t = snap.owned().get(r.index());
 				if (r.hit() == HubTitlesPage.Hit.REMOVE) {
 					com.akira.redtale.economy.client.title.TitlesClientNetworking.remove(t);
 				} else if (r.hit() == HubTitlesPage.Hit.SELECT) {
-					com.akira.redtale.economy.client.title.TitlesClientNetworking.select(t);
+					// 已装备 ⇒ 再点一次卸下；否则装进第一个空槽（服务端 -1 = 追加）
+					if (snap.equipped().contains(t)) {
+						int slot = snap.equipped().indexOf(t);
+						com.akira.redtale.economy.client.title.TitlesClientNetworking.unequipSlot(slot);
+					} else {
+						com.akira.redtale.economy.client.title.TitlesClientNetworking.select(t, -1);
+					}
 				}
 			}
 			return HubClicks.R.HANDLED;

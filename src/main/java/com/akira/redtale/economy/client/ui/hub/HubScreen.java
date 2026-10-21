@@ -52,6 +52,8 @@ public class HubScreen extends Screen {
 	int marketSelected = -1;
 	boolean shopRequested;
 	int passScroll;
+	/** T61：正在拖战令滚动条（按下在条上，松手复位）。 */
+	boolean passBarDrag;
 	final StringBuilder storageQuery = new StringBuilder();
 	int storageCat ;
 	int storageScroll ;

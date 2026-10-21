@@ -39,6 +39,8 @@ public final class PacketIds {
 	public static final Identifier S2C_TITLES = RedtaleEconomy.id("title/snapshot");
 	public static final Identifier C2S_TITLE_REQ = RedtaleEconomy.id("title/request");
 	public static final Identifier C2S_TITLE_SELECT = RedtaleEconomy.id("title/select");
+	/** T60：卸下某一槽（body = 槽位号 varint）。 */
+	public static final Identifier C2S_TITLE_UNEQUIP = RedtaleEconomy.id("title/unequip");
 	public static final Identifier C2S_TITLE_REMOVE = RedtaleEconomy.id("title/remove");
 	public static final Identifier C2S_TITLE_CLEAR = RedtaleEconomy.id("title/clear");
 	public static final Identifier C2S_PAY = RedtaleEconomy.id("pay");

@@ -1,5 +1,7 @@
 package com.akira.redtale.economy.config;
 
+import com.akira.redtale.economy.module.impl.TitleStyle;
+
 import java.util.List;
 
 /**
@@ -12,6 +14,17 @@ import java.util.List;
 public final class TitleConfig {
 
 	public static final String FILE = "title.json";
+
+	/** T66：{@code forced[]} 的一条。{@code id} 用于命令激活，{@code order} 越小越靠前。 */
+	public static final ConfigSchema FORCED_ENTRY = ConfigSchema.obj("强制称号条目")
+			.field("id", ConfigSchema.string("", "唯一 id（命令里用）"))
+			.field("text", ConfigSchema.string("", "显示文本"))
+			.field("order", ConfigSchema.integer(0, -100, 100, "排序：越小越靠前"))
+			.field("override", ConfigSchema.bool(false, "true=顶替玩家自选称号（只显示强制称号）"))
+			.field("gradient", ConfigSchema.bool(false, "是否渐变"))
+			.field("color1", ConfigSchema.string("#FFD700", "起始色（#RRGGBB）"))
+			.field("color2", ConfigSchema.string("#8A2BE2", "渐变终止色（#RRGGBB）"));
+
 
 	public static final ConfigSchema SCHEMA = ConfigSchema.obj("称号")
 			.field("enabled", ConfigSchema.bool(true, "是否启用称号"))
@@ -34,6 +47,19 @@ public final class TitleConfig {
 					.field("defaultColor2", ConfigSchema.string("#8A2BE2",
 							"渐变终止色（#RRGGBB）"))
 					.field("maxSuffixLength", ConfigSchema.integer(12, 1, 64, "后缀文本最大长度")))
+			// T60：多槽位。默认只开 1 槽，/titles slots 或解锁途径把单个玩家开上去。
+			.field("slots", ConfigSchema.obj("多槽位（T60）")
+					.field("default", ConfigSchema.integer(1, 1, 3,
+							"新玩家的可用槽位数（解锁到 3）"))
+					.field("max", ConfigSchema.integer(3, 1, 3,
+							"槽位硬上限（超过 3 不再生效，TitleSlots.MAX_SLOTS 写死 3）"))
+					.field("separator", ConfigSchema.string("·",
+							"多个称号拼进同一对 [] 时的分隔符")))
+			// T66：强制称号（副本 / 愚人节等）。按 id 激活，不占玩家槽位。
+			.field("forced", ConfigSchema.list(new com.google.gson.JsonArray(), FORCED_ENTRY,
+					"强制称号列表：{id,text,order,override,gradient,color1,color2}；"
+							+ "order 越小越靠前（可负数），override=true 时顶替玩家自选称号；"
+							+ "用 /titles force <玩家> <id|-> 激活"))
 			.field("restoreTemplate", ConfigSchema.string(
 					"<white>[</white><c:green>玩家</c><white>]</white> <white>${vanillaDisplayName}</white>",
 					"清除称号时还原成的 display_name（StyledChat 默认样式）"))
@@ -154,5 +180,64 @@ public final class TitleConfig {
 
 	public static int itemCooldown() {
 		return (int) store().getPathLong("item.cooldown", 0);
+	}
+
+	// ---------------------------------------------------------------- T60 槽位
+
+	public static int slotDefault() {
+		return (int) Math.max(1, Math.min(3, store().getPathLong("slots.default", 1)));
+	}
+
+	public static int slotMax() {
+		return (int) Math.max(1, Math.min(3, store().getPathLong("slots.max", 3)));
+	}
+
+	public static String slotSeparator() {
+		String s = store().getPathString("slots.separator", "·");
+		return s == null || s.isEmpty() ? "·" : s;
+	}
+
+	// ---------------------------------------------------------------- T66 强制称号
+
+	/** 配置里的一条强制称号。 */
+	public record Forced(String id, String text, int order, boolean override,
+			boolean gradient, int color1, int color2) {
+	}
+
+	/** 读出 {@code forced[]}（坏条目跳过，不抛异常）。 */
+	public static List<Forced> forced() {
+		List<Forced> out = new java.util.ArrayList<>();
+		var el = store().getPath("forced");
+		if (el == null || !el.isJsonArray()) return out;
+		for (var e : el.getAsJsonArray()) {
+			if (!e.isJsonObject()) continue;
+			var o = e.getAsJsonObject();
+			String text = o.has("text") && o.get("text").isJsonPrimitive()
+					? o.get("text").getAsString().trim() : "";
+			if (text.isEmpty()) continue;
+			String id = o.has("id") && o.get("id").isJsonPrimitive()
+					? o.get("id").getAsString().trim() : text;
+			int order = o.has("order") && o.get("order").isJsonPrimitive() ? o.get("order").getAsInt() : 0;
+			boolean override = o.has("override") && o.get("override").isJsonPrimitive()
+					&& o.get("override").getAsJsonPrimitive().isBoolean() && o.get("override").getAsBoolean();
+			boolean gradient = o.has("gradient") && o.get("gradient").isJsonPrimitive()
+					&& o.get("gradient").getAsJsonPrimitive().isBoolean() && o.get("gradient").getAsBoolean();
+			int c1 = TitleStyle.parse(o.has("color1") ? o.get("color1").getAsString() : null,
+					com.akira.redtale.economy.module.impl.TitleStyle.GOLD);
+			int c2 = TitleStyle.parse(o.has("color2") ? o.get("color2").getAsString() : null,
+					com.akira.redtale.economy.module.impl.TitleStyle.VIOLET);
+			out.add(new Forced(id, text, order, override, gradient, c1, c2));
+		}
+		out.sort(java.util.Comparator.comparingInt(Forced::order));
+		return out;
+	}
+
+	/** 按 id 找一条（找不到 null）。 */
+	public static Forced forcedById(String id) {
+		if (id == null) return null;
+		for (Forced f : forced()) {
+			if (f.id().equals(id)) return f;
+		}
+		return null;
 	}
 }

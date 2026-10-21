@@ -29,9 +29,22 @@ public final class TitlesClientNetworking {
 	}
 
 	public static void select(String title) {
+		select(title, -1);
+	}
+
+	/** T60：装备到指定槽（{@code slot<0} = 追加）。 */
+	public static void select(String title, int slot) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeString(title, 128);
+		buf.writeVarInt(slot);
 		ClientSend.send(PacketIds.C2S_TITLE_SELECT, buf);
+	}
+
+	/** T60：卸下第 {@code slot} 槽。 */
+	public static void unequipSlot(int slot) {
+		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
+		buf.writeVarInt(slot);
+		ClientSend.send(PacketIds.C2S_TITLE_UNEQUIP, buf);
 	}
 
 	public static void remove(String title) {

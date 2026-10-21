@@ -13,7 +13,14 @@ final class HubPassBountyClicks {
 			int cy = host.frame.contentY();
 			int cw = host.frame.contentW();
 			int ch = host.frame.contentH();
-			HubPassPage.Claim c = HubPassPage.click(mouseX, mouseY, cx, cy, cw, ch, host.passScroll);
+			HubPassPage.Result r = HubPassPage.click(mouseX, mouseY, cx, cy, cw, ch, host.passScroll);
+			// T61：点到滚动条 ⇒ 进入拖拽态（后续 mouseDragged 里持续更新）
+			if (r.scrollTo() >= 0) {
+				host.passBarDrag = true;
+				host.passScroll = r.scrollTo();
+				return HubClicks.R.HANDLED;
+			}
+			HubPassPage.Claim c = r.claim();
 			if (c != null) {
 				var mc = MinecraftClient.getInstance();
 				String cmd = "premium".equals(c.track())

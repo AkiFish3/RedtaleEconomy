@@ -49,8 +49,14 @@ public final class HubChrome {
 					if (HubMoney.fullWidth(tr, bal) <= maxW) {
 						HubMoney.drawFull(dc, tr, bx, f.y + 8, bal, maxW);
 					} else {
-						dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.text(bal), maxW)),
-								bx, f.y + 8, HubTheme.GOLD, false);
+						// T67：硬币字体就位时走字形（\uE000-\uE002），否则退回纯文字
+						Text moneyTxt = HubMoney.asText(bal, false);
+						if (tr.getWidth(moneyTxt) <= maxW) {
+							dc.drawText(tr, moneyTxt, bx, f.y + 8, HubTheme.GOLD, false);
+						} else {
+							dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.text(bal), maxW)),
+									bx, f.y + 8, HubTheme.GOLD, false);
+						}
 					}
 				}
 			}

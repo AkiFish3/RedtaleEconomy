@@ -32,7 +32,13 @@ public final class GuildCommands {
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("player", EntityArgumentType.player())
 								.then(CommandManager.argument("amount", LongArgumentType.longArg(1, 10_000_000))
-										.executes(GuildCommands::add)))));
+										.executes(GuildCommands::add))))
+				// T59：扣声望（走冷却 + 每日上限 + 下限，命令回显「实际扣掉多少」）
+				.then(CommandManager.literal("take")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("player", EntityArgumentType.player())
+								.then(CommandManager.argument("amount", LongArgumentType.longArg(1, 10_000_000))
+										.executes(GuildCommands::take)))));
 	}
 
 	private static int info(CommandContext<ServerCommandSource> ctx) {
@@ -64,8 +70,29 @@ public final class GuildCommands {
 		}
 	}
 
-	private static int onlyPlayer(ServerCommandSource src) {
-		src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
+	/** T59：管理员扣声望；回显「实际扣掉多少」（冷却/每日上限/下限都会让实际值变小）。 */
+	private static int take(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+			long amount = LongArgumentType.getLong(ctx, "amount");
+			long lost = GuildModule.loseRep(target.getUuid(), "admin", amount);
+			if (lost <= 0) {
+				src.sendError(Text.literal(Lang.msg("guild.repLossBlocked",
+						target.getName().getString(), GuildModule.rep(target.getUuid()))));
+				return 0;
+			}
+			long total = GuildModule.rep(target.getUuid());
+			src.sendFeedback(() -> Text.literal(Lang.msg("guild.repLost", lost, "admin", total)), true);
+			com.akira.redtale.economy.net.GuildNetworking.send(target);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal(String.valueOf(e.getMessage())));
+			return 0;
+		}
+	}
+
+	private static int onlyPlayer(ServerCommandSource src) {		src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
 		return 0;
 	}
 }

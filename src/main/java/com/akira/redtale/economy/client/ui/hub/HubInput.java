@@ -92,6 +92,12 @@ final class HubInput {
 
 	/** 返回 null = 交给 super.mouseDragged。 */
 	static Boolean mouseDragged(HubScreen host, double mouseX, double mouseY, int button) {
+		// T61：战令滚动条拖拽（优先于仓库拖拽，两者不会同时成立）
+		if (host.passBarDrag && host.page == HubPage.PASS) {
+			host.passScroll = HubPassPage.scrollForDrag(mouseX,
+					host.frame.contentX(), host.frame.contentW());
+			return true;
+		}
 		if (host.page != HubPage.STORAGE || !host.dragPlacing) return null;
 		var r = HubStoragePage.click(mouseX, mouseY, host.frame.contentX(), host.frame.contentY(),
 				host.frame.contentW(), host.frame.contentH(),
@@ -131,6 +137,7 @@ final class HubInput {
 
 	/** 松手：★一次性把经过的格子交给服务端平分★，然后清空拖拽态。 */
 	static void mouseReleased(HubScreen host) {
+		host.passBarDrag = false;
 		var wnet = com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.class;
 		if (host.dragActive && !host.pendingInv && !host.dragSlots.isEmpty()) {
 			int[] arr = new int[host.dragSlots.size()];

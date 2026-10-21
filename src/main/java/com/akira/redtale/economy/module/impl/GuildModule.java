@@ -156,6 +156,73 @@ public final class GuildModule implements RedtaleModule {
 		return up;
 	}
 
+	// ---------------------------------------------------------------- T59 扣声望
+
+	/** 同 (玩家, 来源) 上次扣声望的时间戳，用于冷却。 */
+	private static final Map<String, Long> LAST_LOSS = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** 按来源扣声望（{@code guild.json → repLoss.sources}）。返回实际扣掉多少。 */
+	public static synchronized long loseRep(UUID uuid, String source) {
+		if (uuid == null || !enabled() || !GuildConfig.repLossEnabled()) return 0;
+		long amount = GuildConfig.repLoss(source);
+		return amount <= 0 ? 0 : loseRep(uuid, source, amount);
+	}
+
+	/**
+	 * 扣声望（T59）：冷却 + 每日上限 + 下限三重约束，返回**实际**扣掉的量。
+	 *
+	 * <p>返回 0 的三种情况：模块关、冷却中、已达每日上限/下限。调用方不需要再判断。
+	 */
+	public static synchronized long loseRep(UUID uuid, String source, long amount) {
+		if (uuid == null || amount <= 0 || !enabled() || !GuildConfig.repLossEnabled()) return 0;
+		String src = source == null ? "" : source;
+		long now = System.currentTimeMillis();
+		int cd = GuildConfig.repLossCooldownSeconds();
+		String cdKey = uuid + "|" + src;
+		if (cd > 0) {
+			Long last = LAST_LOSS.get(cdKey);
+			if (last != null && now - last < cd * 1000L) return 0;
+		}
+		GuildData d = GuildData.of(uuid);
+		String today = java.time.LocalDate.now().toString();
+		if (!today.equals(d.repLossDay)) {
+			d.repLossDay = today;
+			d.repLossToday = 0;
+		}
+		long cap = GuildConfig.repLossDailyCap();
+		long allowed = amount;
+		if (cap > 0) allowed = Math.min(allowed, Math.max(0, cap - d.repLossToday));
+		if (allowed <= 0) return 0;
+		long next = Math.max(GuildConfig.repFloor(), d.rep - allowed);
+		long applied = d.rep - next;
+		if (applied <= 0) return 0;
+		GuildConfig.Rank before = rankFor(d.rep);
+		d.rep = next;
+		d.repLossToday += applied;
+		d.dirty = true;
+		d.save();
+		LAST_LOSS.put(cdKey, now);
+		GuildConfig.Rank after = rankFor(d.rep);
+		if (before != null && after != null && !before.id().equals(after.id())) {
+			notifyRankChange(uuid, before, after);
+		}
+		return applied;
+	}
+
+	private static void notifyRankChange(UUID uuid, GuildConfig.Rank before, GuildConfig.Rank after) {
+		try {
+			ServerPlayerEntity p = RedtaleEconomy.server() == null ? null
+					: RedtaleEconomy.server().getPlayerManager().getPlayer(uuid);
+			if (p != null) {
+				p.sendMessage(Text.literal(Lang.msg("guild.rankDown", before.name(), after.name(),
+						GuildModule.rep(uuid))), false);
+				EasyNpcModule.syncRankTag(p);
+			}
+		} catch (Exception ignored) {
+			// 提示失败不影响数据
+		}
+	}
+
 	private static void notifyRankUp(UUID uuid, GuildConfig.Rank rank) {
 		try {
 			ServerPlayerEntity p = RedtaleEconomy.server() == null ? null
@@ -175,18 +242,38 @@ public final class GuildModule implements RedtaleModule {
 	/** 商店价格倍率（1 - 折扣）。未启用或等级为 0 时返回 1。 */
 	public static double shopMultiplier(UUID uuid) {
 		if (!enabled()) return 1.0;
+		// T64：负声望优先 —— 有税就不打折（否则「负声望 + 高等级」会互相抵消）
+		double tax = negativeTax(uuid);
+		if (tax > 0) return 1.0 + tax;
 		int idx = rankIndex(uuid);
 		if (idx <= 0) return 1.0;
 		double off = Math.min(GuildConfig.maxDiscount(), idx * GuildConfig.shopDiscountPerRank());
 		return Math.max(0.0, 1.0 - off);
 	}
 
-	/** 商店折后价（向下取整，最低 1）。 */
+	/** 商店折后价（向下取整，最低 1）；负声望时倍率 >1，等价加税。 */
 	public static long applyShopDiscount(UUID uuid, long price) {
 		if (price <= 0) return price;
 		double m = shopMultiplier(uuid);
-		if (m >= 1.0) return price;
+		if (Math.abs(m - 1.0) < 1e-9) return price;
 		return Math.max(1, (long) Math.floor(price * m));
+	}
+
+	// ---------------------------------------------------------------- T64 负声望效果
+
+	/** 负声望加税比例（0 = 没有负面效果）。 */
+	public static double negativeTax(UUID uuid) {
+		if (!enabled() || uuid == null) return 0.0;
+		long r = rep(uuid);
+		if (r <= GuildConfig.negativeSevereBelow()) return GuildConfig.negativeSevereTax();
+		if (r <= GuildConfig.negativeLightBelow()) return GuildConfig.negativeLightTax();
+		return 0.0;
+	}
+
+	/** 重度负声望是否拒绝商店购买。 */
+	public static boolean denied(UUID uuid) {
+		if (!enabled() || uuid == null) return false;
+		return GuildConfig.negativeSevereDeny() && rep(uuid) <= GuildConfig.negativeSevereBelow();
 	}
 
 	public static double teleportMultiplier(UUID uuid) {
@@ -220,6 +307,19 @@ public final class GuildModule implements RedtaleModule {
 				checkBiome(p, p.getServerWorld());
 			} catch (Exception e) {
 				RedtaleEconomy.LOGGER.warn("[guild] JOIN 声望失败：{}", e.getMessage());
+			}
+		});
+
+		// T59：死亡扣声望（冷却由 loseRep 统一管；返回 0 表示被限流，不打提示）
+		ModuleEvents.onDeath("guild", (victim, source, killer) -> {
+			if (!(victim instanceof ServerPlayerEntity p)) return;
+			try {
+				long lost = loseRep(p.getUuid(), "death");
+				if (lost > 0) {
+					p.sendMessage(Text.literal(Lang.msg("guild.repLost", lost, "death", rep(p.getUuid()))), false);
+				}
+			} catch (Exception e) {
+				RedtaleEconomy.LOGGER.warn("[guild] 死亡扣声望失败：{}", e.getMessage());
 			}
 		});
 

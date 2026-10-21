@@ -33,6 +33,9 @@ public final class GuildData {
 
 	public final UUID uuid;
 	public long rep;
+	/** T59：今日已扣的声望（绝对值）与所属日期（yyyy-MM-dd），跨天自动归零。 */
+	public String repLossDay = "";
+	public long repLossToday;
 	public final Set<String> seenBiomes = new LinkedHashSet<>();
 	public final Set<String> seenDimensions = new LinkedHashSet<>();
 	public final Set<String> claimedPerks = new LinkedHashSet<>();
@@ -61,7 +64,10 @@ public final class GuildData {
 		try (Reader r = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
 			JsonObject o = GSON.fromJson(r, JsonObject.class);
 			if (o == null) return d;
-			d.rep = o.has("rep") ? Math.max(0, o.get("rep").getAsLong()) : 0;
+			// T59：声望可为负，这里不再钳 0（下限由 GuildModule 按配置控制）
+			d.rep = o.has("rep") ? o.get("rep").getAsLong() : 0;
+			d.repLossDay = o.has("repLossDay") ? o.get("repLossDay").getAsString() : "";
+			d.repLossToday = o.has("repLossToday") ? o.get("repLossToday").getAsLong() : 0;
 			readSet(o, "seenBiomes", d.seenBiomes);
 			readSet(o, "seenDimensions", d.seenDimensions);
 			readSet(o, "claimedPerks", d.claimedPerks);
@@ -85,6 +91,8 @@ public final class GuildData {
 		o.addProperty("_version", 1);
 		o.addProperty("uuid", uuid.toString());
 		o.addProperty("rep", rep);
+		o.addProperty("repLossDay", repLossDay);
+		o.addProperty("repLossToday", repLossToday);
 		o.add("seenBiomes", arr(seenBiomes));
 		o.add("seenDimensions", arr(seenDimensions));
 		o.add("claimedPerks", arr(claimedPerks));
