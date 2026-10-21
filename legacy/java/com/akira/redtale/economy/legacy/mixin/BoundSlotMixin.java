@@ -65,7 +65,9 @@ public class BoundSlotMixin {
 		if (player == null || player.getWorld().isClient() || stack.isEmpty()) {
 			return;
 		}
-		if (!BoundItemHandler.isOwner(stack, player)) {
+		// ★开关必须在这里也判一次：canTakeItems 放行后仍会走到 onTakeItem，
+		// 旧实现无条件 cancel ⇒ blockNonOwnerInSlot=false 形同虚设（2026-10-21 实测：箱子能点开但物品拿不走，且无提示）。
+		if (BoundItemsConfig.blockNonOwnerInSlot() && !BoundItemHandler.isOwner(stack, player)) {
 			ci.cancel();
 		}
 	}
