@@ -4,6 +4,7 @@ import com.akira.redtale.economy.legacy.data.PackageData;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,8 +52,16 @@ public class EditablePackageInventory extends SimpleInventory {
             }
         }
         PackageData data = new PackageData(this.mode, items);
-        // ✅ 使用 toNbt() 并写回 ItemStack
-        NbtCompound nbt = data.toNbt();
+        // ★不能整包 setNbt(data.toNbt())★：那会把物品上其它键一起抹掉（铁砧改名的 display.Name、
+        // lore、RepairCost、绑定归属……）⇒ 玩家改名后开一次编辑器就丢名字，且零报错。
+        // 正确形态：以现有 tag 为底，只覆盖本模组拥有的 mode / items 两个键。
+        NbtCompound nbt = stackInHand.hasNbt() ? stackInHand.getNbt().copy() : new NbtCompound();
+        nbt.putString("mode", data.mode().name());
+        NbtList itemsList = new NbtList();
+        for (PackageData.PackageItem item : data.items()) {
+            itemsList.add(item.toNbt());
+        }
+        nbt.put("items", itemsList);
         stackInHand.setNbt(nbt);
     }
 

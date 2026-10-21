@@ -22,6 +22,14 @@ public class PackageEditHandler extends ScreenHandler {
     private static final int HOTBAR_START = PLAYER_INV_END;
     private static final int HOTBAR_END = HOTBAR_START + 9;
     private final ItemStack packageStack;
+    /**
+     * 开界面那一刻手牌物品的 NBT 快照（可为 null）。
+     * ★必须用快照判「还是同一件包裹」★：`ItemStack.areItemsEqual` 按 yarn 定义**只比物品、不比 NBT**
+     * （见 yarn ItemStack javadoc「use areItemsEqual to check the item only」）⇒ 创造模式开编辑器后
+     * 把主手换成另一个同种包裹，关界面时会把 A 的内容写进 B。而拿 `originalStack` 去比也不行 ——
+     * 它在 close 前已被 saveToNbt 覆盖成新数据，拿它当基准恒不等。
+     */
+    private final NbtCompound originalNbtSnapshot;
 
     public PackageEditHandler(int syncId, PlayerInventory playerInventory, PacketByteBuf buf) {
         super(REHandlers.PACKAGE_EDIT_SCREEN, syncId);
@@ -43,6 +51,7 @@ public class PackageEditHandler extends ScreenHandler {
         } else {
             this.originalStack = ItemStack.EMPTY;
         }
+        this.originalNbtSnapshot = this.originalStack.hasNbt() ? this.originalStack.getNbt().copy() : null;
 
         this.inventory = new EditablePackageInventory(this.originalStack);
         addInventorySlots();
@@ -84,7 +93,24 @@ public class PackageEditHandler extends ScreenHandler {
     public boolean canUse(PlayerEntity player) {
         // ★不能再恒 true★：编辑器写的是"手上那件物品"的 NBT ⇒ 必须确认手牌还是包裹本身，
         // 否则玩家在界面开着时把包裹换走/丢出，关闭时会把 90 格 NBT 写进手里任意物品。
+        // 这里只做"还是包裹类"的轻判定：严格 NBT 身份判定放在 onClosed（写盘前），
+        // 避免客户端快照与服务端 NBT 归一化差异导致界面被秒关。
         return player.getStackInHand(this.hand).getItem() instanceof PackageItem;
+    }
+
+    /**
+     * 手牌是不是"开界面时那一件"包裹：物品相同 **且 NBT 与快照相同**。
+     * 只比物品不够 —— `areItemsEqual` 不比 NBT，换成另一个同种包裹会串写。
+     */
+    private boolean isSamePackage(ItemStack current) {
+        if (current == null || current.isEmpty()) {
+            return false;
+        }
+        if (!ItemStack.areItemsEqual(current, this.originalStack)) {
+            return false;
+        }
+        NbtCompound currentNbt = current.hasNbt() ? current.getNbt() : null;
+        return java.util.Objects.equals(currentNbt, this.originalNbtSnapshot);
     }
 
     @Override
@@ -119,11 +145,16 @@ public class PackageEditHandler extends ScreenHandler {
     public void onClosed(PlayerEntity player) {
         super.onClosed(player);
         if (!player.getWorld().isClient()) {
-            inventory.saveToNbt();
-            // 把编辑结果写回原手牌（仍是同一包裹、且没被换走才写）
+            // ★先判身份再落盘★：手牌已被换走/丢掉时，saveToNbt + setNbt 会把内容写进"另一件物品"。
+            // 判据用开界面时的 NBT 快照（见 originalNbtSnapshot 注释），不能用 originalStack。
             ItemStack currentStack = player.getStackInHand(hand);
-            if (!currentStack.isEmpty() && originalStack.hasNbt() && ItemStack.areItemsEqual(currentStack, originalStack)) {
-                currentStack.setNbt(originalStack.getNbt().copy());
+            if (!isSamePackage(currentStack)) {
+                return;
+            }
+            inventory.saveToNbt();
+            // 编辑结果写回原手牌（saveToNbt 已把 mode/items 合并进 originalStack，其余键原样保留）
+            if (this.originalStack.hasNbt()) {
+                currentStack.setNbt(this.originalStack.getNbt().copy());
             }
         }
     }
