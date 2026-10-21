@@ -46,14 +46,15 @@ public class BoundSlotMixin {
 			return;
 		}
 
-		if (!BoundItemHandler.isOwner(stack, player)) {
+		if (BoundItemsConfig.blockNonOwnerInSlot() && !BoundItemHandler.isOwner(stack, player)) {
 			notifyNotOwner(player);
 			cir.setReturnValue(false);
 			return;
 		}
 
-		// 首次拿走时自动绑定（仅在配置为可绑定物品时）
-		if (!BoundItemHandler.hasOwner(stack) && BoundItemsConfig.isBoundItem(stack)) {
+		// 首次拿走时自动绑定（仅在配置为可绑定物品且开关打开时）
+		if (BoundItemsConfig.bindOnPickup()
+				&& !BoundItemHandler.hasOwner(stack) && BoundItemsConfig.isBoundItem(stack)) {
 			BoundItemHandler.bindToPlayer(stack, player);
 		}
 	}

@@ -32,8 +32,9 @@ public abstract class BoundPickupMixin {
             return;
         }
 
-        // 绑定逻辑（仅当未绑定且配置为可绑定）
-        if (!BoundItemHandler.hasOwner(stack) && BoundItemsConfig.isBoundItem(stack)) {
+        // 绑定逻辑（仅当未绑定 + 配置为可绑定物品 + 开关打开）
+        if (BoundItemsConfig.bindOnPickup()
+                && !BoundItemHandler.hasOwner(stack) && BoundItemsConfig.isBoundItem(stack)) {
             BoundItemHandler.bindToPlayer(stack, player);
         }
     }

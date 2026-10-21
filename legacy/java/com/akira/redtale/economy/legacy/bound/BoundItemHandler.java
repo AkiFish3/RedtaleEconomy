@@ -51,7 +51,7 @@ public class BoundItemHandler {
     public static boolean isOwner(ItemStack stack, PlayerEntity player) {
         // 最直接的 OP 判定：权限等级 >= 4
         if (player.hasPermissionLevel(4)) {
-            LegacyInit.LOGGER.info("OP bypass for player: {}", player.getName().getString());
+            LegacyInit.LOGGER.debug("OP bypass for player: {}", player.getName().getString());
             return true;
         }
         if (!hasOwner(stack)) {

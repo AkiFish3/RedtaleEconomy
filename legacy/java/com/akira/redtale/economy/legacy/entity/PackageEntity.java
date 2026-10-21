@@ -47,6 +47,9 @@ public class PackageEntity extends Entity implements GeoEntity {
 
     private static final TrackedData<String> ANIMATION_STATE = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.STRING);
     private static final TrackedData<Boolean> CHOOSE_MODE_ACTIVE = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    /** 包裹档位（normal/rare/legendary）。★必须同步★：客户端拿不到 packageStack（只有服务端构造器有），
+     *  渲染贴图只能靠 DataTracker 下发，否则三种包裹在世界上长得一模一样。 */
+    private static final TrackedData<String> PACKAGE_TIER = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.STRING);
 
     private boolean activated = false;
     private PackageData.PackageItem selectedItem = null;
@@ -74,12 +77,28 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.setNoGravity(true);
         this.dataTracker.set(ANIMATION_STATE, initialAnimationState != null ? initialAnimationState : "open");
         this.dataTracker.set(CHOOSE_MODE_ACTIVE, isChooseMode);
+        this.dataTracker.set(PACKAGE_TIER, tierOf(this.packageStack));
     }
 
     @Override
     protected void initDataTracker() {
         this.dataTracker.startTracking(ANIMATION_STATE, "open");
         this.dataTracker.startTracking(CHOOSE_MODE_ACTIVE, false);
+        this.dataTracker.startTracking(PACKAGE_TIER, "normal");
+    }
+
+    /** 物品 id 的前缀就是档位：{@code rare_package} / {@code legendary_package} / 其余按 normal。 */
+    private static String tierOf(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return "normal";
+        String path = net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath();
+        if (path.startsWith("legendary")) return "legendary";
+        if (path.startsWith("rare")) return "rare";
+        return "normal";
+    }
+
+    /** 渲染层用：客户端只有这个值可用（packageStack 不同步）。 */
+    public String getPackageTier() {
+        return this.dataTracker.get(PACKAGE_TIER);
     }
 
     public void setAnimationState(String state) {

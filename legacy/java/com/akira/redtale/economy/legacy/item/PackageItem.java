@@ -188,7 +188,9 @@ public class PackageItem extends Item implements GeoItem {
     }
 
     private <T extends GeoItem> PlayState predicate(AnimationState<T> event) {
-        event.getController().setAnimation(RawAnimation.begin().thenLoop("idle"));
+        // ★动画名必须与 package_item.animation.json 里的键一致★：该文件里叫 item.idle，
+        // 旧模这里写 "idle" ⇒ geckolib 找不到动画，物品永远是静止姿势（且只在日志里留一句 warning）。
+        event.getController().setAnimation(RawAnimation.begin().thenLoop("item.idle"));
         return PlayState.CONTINUE;
     }
 
