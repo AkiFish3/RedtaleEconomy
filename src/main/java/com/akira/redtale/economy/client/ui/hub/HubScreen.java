@@ -2,7 +2,6 @@ package com.akira.redtale.economy.client.ui.hub;
 
 import com.akira.redtale.economy.client.ShopClientNetworking;
 import com.akira.redtale.economy.client.ShopClientState;
-import com.akira.redtale.economy.net.ShopProtocol;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
