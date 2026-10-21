@@ -122,6 +122,12 @@ public final class UiShots {
 	private static int skipped;
 	/** 已落盘的日志行数（增量追加用；被别的夹具提前 scheduleStop 时至少留下已有的证据）。 */
 	private static int persisted;
+	/** T52：本轮已因致命界面取证并退出（防止每 tick 重复落盘）。 */
+	private static boolean fatalSeen;
+	/** T52 的取证文件：存在即代表「本轮是被致命界面中止的」，跑完由调用方检查。 */
+	private static final String FATAL_FILE = "u6-fatal.txt";
+	/** T52 自检开关（flag 里写 {@code probe=fatal}）：第 20 tick 自己弹一张致命界面，验证取证链路。 */
+	private static boolean fatalProbe;
 	private static final List<String> LOG = new ArrayList<>();
 
 	private UiShots() {
@@ -149,6 +155,11 @@ public final class UiShots {
 						winH = Integer.parseInt(wh[1].trim());
 						LOG.add("flag override window=" + winW + "x" + winH);
 					}
+				} else if (s.equals("probe=fatal")) {
+					// T52 自检：人为弹一张致命界面，证明「取证 + 立即退出」真的会触发。
+					// 只有 flag 显式写了才开，正常截图轮不受影响。
+					fatalProbe = true;
+					LOG.add("flag override probe=fatal (T52 self-check)");
 				}
 			}
 		} catch (Exception e) {
@@ -160,6 +171,8 @@ public final class UiShots {
 		try {
 			// 每轮从头记：不然上一轮的追加会混进来，pairs 统计就不可信了
 			Files.deleteIfExists(gameDir.resolve("u6-shots.log"));
+			// T52：上一轮的致命取证不能留到这一轮冒充（存在性就是「本轮失败」的判据）
+			Files.deleteIfExists(gameDir.resolve(FATAL_FILE));
 		} catch (IOException ignored) {
 			// 删不掉就追加，至少不丢
 		}
@@ -236,6 +249,19 @@ public final class UiShots {
 	private static void onTick(MinecraftClient mc) {
 		if (!active) return;
 		tick++;
+		if (fatalProbe && tick > 20 && !fatalSeen && mc.getOverlay() == null) {
+			// 自检：故意弹致命界面（文案写明是夹具自检，别让人误判成真崩溃）。
+			// ★必须等 overlay 为 null★：tick 20 时还在 Reloading ResourceManager，
+			// 此时 scheduleStop 会让 TextureManager.close 抛 ConcurrentModificationException，
+			// 日志里看着像真崩溃（2026-10-22 首跑实测）。
+			mc.setScreen(new net.minecraft.client.gui.screen.FatalErrorScreen(
+					net.minecraft.text.Text.literal("T52 probe: fatal screen"),
+					net.minecraft.text.Text.literal("夹具自检，非真实崩溃")));
+		}
+		// ★T52：先判致命界面，再走正常流程★。放在 resReady 之前，是因为缺依赖的
+		// NoticeScreen 在窗口/分辨率都还没就绪时就已弹出 —— 等 setupResolution 跑完再判，
+		// 会白等几百 tick 然后超时（那正是「重开一次还是没图」的成因）。
+		if (checkFatal(mc)) return;
 		if (!resReady) {
 			// 世界还没进就得先把窗口尺寸定下来，否则后面所有布局都是按别的大小算的
 			setupResolution(mc);
@@ -668,6 +694,81 @@ public final class UiShots {
 	 * 截图作为回归证据就没法比。全屏版的逻辑尺寸由同一份 guiScale 推出来，
 	 * 所以两版之间唯一的变量就是「逻辑像素多少」。
 	 */
+	/**
+	 * T52：致命界面取证并立刻退出。
+	 *
+	 * <p>为什么必须「抓文本」：{@code NoticeScreen}/{@code CrashScreen} 的标题在截图里
+	 * 往往只有一句「游戏崩溃了」，真正原因（缺哪个依赖、哪个 mixin 注入失败）只在
+	 * {@code logs/latest.log} 里。夹具自己把日志尾巴抄进 {@code u6-shots.log} 与
+	 * {@code u6-fatal.txt}，下一轮就不用再跑一遍复现。
+	 */
+	private static boolean checkFatal(MinecraftClient mc) {
+		if (fatalSeen) return true;
+		Screen cur = mc.currentScreen;
+		if (cur == null) return false;
+		List<String> chain = new ArrayList<>();
+		for (Class<?> c = cur.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+			chain.add(c.getName());
+		}
+		if (!FatalScreens.matchesChain(chain)) return false;
+
+		fatalSeen = true;
+		active = false;
+		Path dir = FabricLoader.getInstance().getGameDir();
+		String cls = cur.getClass().getName();
+		String title = "";
+		try {
+			title = cur.getTitle().getString();
+		} catch (Throwable ignored) {
+			// 个别界面构造未完成时 getTitle 会 NPE —— 取证不能因此中断
+		}
+		List<String> detail = new ArrayList<>();
+		detail.add("FATAL screen=" + cls);
+		detail.add("FATAL title=\"" + title + "\"");
+		detail.add("FATAL at tick=" + tick + " step=" + step + " inWorld=" + inWorld);
+		detail.add("FATAL chain=" + chain);
+		detail.add("FATAL hint=" + FatalScreens.hint(cls));
+		LOG.addAll(detail);
+		LOG.addAll(tailOfLatestLog(dir, 30));
+		LOG.addAll(pairReport(dir.resolve("screenshots")));
+		flushLog(dir);
+		writeFatalFile(dir, detail);
+		mc.scheduleStop();
+		return true;
+	}
+
+	/** 抄 {@code logs/latest.log} 末尾若干行（致命原因几乎总在这里，界面标题没信息量）。 */
+	private static List<String> tailOfLatestLog(Path dir, int n) {
+		List<String> out = new ArrayList<>();
+		Path log = dir.resolve("logs").resolve("latest.log");
+		if (!Files.isRegularFile(log)) {
+			out.add("log| (logs/latest.log 不存在)");
+			return out;
+		}
+		try {
+			List<String> all = Files.readAllLines(log, StandardCharsets.UTF_8);
+			int from = Math.max(0, all.size() - n);
+			out.add("log| ---- latest.log tail (" + (all.size() - from) + "/" + all.size() + ") ----");
+			for (int i = from; i < all.size(); i++) {
+				out.add("log| " + all.get(i));
+			}
+		} catch (IOException e) {
+			out.add("log| read failed: " + e.getMessage());
+		}
+		return out;
+	}
+
+	/** 落一份独立取证文件（存在即代表本轮被致命界面中止，调用方据此决定是否重跑）。 */
+	private static void writeFatalFile(Path dir, List<String> detail) {
+		StringBuilder sb = new StringBuilder("# UiShots 致命界面取证\n");
+		for (String s : detail) sb.append(s).append('\n');
+		try {
+			Files.write(dir.resolve(FATAL_FILE), sb.toString().getBytes(StandardCharsets.UTF_8));
+		} catch (IOException ignored) {
+			// 落盘失败不影响 u6-shots.log 里已经有的证据
+		}
+	}
+
 	private static void setupResolution(MinecraftClient mc) {
 		resReady = true;
 		var win = mc.getWindow();
