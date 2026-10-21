@@ -85,7 +85,8 @@ public final class HubAdminPage {
 	}
 
 	private static int rowsVisible(int h) {
-		return Math.max(1, (h - HEAD_H) / (CARD_H + CARD_GAP));
+		// 减去 12px 的 hint 底带：卡片不能压在它上面
+		return Math.max(1, (h - HEAD_H - 12) / (CARD_H + CARD_GAP));
 	}
 
 	// ------------------------------------------------------------ 渲染
@@ -127,6 +128,9 @@ public final class HubAdminPage {
 		}
 
 		int limit = y + h;
+		// ★底部留一条 hint 带（12px）★：悬停说明画在卡片上方会盖掉下一张卡（首张截图实测）
+		int hintH = 12;
+		int cardLimit = limit - hintH;
 		lastCols = columns(w);
 		scroll = Math.max(0, Math.min(maxScroll(h), scroll));
 		int start = scroll * lastCols;
@@ -135,7 +139,7 @@ public final class HubAdminPage {
 		for (int i = start; i < metrics.size(); i++) {
 			int rx = cardX(x, w, i);
 			int ry = cardY(y, i, w);
-			if (!(ry + CARD_H <= limit)) break;
+			if (!(ry + CARD_H <= cardLimit)) break;
 			dc.fill(rx, ry, rx + cw, ry + CARD_H - 2, HubTheme.CARD);
 			AdminProtocol.Metric m = metrics.get(i);
 			boolean hover = mouseX >= rx && mouseX < rx + cw && mouseY >= ry && mouseY < ry + CARD_H - 2;
@@ -145,15 +149,13 @@ public final class HubAdminPage {
 					HubTheme.TEXT, false);
 			if (hover) hoverIdx = i;
 		}
-		// ★悬停说明最后画★：画在循环里会被后一张卡盖掉（硬坑：浮层滞后于卡片）
+		// ★悬停说明固定画在底带★：跟着卡片画会压住相邻行（浮层必须在最后、且要有独立位置）
 		if (hoverIdx >= 0) {
 			AdminProtocol.Metric m = metrics.get(hoverIdx);
 			if (m.hint() != null && !m.hint().isEmpty()) {
-				int rx = cardX(x, w, hoverIdx);
-				int ry = cardY(y, hoverIdx, w) + CARD_H - 2;
-				int ty = Math.min(ry, limit - 11);
-				dc.fill(rx, ty, rx + cw, ty + 11, HubTheme.SELECT);
-				dc.drawText(tr, Text.literal(trim(tr, m.hint(), cw - 8)), rx + 5, ty + 2,
+				int ty = limit - hintH;
+				dc.fill(x, ty, x + w, ty + hintH, HubTheme.SELECT);
+				dc.drawText(tr, Text.literal(trim(tr, m.hint(), w - 8)), x + 2, ty + 2,
 						HubTheme.HINT, false);
 			}
 		}
@@ -178,6 +180,21 @@ public final class HubAdminPage {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * 仅 dev 夹具：点「刷新」chip（走真实 {@code mouseClicked} 命中路径）。
+	 *
+	 * <p>坐标由 {@code frame} 现算而不是读 {@code refreshX} —— 探针可能在任何 tick 被调，
+	 * 依赖「render 已经跑过」会让结果取决于调用时机。
+	 */
+	public static String devClickRefresh() {
+		var mc = net.minecraft.client.MinecraftClient.getInstance();
+		if (!(mc.currentScreen instanceof HubScreen hub)) return "not-hub:" + mc.currentScreen;
+		int rx = hub.frame.contentX() + hub.frame.contentW() - REFRESH_W;
+		int ry = hub.frame.contentY();
+		boolean hit = hub.mouseClicked(rx + REFRESH_W / 2.0, ry + 4, 0);
+		return "hit=" + hit + " at=" + rx + "," + ry + " recv=" + AdminClientNetworking.RECEIVED_AT;
 	}
 
 	private static String trim(TextRenderer tr, String s, int maxW) {

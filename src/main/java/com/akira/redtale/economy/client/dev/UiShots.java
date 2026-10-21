@@ -585,6 +585,17 @@ public final class UiShots {
 					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
 							? t.devProbe() : "not-editor:" + mc.currentScreen)));
 			case 104 -> act(mc, () -> mc.setScreen(null));
+			// T28：管理员控制台。open 会自己 pullData（发请求），但回包要一个往返 ⇒ 分成两步
+			case 105 -> act(mc, () -> com.akira.redtale.economy.client.ui.hub.HubScreen.open(
+					com.akira.redtale.economy.client.ui.hub.HubPage.ADMIN));
+			case 106 -> shotKeep(mc, "u6-58-admin.png", () -> LOG.add("admin probe "
+					+ com.akira.redtale.economy.client.ui.hub.HubAdminPage.devProbe()));
+			// 刷新 chip：点一次应重新请求（探针里的 recv 时间戳要前进）
+			case 107 -> act(mc, () -> LOG.add("admin refresh "
+					+ com.akira.redtale.economy.client.ui.hub.HubAdminPage.devClickRefresh()));
+			case 108 -> shotKeep(mc, "u6-59-admin-refresh.png", () -> LOG.add("admin probe "
+					+ com.akira.redtale.economy.client.ui.hub.HubAdminPage.devProbe()));
+			case 109 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}
 	}

@@ -41,13 +41,31 @@ public final class AdminProtocol {
 	/** 单条指标上限：控制台永远不该有几十行，超限只截内存、不影响后续字段。 */
 	private static final int MAX_METRICS = 64;
 
+	/**
+	 * 字段上限（<b>字符数</b>，不是字节）。
+	 *
+	 * <p>★写端必须先截断★：{@code PacketByteBuf.writeString(s, max)} 超限直接抛
+	 * {@code EncoderException: String too big}，而且是在<b>服务端下发时</b>炸 ——
+	 * 界面表现是「一直空着」，日志只有一行下发失败（2026-10-22 首次实机截图抓到的：
+	 * 数据根路径 63 字符 &gt; 原上限 48）。
+	 */
+	private static final int MAX_LABEL = 48;
+	private static final int MAX_VALUE = 128;
+	private static final int MAX_HINT = 160;
+
 	private static final Codec<Metric> METRIC = Codec.of("admin/metric",
 			(buf, m) -> {
-				buf.writeString(m.label() == null ? "" : m.label(), 48);
-				buf.writeString(m.value() == null ? "" : m.value(), 48);
-				buf.writeString(m.hint() == null ? "" : m.hint(), 96);
+				buf.writeString(trunc(m.label(), MAX_LABEL), MAX_LABEL);
+				buf.writeString(trunc(m.value(), MAX_VALUE), MAX_VALUE);
+				buf.writeString(trunc(m.hint(), MAX_HINT), MAX_HINT);
 			},
-			buf -> new Metric(buf.readString(48), buf.readString(48), buf.readString(96)));
+			buf -> new Metric(buf.readString(MAX_LABEL), buf.readString(MAX_VALUE),
+					buf.readString(MAX_HINT)));
+
+	private static String trunc(String s, int max) {
+		if (s == null) return "";
+		return s.length() <= max ? s : s.substring(0, max);
+	}
 
 	private AdminProtocol() {
 	}
