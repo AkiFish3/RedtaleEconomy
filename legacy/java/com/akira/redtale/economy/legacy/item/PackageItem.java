@@ -6,6 +6,7 @@ import com.akira.redtale.economy.legacy.init.REHandlers;
 import com.akira.redtale.economy.legacy.screen.PackageEditHandler;
 import com.akira.redtale.economy.legacy.screen.PackageChooseHandler;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.item.TooltipContext;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -57,7 +58,14 @@ public class PackageItem extends Item implements GeoItem {
         ItemStack stack = context.getStack();
 
         if (!world.isClient() && player != null && isPackage(stack)) {
-            stack.getOrCreateNbt().putBoolean(PROCESSED_ON_BLOCK_USE, true);
+            // ★不再写 ProcessedOnBlockUse 标记★：本方法在成功分支一律返回 success，
+            // 原版 `ServerPlayerInteractionManager.interactBlock` 收到非 PASS 就不会再调 {@code use}，
+            // 所以这个"防重复处理"标记根本没有机会被读到 —— 它只会残留在物品 NBT 里，
+            // 让下次右键（空气）被 `use` 吞掉一次，并让同名包裹因为 NBT 不同而无法堆叠。
+            // 旧存档残留的键在这里顺手清掉（幂等）。
+            if (stack.hasNbt() && stack.getNbt().contains(PROCESSED_ON_BLOCK_USE)) {
+                stack.getNbt().remove(PROCESSED_ON_BLOCK_USE);
+            }
             PackageData data = PackageData.fromNbt(stack.getNbt());
 
             if (data.mode() == PackageData.PackageMode.CHOOSE) {
@@ -135,16 +143,19 @@ public class PackageItem extends Item implements GeoItem {
             return TypedActionResult.pass(stack);
         }
 
-        if (stack.hasNbt() && stack.getNbt().getBoolean(PROCESSED_ON_BLOCK_USE)) {
+        if (stack.hasNbt() && stack.getNbt().contains(PROCESSED_ON_BLOCK_USE)) {
+            // 旧存档残留标记：清掉但**不吞这次右键**（旧实现直接 return pass ⇒ 玩家第一次右键空气无效）。
             stack.getNbt().remove(PROCESSED_ON_BLOCK_USE);
-            return TypedActionResult.pass(stack);
         }
 
         if (user.getAbilities().creativeMode) {
+            final Hand usedHand = hand;
             user.openHandledScreen(new ExtendedScreenHandlerFactory() {
                 @Override
                 public void writeScreenOpeningData(ServerPlayerEntity player, PacketByteBuf buf) {
                     buf.writeNbt(stack.getNbt());
+                    // 顺序必须与 createMenu 一致：nbt → hand（PackageEditHandler 按此顺序读）
+                    buf.writeEnumConstant(usedHand);
                 }
                 @Override
                 public Text getDisplayName() {
@@ -152,7 +163,10 @@ public class PackageItem extends Item implements GeoItem {
                 }
                 @Override
                 public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-                    return new PackageEditHandler(syncId, inv, new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
+                    PacketByteBuf b = PacketByteBufs.create();
+                    b.writeNbt(stack.getNbt());
+                    b.writeEnumConstant(usedHand);
+                    return new PackageEditHandler(syncId, inv, b);
                 }
             });
             return TypedActionResult.success(stack);

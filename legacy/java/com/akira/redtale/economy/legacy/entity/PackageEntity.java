@@ -34,7 +34,8 @@ import software.bernie.geckolib.util.GeckoLibUtil;
 import java.util.UUID;
 
 public class PackageEntity extends Entity implements GeoEntity {
-    private final ItemStack packageStack;
+    /** ★非 final★：{@code readCustomDataFromNbt} 需要从落盘数据把它还原回来（见 write/read 注释）。 */
+    private ItemStack packageStack;
     private PackageData cachedData;
 
     private static final int BASE_ANIMATION_TICKS = 60;
@@ -252,6 +253,8 @@ public class PackageEntity extends Entity implements GeoEntity {
                     rewardGiven = true;
                 } else {
                     // 玩家在线：按间隔给予
+                    // ★giveCounter 每 tick 自增★：旧实现漏了 ++ ⇒ `0 % 3 == 0` 恒真，
+                    // 10 件物品会在 10 个 tick 内一次性发完（GIVE_INTERVAL 是死代码，包裹看起来像"瞬间空包"）。
                     if (giveCounter % GIVE_INTERVAL == 0) {
                         if (currentGiveIndex < cachedData.items().size()) {
                             PackageData.PackageItem itemToGive = cachedData.items().get(currentGiveIndex);
@@ -267,6 +270,7 @@ public class PackageEntity extends Entity implements GeoEntity {
                             rewardGiven = true;
                         }
                     }
+                    giveCounter++;
                 }
             }
         }
@@ -304,6 +308,12 @@ public class PackageEntity extends Entity implements GeoEntity {
         // ★必须存★：packageStack 不落盘（重载后是无参构造的 EMPTY），档位只能靠这个字段还原，
         // 否则实体存盘再读回会统一变 normal 贴图。
         nbt.putString("PackageTier", this.getPackageTier());
+        // ★必须存★（本轮修复）：packageStack 才是奖励内容的唯一真值。旧实现只存档位字符串，
+        // 读回时 packageStack = EMPTY ⇒ cachedData = null ⇒ tick 里直接 `rewardGiven = true` 静默结束
+        // ⇒ **区块卸载/存档重载后包裹实体不发奖也不报错**（多人服挂机过区块边界即复现）。
+        if (this.packageStack != null && !this.packageStack.isEmpty()) {
+            nbt.put("PackageStack", this.packageStack.writeNbt(new NbtCompound()));
+        }
         nbt.putInt("Age", this.age);
         nbt.putBoolean("RewardGiven", this.rewardGiven);
         nbt.putBoolean("Activated", this.activated);
@@ -346,7 +356,16 @@ public class PackageEntity extends Entity implements GeoEntity {
             int weight = sel.getInt("weight");
             this.selectedItem = new PackageData.PackageItem(item, weight);
         }
-        this.cachedData = PackageData.fromNbt(packageStack.getNbt());
+        if (nbt.contains("PackageStack")) {
+            this.packageStack = ItemStack.fromNbt(nbt.getCompound("PackageStack"));
+        }
+        this.cachedData = PackageData.fromNbt(this.packageStack.getNbt());
+        if (this.packageStack.isEmpty() && !this.isChooseModeActive()) {
+            // 落盘里没有 PackageStack（本修复之前存档的实体）⇒ 奖励内容真丢了，留一条可诊断的日志。
+            // ★注意：fromNbt(null) 返回的是 RANDOM/空列表而不是 null★，所以不能靠 cachedData == null 判断，
+            // 要判包本身是否空；否则旧行为是在 tick 里打一句 "no valid items" 然后静默结束。
+            LegacyInit.LOGGER.warn("PackageEntity {} 读档后 PackageStack 为空，奖励内容丢失（旧存档）", this.getUuid());
+        }
     }
 
     @Override

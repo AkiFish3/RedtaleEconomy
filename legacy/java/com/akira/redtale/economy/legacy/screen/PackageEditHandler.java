@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.legacy.screen;
 
 import com.akira.redtale.economy.legacy.init.REHandlers;
+import com.akira.redtale.economy.legacy.item.PackageItem;
 import com.akira.redtale.economy.legacy.misc.EditablePackageInventory;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -32,8 +33,9 @@ public class PackageEditHandler extends ScreenHandler {
         }
         this.packageStack = nbt != null ? ItemStack.fromNbt(nbt) : ItemStack.EMPTY;
 
-        // 移除 Hand 读取逻辑（不需要）
-        this.hand = Hand.MAIN_HAND;
+        // ★必须从 buf 读 hand★：旧实现硬编码 MAIN_HAND ⇒ 创造模式用**副手**的包裹右键时，
+        // 编辑器绑的是主手物品（任何物品都能被塞进 90 格 NBT）。
+        this.hand = buf != null && buf.isReadable() ? buf.readEnumConstant(Hand.class) : Hand.MAIN_HAND;
 
         PlayerEntity player = playerInventory.player;
         if (player != null) {
@@ -80,7 +82,9 @@ public class PackageEditHandler extends ScreenHandler {
 
     @Override
     public boolean canUse(PlayerEntity player) {
-        return true;
+        // ★不能再恒 true★：编辑器写的是"手上那件物品"的 NBT ⇒ 必须确认手牌还是包裹本身，
+        // 否则玩家在界面开着时把包裹换走/丢出，关闭时会把 90 格 NBT 写进手里任意物品。
+        return player.getStackInHand(this.hand).getItem() instanceof PackageItem;
     }
 
     @Override
@@ -116,9 +120,9 @@ public class PackageEditHandler extends ScreenHandler {
         super.onClosed(player);
         if (!player.getWorld().isClient()) {
             inventory.saveToNbt();
-            // ✅ 正确更新玩家手中的卡包
+            // 把编辑结果写回原手牌（仍是同一包裹、且没被换走才写）
             ItemStack currentStack = player.getStackInHand(hand);
-            if (ItemStack.areItemsEqual(currentStack, originalStack)) {
+            if (!currentStack.isEmpty() && originalStack.hasNbt() && ItemStack.areItemsEqual(currentStack, originalStack)) {
                 currentStack.setNbt(originalStack.getNbt().copy());
             }
         }
