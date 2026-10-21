@@ -19,6 +19,8 @@ public class EditablePackageInventory extends SimpleInventory {
     private final ItemStack stackInHand;
     private PackageData.PackageMode mode = PackageData.PackageMode.CHOOSE;
     private final int[] weights; // ✅ 改为 int[]
+    /** T76「三保险」第 1 层：任何一次改动（拖入/移出/改权重）都置脏，由 handler 每 tick 判断是否落盘。 */
+    private boolean dirty = false;
 
     public EditablePackageInventory(ItemStack stackInHand) {
         super(SIZE);
@@ -28,6 +30,9 @@ public class EditablePackageInventory extends SimpleInventory {
             this.weights[i] = 1; // ✅ 默认权重为 1（int）
         }
         this.loadFromNbt();
+        // ★读入不算改动★：loadFromNbt 走 setStack ⇒ markDirty ⇒ 若不在这里清掉，
+        // 开一次编辑器就会「1 秒后无条件重写一遍手牌 NBT」（内容一样，但会触发同步 + 覆盖快照）。
+        this.dirty = false;
     }
 
     private void loadFromNbt() {
@@ -69,8 +74,26 @@ public class EditablePackageInventory extends SimpleInventory {
 
     public void setWeight(int slot, int weight) { // ✅ 参数改为 int
         if (slot >= 0 && slot < SIZE) {
+            if (this.weights[slot] != weight) this.dirty = true;
             this.weights[slot] = weight;
         }
+    }
+
+    /** 取走「有改动」标记（读即清）。 */
+    public boolean consumeDirty() {
+        boolean d = this.dirty;
+        this.dirty = false;
+        return d;
+    }
+
+    public boolean isDirty() {
+        return this.dirty;
+    }
+
+    /** {@link SimpleInventory} 在 setStack/removeStack 里都会调它 ⇒ 拖入/移出自动置脏。 */
+    @Override
+    public void markDirty() {
+        this.dirty = true;
     }
 
     public int getWeight(int slot) { // ✅ 返回 int

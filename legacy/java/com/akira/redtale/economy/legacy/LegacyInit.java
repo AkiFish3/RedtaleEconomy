@@ -24,6 +24,18 @@ public class LegacyInit implements ModInitializer {
 		RENetworking.register();
 		BoundItemsConfig.load();
 		com.akira.redtale.economy.legacy.data.PackageConfig.load();
+		// T76「三保险」第 3 层：掉线时强制提交包裹编辑器的改动（最多丢最后 1 秒）。
+		// 用 Fabric 事件而不是 mixin：onDisconnected 不是我们的注入点，改 mixins.json 风险更高。
+		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			try {
+				if (handler.player.currentScreenHandler
+						instanceof com.akira.redtale.economy.legacy.screen.PackageEditHandler edit) {
+					edit.forceCommit(handler.player);
+				}
+			} catch (Throwable t) {
+				LOGGER.warn("[legacy] 掉线提交包裹编辑失败：{}", t.toString());
+			}
+		});
 		LegacyExchange.register();
 		// 开发期视觉夹具：源码在 legacy/devsrc/（不在源集内 ⇒ 发行 jar 不含这些类）。
 		// 需要复测时把 legacy/devsrc 临时加进 main.java.srcDirs，下面按类名可选加载。
