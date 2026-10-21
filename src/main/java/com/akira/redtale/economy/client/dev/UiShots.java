@@ -466,7 +466,7 @@ public final class UiShots {
 			case 98 -> act(mc, () -> mc.setScreen(null));
 			// T11：表格编辑器批量行。「开界面」与「拍照」必须分成两步 ——
 			// /shop admin edit 是服务端下发 open，同 tick 拍照拿到的是上一屏。
-			case 99 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("shop admin edit testshop"));
+			case 99 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("rtedit testshop"));
 			case 100 -> shotKeep(mc, "u6-56-table-batch.png", () -> LOG.add("table probe "
 					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
 							? t.devProbe() : "not-editor:" + mc.currentScreen)));
