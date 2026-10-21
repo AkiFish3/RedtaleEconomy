@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.title;
 
 import com.akira.redtale.economy.net.PacketIds;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.TitleProtocol;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -23,24 +24,24 @@ public final class TitlesClientNetworking {
 	}
 
 	public static void request() {
-		ClientPlayNetworking.send(PacketIds.C2S_TITLE_REQ,
+		ClientSend.send(PacketIds.C2S_TITLE_REQ,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 
 	public static void select(String title) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeString(title, 128);
-		ClientPlayNetworking.send(PacketIds.C2S_TITLE_SELECT, buf);
+		ClientSend.send(PacketIds.C2S_TITLE_SELECT, buf);
 	}
 
 	public static void remove(String title) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeString(title, 128);
-		ClientPlayNetworking.send(PacketIds.C2S_TITLE_REMOVE, buf);
+		ClientSend.send(PacketIds.C2S_TITLE_REMOVE, buf);
 	}
 
 	public static void clear() {
-		ClientPlayNetworking.send(PacketIds.C2S_TITLE_CLEAR,
+		ClientSend.send(PacketIds.C2S_TITLE_CLEAR,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 }

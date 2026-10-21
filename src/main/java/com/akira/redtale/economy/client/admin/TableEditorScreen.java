@@ -217,6 +217,23 @@ public final class TableEditorScreen extends Screen {
 		flashAt = System.currentTimeMillis();
 	}
 
+	/**
+	 * T44 截图探针：用于证明「表格编辑器真的画出来了」而不是一块空面板 ——
+	 * {@code rows=0} 而服务端有商品，就是「界面没拿到数据」的典型假通过。
+	 */
+	public String devProbe() {
+		return "table shop=" + shopId + " page=" + page + " rows=" + view().size()
+				+ " shown=" + shown.totalItems() + " selected=" + selected.size()
+				+ " panelH=" + panelH() + " left=" + left + " top=" + top;
+	}
+
+	/** T44：模拟点「批量移除」。未勾选时只出提示、不改数据 —— 截图轮不碰真实商店内容。 */
+	public String devClickBatchRemove() {
+		selected.clear();
+		batchRemoveSelected();
+		return "batchRemove toast=\"" + flash + "\"";
+	}
+
 	/** 复制选中第一行的价格到输入框（再配合批量改价即可「一处定价、全店套用」）。 */
 	private void copyFirst() {
 		for (ShopProtocol.Entry e : view()) {

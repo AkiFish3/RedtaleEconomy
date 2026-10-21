@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.config;
 
 import com.akira.redtale.economy.RedtaleEconomy;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.ConfigProtocol;
 import com.akira.redtale.economy.net.PacketIds;
 import net.fabricmc.api.EnvType;
@@ -44,6 +45,6 @@ public final class ConfigClientNetworking {
 		if (MinecraftClient.getInstance().getNetworkHandler() == null) return;
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		ConfigProtocol.writeSave(buf, file, entries);
-		ClientPlayNetworking.send(PacketIds.C2S_CONFIG_SAVE, buf);
+		ClientSend.send(PacketIds.C2S_CONFIG_SAVE, buf);
 	}
 }

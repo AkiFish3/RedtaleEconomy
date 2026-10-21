@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.rank;
 
 import com.akira.redtale.economy.net.PacketIds;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.RankProtocol;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -42,7 +43,7 @@ public final class RankClientNetworking {
 		net.minecraft.network.PacketByteBuf buf = new net.minecraft.network.PacketByteBuf(
 				io.netty.buffer.Unpooled.buffer());
 		RankProtocol.writeRequest(buf, new RankProtocol.Request(activeOnly));
-		ClientPlayNetworking.send(PacketIds.C2S_RANK_REQ, buf);
+		ClientSend.send(PacketIds.C2S_RANK_REQ, buf);
 	}
 
 	/** 默认只要活跃榜。 */

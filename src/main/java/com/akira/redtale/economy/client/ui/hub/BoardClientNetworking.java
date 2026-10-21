@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.ui.hub;
 
 import com.akira.redtale.economy.RedtaleEconomy;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.BoardProtocol;
 import com.akira.redtale.economy.net.PacketIds;
 import net.fabricmc.api.EnvType;
@@ -47,7 +48,7 @@ public final class BoardClientNetworking {
 	/** 请求一次快照（页面打开 / 点刷新 / 动作回包后）。 */
 	public static void request() {
 		try {
-			ClientPlayNetworking.send(PacketIds.C2S_BOARD_REQ, new PacketByteBuf(
+			ClientSend.send(PacketIds.C2S_BOARD_REQ, new PacketByteBuf(
 					io.netty.buffer.Unpooled.buffer()));
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.warn("[board] 请求委托板失败：{}", e.getMessage());

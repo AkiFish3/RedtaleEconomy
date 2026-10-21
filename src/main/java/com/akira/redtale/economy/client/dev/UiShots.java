@@ -464,6 +464,18 @@ public final class UiShots {
 			case 97 -> shotKeep(mc, "u6-55-ledger-market.png",
 					() -> LOG.add("ledger probe " + HubLedgerPage.devProbe()));
 			case 98 -> act(mc, () -> mc.setScreen(null));
+			// T11：表格编辑器批量行。「开界面」与「拍照」必须分成两步 ——
+			// /shop admin edit 是服务端下发 open，同 tick 拍照拿到的是上一屏。
+			case 99 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("shop admin edit testshop"));
+			case 100 -> shotKeep(mc, "u6-56-table-batch.png", () -> LOG.add("table probe "
+					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
+							? t.devProbe() : "not-editor:" + mc.currentScreen)));
+			case 101 -> act(mc, () -> LOG.add("table click "
+					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
+							? t.devClickBatchRemove() : "not-editor:" + mc.currentScreen)));
+			case 102 -> shotKeep(mc, "u6-57-table-toast.png", () -> {
+			});
+			case 103 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}
 	}

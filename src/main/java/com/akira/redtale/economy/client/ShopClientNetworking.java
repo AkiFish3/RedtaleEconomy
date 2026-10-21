@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client;
 
 import com.akira.redtale.economy.RedtaleEconomy;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.client.shop.ShopScreen;
 import com.akira.redtale.economy.net.PacketIds;
 import com.akira.redtale.economy.net.ShopProtocol;
@@ -73,7 +74,7 @@ public final class ShopClientNetworking {
 		buf.writeVarInt(page);
 		buf.writeString(query == null ? "" : query, 128);
 		(filter == null ? com.akira.redtale.economy.net.ShopFilter.NONE : filter).write(buf);
-		ClientPlayNetworking.send(PacketIds.C2S_REQUEST_PAGE, buf);
+		ClientSend.send(PacketIds.C2S_REQUEST_PAGE, buf);
 	}
 
 	public static void buy(String shopId, String itemId, int count) {
@@ -90,6 +91,6 @@ public final class ShopClientNetworking {
 		buf.writeString(shopId, 64);
 		buf.writeString(itemId, 128);
 		buf.writeVarInt(Math.max(1, Math.min(6400, count)));
-		ClientPlayNetworking.send(channel, buf);
+		ClientSend.send(channel, buf);
 	}
 }

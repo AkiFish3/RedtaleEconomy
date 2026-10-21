@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.balance;
 
 import com.akira.redtale.economy.net.PacketIds;
+import com.akira.redtale.economy.net.ClientSend;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -26,6 +27,6 @@ public final class BalanceClientNetworking {
 	/** 请求一次当前余额（服务端回包后 {@link #RAW} 更新）。 */
 	public static void request() {
 		Identifier id = PacketIds.C2S_BALANCE_REQ;
-		ClientPlayNetworking.send(id, new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
+		ClientSend.send(id, new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 }

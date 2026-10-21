@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.market;
 
 import com.akira.redtale.economy.net.MarketProtocol;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.PacketIds;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -56,26 +57,26 @@ public final class MarketClientNetworking {
 		buf.writeVarInt(Math.max(0, page));
 		buf.writeBoolean(mine);
 		buf.writeString(q == null ? "" : q, 64);
-		ClientPlayNetworking.send(PacketIds.C2S_MARKET_REQ, buf);
+		ClientSend.send(PacketIds.C2S_MARKET_REQ, buf);
 	}
 
 	public static void buy(String offerId) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeString(offerId == null ? "" : offerId, 32);
-		ClientPlayNetworking.send(PacketIds.C2S_MARKET_BUY, buf);
+		ClientSend.send(PacketIds.C2S_MARKET_BUY, buf);
 	}
 
 	public static void cancel(String offerId) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeString(offerId == null ? "" : offerId, 32);
-		ClientPlayNetworking.send(PacketIds.C2S_MARKET_CANCEL, buf);
+		ClientSend.send(PacketIds.C2S_MARKET_CANCEL, buf);
 	}
 
 	/** 挂出手上物品（服务端读主手，客户端只报价格）。 */
 	public static void sell(long price) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeLong(Math.max(0, price));
-		ClientPlayNetworking.send(PacketIds.C2S_MARKET_SELL, buf);
+		ClientSend.send(PacketIds.C2S_MARKET_SELL, buf);
 	}
 
 	/** SNBT → ItemStack；坏了返回空栈（渲染成灰块，不会崩）。 */

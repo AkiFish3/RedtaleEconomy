@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.ui.hub;
 
 import com.akira.redtale.economy.RedtaleEconomy;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.LedgerProtocol;
 import com.akira.redtale.economy.net.PacketIds;
 import net.fabricmc.api.EnvType;
@@ -54,7 +55,7 @@ public final class LedgerClientNetworking {
 		try {
 			PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 			LedgerProtocol.writeQuery(buf, new LedgerProtocol.Query(daysIdx, dir, typeIdx, all));
-			ClientPlayNetworking.send(PacketIds.C2S_LEDGER_REQ, buf);
+			ClientSend.send(PacketIds.C2S_LEDGER_REQ, buf);
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.warn("[ledger] 请求流水失败：{}", e.getMessage());
 		}

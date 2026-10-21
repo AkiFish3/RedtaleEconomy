@@ -1,6 +1,7 @@
 package com.akira.redtale.economy.client.warehouse;
 
 import com.akira.redtale.economy.net.PacketIds;
+import com.akira.redtale.economy.net.ClientSend;
 import com.akira.redtale.economy.net.WarehouseProtocol;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -43,7 +44,7 @@ public final class WarehouseClientNetworking {
 	}
 
 	public static void request() {
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_REQ,
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_REQ,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 
@@ -191,36 +192,36 @@ public final class WarehouseClientNetworking {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(index);
 		buf.writeBoolean(half);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_PICK, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_PICK, buf);
 	}
 
 	public static void place(int index, boolean one) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(index);
 		buf.writeBoolean(one);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_PLACE, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_PLACE, buf);
 	}
 
 	public static void quick(int index) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(index);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_QUICK, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_QUICK, buf);
 	}
 
 	public static void quickInv(int slot) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(slot);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_QUICK_INV, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_QUICK_INV, buf);
 	}
 
 	public static void hotbar(int slot) {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(slot);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_HOTBAR, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_HOTBAR, buf);
 	}
 
 	public static void collect() {
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_COLLECT,
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_COLLECT,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 
@@ -228,11 +229,11 @@ public final class WarehouseClientNetworking {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(slot);
 		buf.writeBoolean(half);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_INV_PICK, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_INV_PICK, buf);
 	}
 
 	public static void dropCursor() {
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_DROP,
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_DROP,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 
@@ -261,7 +262,7 @@ public final class WarehouseClientNetworking {
 		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
 		buf.writeVarInt(slot);
 		buf.writeBoolean(one);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_PLACE_INV, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_PLACE_INV, buf);
 	}
 
 	public static void spread(int[] slots, boolean even) {
@@ -269,16 +270,16 @@ public final class WarehouseClientNetworking {
 		buf.writeVarInt(slots.length);
 		for (int s : slots) buf.writeVarInt(s);
 		buf.writeBoolean(even);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_SPREAD, buf);
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_SPREAD, buf);
 	}
 
 	public static void sort() {
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_SORT,
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_SORT,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 
 	public static void upgrade() {
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_UPGRADE,
+		ClientSend.send(PacketIds.C2S_WAREHOUSE_UPGRADE,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
 	}
 }
