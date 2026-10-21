@@ -2,7 +2,6 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +10,8 @@ import java.util.List;
  * <p>服务端把「循环内每天的状态 + 那天能拿多少」一次发下来，客户端只画格子。
  * 签到/补签仍然发 {@code /checkin} 与 {@code /checkin make-up} 命令，
  * 补签扣券、每月次数上限都在服务端校验。
+ *
+ * <p>T33：两个列表走 {@link Codecs}；里程碑写在天数格之前（顺序不能换）。
  */
 public final class CheckinProtocol {
 
@@ -26,6 +27,21 @@ public final class CheckinProtocol {
 		}
 	}
 
+	private static final Codec<Integer> INT = Codecs.VAR_INT;
+
+	private static final Codec<Point> POINT = Codec.of("checkin/point",
+			(buf, p) -> {
+				buf.writeVarInt(p.day());
+				buf.writeLong(p.money());
+				buf.writeBoolean(p.done());
+				buf.writeBoolean(p.current());
+			},
+			buf -> new Point(buf.readVarInt(), buf.readLong(), buf.readBoolean(), buf.readBoolean()));
+
+	/** 里程碑条数 / 天数格条数上限（读完即丢）。 */
+	private static final int MAX_MILESTONES = 32;
+	private static final int MAX_POINTS = 64;
+
 	private CheckinProtocol() {
 	}
 
@@ -37,17 +53,8 @@ public final class CheckinProtocol {
 		buf.writeVarInt(Math.max(0, s.totalDays()));
 		buf.writeVarInt(Math.max(0, s.makeupLeft()));
 		buf.writeLong(Math.max(0, s.makeupCost()));
-		buf.writeVarInt(s.milestones() == null ? 0 : s.milestones().size());
-		for (int m : (s.milestones() == null ? List.<Integer>of() : s.milestones())) {
-			buf.writeVarInt(m);
-		}
-		buf.writeVarInt(s.points().size());
-		for (Point p : s.points()) {
-			buf.writeVarInt(p.day());
-			buf.writeLong(p.money());
-			buf.writeBoolean(p.done());
-			buf.writeBoolean(p.current());
-		}
+		Codecs.writeList(buf, s.milestones(), INT);
+		Codecs.writeList(buf, s.points(), POINT);
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
@@ -58,14 +65,8 @@ public final class CheckinProtocol {
 		int totalDays = buf.readVarInt();
 		int makeupLeft = buf.readVarInt();
 		long makeupCost = buf.readLong();
-		int mc = Math.min(buf.readVarInt(), 32);
-		List<Integer> miles = new ArrayList<>();
-		for (int i = 0; i < mc; i++) miles.add(buf.readVarInt());
-		int n = Math.min(buf.readVarInt(), 64);
-		List<Point> points = new ArrayList<>();
-		for (int i = 0; i < n; i++) {
-			points.add(new Point(buf.readVarInt(), buf.readLong(), buf.readBoolean(), buf.readBoolean()));
-		}
+		List<Integer> miles = Codecs.readList(buf, MAX_MILESTONES, INT);
+		List<Point> points = Codecs.readList(buf, MAX_POINTS, POINT);
 		return new Snapshot(lastDate, streak, loopDays, loopIndex, totalDays, makeupLeft, makeupCost,
 				points, miles);
 	}

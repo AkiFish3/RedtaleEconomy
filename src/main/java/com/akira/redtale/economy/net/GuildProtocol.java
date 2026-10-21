@@ -2,7 +2,6 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /** 协会快照：档位表 + 当前声望/档位。 */
@@ -17,6 +16,16 @@ public final class GuildProtocol {
 		}
 	}
 
+	private static final Codec<Rank> RANK = Codec.of("guild/rank",
+			(buf, r) -> {
+				buf.writeString(r.name() == null ? "" : r.name(), 64);
+				buf.writeLong(r.rep());
+			},
+			buf -> new Rank(buf.readString(64), buf.readLong()));
+
+	/** 档位表上限（读完即丢，不影响后续字段）。 */
+	private static final int MAX_RANKS = 64;
+
 	private GuildProtocol() {
 	}
 
@@ -24,22 +33,13 @@ public final class GuildProtocol {
 		buf.writeString(s.currentName() == null ? "" : s.currentName(), 64);
 		buf.writeVarInt(s.currentIndex());
 		buf.writeLong(s.rep());
-		buf.writeVarInt(s.ranks().size());
-		for (Rank r : s.ranks()) {
-			buf.writeString(r.name(), 64);
-			buf.writeLong(r.rep());
-		}
+		Codecs.writeList(buf, s.ranks(), RANK);
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
 		String name = buf.readString(64);
 		int idx = buf.readVarInt();
 		long rep = buf.readLong();
-		int n = Math.min(buf.readVarInt(), 64);
-		List<Rank> ranks = new ArrayList<>(n);
-		for (int i = 0; i < n; i++) {
-			ranks.add(new Rank(buf.readString(64), buf.readLong()));
-		}
-		return new Snapshot(name, idx, rep, ranks);
+		return new Snapshot(name, idx, rep, Codecs.readList(buf, MAX_RANKS, RANK));
 	}
 }

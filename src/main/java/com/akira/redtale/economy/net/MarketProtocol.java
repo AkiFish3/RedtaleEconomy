@@ -2,7 +2,6 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -12,6 +11,8 @@ import java.util.List;
  *
  * <p>物品本身用 SNBT 传（{@code itemSnbt}）—— 市场的货是带 NBT 的实物（附魔/自定义名/耐久），
  * 只传 itemId 会让客户端显示成一个「假的原版物品」，跟实际到手的不是同一个东西。
+ *
+ * <p>T33：挂单列表走 {@link Codecs}，截断与读取边界分离。
  */
 public final class MarketProtocol {
 
@@ -32,13 +33,19 @@ public final class MarketProtocol {
 	public record ActionResult(boolean ok, String code, String message, long balance) {
 	}
 
+	private static final Codec<Offer> OFFER = Codec.of("market/offer",
+			MarketProtocol::writeOffer, MarketProtocol::readOffer);
+
+	/** 一页最多 54 条，多出来的读完即丢。 */
+	private static final int MAX_OFFERS = 64;
+
 	private MarketProtocol() {
 	}
 
 	// ---------------------------------------------------------------- 编码
 
 	public static void writeOffer(PacketByteBuf buf, Offer o) {
-		buf.writeString(o.id(), 32);
+		buf.writeString(o.id() == null ? "" : o.id(), 32);
 		buf.writeString(o.itemSnbt() == null ? "" : o.itemSnbt(), 32767);
 		buf.writeString(o.itemId() == null ? "" : o.itemId(), 128);
 		buf.writeVarInt(o.count());
@@ -66,8 +73,7 @@ public final class MarketProtocol {
 		buf.writeVarInt(s.totalItems());
 		buf.writeBoolean(s.mineOnly());
 		buf.writeString(s.query() == null ? "" : s.query(), 64);
-		buf.writeVarInt(s.offers().size());
-		for (Offer o : s.offers()) writeOffer(buf, o);
+		Codecs.writeList(buf, s.offers(), OFFER);
 		buf.writeVarInt(s.myOpen());
 		buf.writeVarInt(s.maxOpen());
 		buf.writeDouble(s.commissionPercent());
@@ -79,13 +85,7 @@ public final class MarketProtocol {
 		int totalItems = buf.readVarInt();
 		boolean mineOnly = buf.readBoolean();
 		String query = buf.readString(64);
-		int n = buf.readVarInt();
-		int max = 64;                       // 一页最多 54，多出来的直接丢掉
-		List<Offer> list = new ArrayList<>(Math.min(n, max));
-		for (int i = 0; i < n; i++) {
-			Offer o = readOffer(buf);
-			if (i < max) list.add(o);
-		}
+		List<Offer> list = Codecs.readList(buf, MAX_OFFERS, OFFER);
 		int myOpen = buf.readVarInt();
 		int maxOpen = buf.readVarInt();
 		double commission = buf.readDouble();

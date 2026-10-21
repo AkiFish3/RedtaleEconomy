@@ -2,13 +2,13 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 排行榜快照（U9b）：前 10 + 自己那一行（spec §43.4「显示前 10 + 自己那行」）。
  *
  * <p>字段顺序固定，改字段必须同时改 encode/decode 与所有构造点（客户端/服务端同一个 jar）。
+ * T33：列表统一走 {@link Codecs}，读端「读完再截断」，不会因为行数超限把 self 行读成垃圾。
  */
 public final class RankProtocol {
 
@@ -31,22 +31,26 @@ public final class RankProtocol {
 	public record Request(boolean activeOnly) {
 	}
 
+	private static final Codec<Row> ROW = Codec.of("rank/row",
+			(buf, r) -> {
+				buf.writeVarInt(r.rank());
+				buf.writeString(r.name() == null ? "" : r.name(), 32);
+				buf.writeLong(r.balance());
+			},
+			buf -> new Row(buf.readVarInt(), buf.readString(32), buf.readLong()));
+
+	/** 榜单最多保留行数（第 51 行起读完即丢，self 行仍对齐）。 */
+	private static final int MAX_ROWS = 50;
+
 	private RankProtocol() {
 	}
 
 	public static void write(PacketByteBuf buf, Snapshot s) {
 		buf.writeVarInt(s.board());
-		buf.writeVarInt(s.top().size());
-		for (Row r : s.top()) {
-			buf.writeVarInt(r.rank());
-			buf.writeString(r.name(), 32);
-			buf.writeLong(r.balance());
-		}
+		Codecs.writeList(buf, s.top(), ROW);
 		buf.writeBoolean(s.self() != null);
 		if (s.self() != null) {
-			buf.writeVarInt(s.self().rank());
-			buf.writeString(s.self().name(), 32);
-			buf.writeLong(s.self().balance());
+			ROW.write(buf, s.self());
 		}
 		buf.writeVarInt(s.total());
 		buf.writeLong(s.computedAt());
@@ -55,14 +59,10 @@ public final class RankProtocol {
 
 	public static Snapshot read(PacketByteBuf buf) {
 		int board = buf.readVarInt();
-		int n = Math.min(buf.readVarInt(), 50);      // 防御：最多读 50 行
-		List<Row> top = new ArrayList<>(n);
-		for (int i = 0; i < n; i++) {
-			top.add(new Row(buf.readVarInt(), buf.readString(32), buf.readLong()));
-		}
+		List<Row> top = Codecs.readList(buf, MAX_ROWS, ROW);
 		Row self = null;
 		if (buf.readBoolean()) {
-			self = new Row(buf.readVarInt(), buf.readString(32), buf.readLong());
+			self = ROW.read(buf);
 		}
 		return new Snapshot(board, top, self, buf.readVarInt(), buf.readLong(), buf.readBoolean());
 	}

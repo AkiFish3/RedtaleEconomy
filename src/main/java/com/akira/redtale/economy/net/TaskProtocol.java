@@ -2,7 +2,6 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -13,6 +12,8 @@ import java.util.List;
  *
  * <p>缴纳/领取仍然走命令（{@code /tasks submit|claim <slot>}），所以数量校验、扣物品、
  * 发奖励只有服务端那一份代码，面板不会因为改了个按钮就绕过校验。
+ *
+ * <p>T33：两层列表都走 {@link Codecs}（读完再截断），任务数超限不会吃掉后续任务卡。
  */
 public final class TaskProtocol {
 
@@ -29,49 +30,48 @@ public final class TaskProtocol {
 		}
 	}
 
+	/** 一屏最多保留的任务卡数 / 每张卡最多保留的物品种类。 */
+	private static final int MAX_TASKS = 64;
+	private static final int MAX_ITEMS = 32;
+
+	private static final Codec<Item> ITEM = Codec.of("task/item",
+			(buf, i) -> {
+				buf.writeString(i.id() == null ? "" : i.id(), 128);
+				buf.writeVarInt(Math.max(0, i.need()));
+				buf.writeVarInt(Math.max(0, i.have()));
+			},
+			buf -> new Item(buf.readString(128), buf.readVarInt(), buf.readVarInt()));
+
+	private static final Codec<Task> TASK = Codec.of("task/card",
+			(buf, t) -> {
+				buf.writeVarInt(t.slot());
+				buf.writeLong(t.reward());
+				buf.writeString(t.mode() == null ? "submit" : t.mode(), 16);
+				buf.writeString(t.label() == null ? "" : t.label(), 64);
+				buf.writeBoolean(t.claimed());
+				Codecs.writeList(buf, t.items(), ITEM);
+			},
+			buf -> {
+				int slot = buf.readVarInt();
+				long reward = buf.readLong();
+				String mode = buf.readString(16);
+				String label = buf.readString(64);
+				boolean claimed = buf.readBoolean();
+				return new Task(slot, reward, mode, claimed, Codecs.readList(buf, MAX_ITEMS, ITEM), label);
+			});
+
 	private TaskProtocol() {
 	}
 
 	public static void write(PacketByteBuf buf, Snapshot s) {
 		buf.writeString(s.date() == null ? "" : s.date(), 32);
 		buf.writeVarInt(Math.max(0, s.refreshesLeft()));
-		buf.writeVarInt(s.tasks().size());
-		for (Task t : s.tasks()) {
-			buf.writeVarInt(t.slot());
-			buf.writeLong(t.reward());
-			buf.writeString(t.mode() == null ? "submit" : t.mode(), 16);
-			buf.writeString(t.label() == null ? "" : t.label(), 64);
-			buf.writeBoolean(t.claimed());
-			buf.writeVarInt(t.items().size());
-			for (Item i : t.items()) {
-				buf.writeString(i.id(), 128);
-				buf.writeVarInt(Math.max(0, i.need()));
-				buf.writeVarInt(Math.max(0, i.have()));
-			}
-		}
+		Codecs.writeList(buf, s.tasks(), TASK);
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
 		String date = buf.readString(32);
 		int refreshes = buf.readVarInt();
-		int n = Math.min(buf.readVarInt(), 64);
-		List<Task> tasks = new ArrayList<>();
-		for (int k = 0; k < n; k++) {
-			int slot = buf.readVarInt();
-			long reward = buf.readLong();
-			String mode = buf.readString(16);
-			String label = buf.readString(64);
-			boolean claimed = buf.readBoolean();
-			int m = Math.min(buf.readVarInt(), 32);
-			List<Item> items = new ArrayList<>();
-			for (int j = 0; j < m; j++) {
-				String id = buf.readString(128);
-				int need = buf.readVarInt();
-				int have = buf.readVarInt();
-				items.add(new Item(id, need, have));
-			}
-			tasks.add(new Task(slot, reward, mode, claimed, items, label));
-		}
-		return new Snapshot(date, refreshes, tasks);
+		return new Snapshot(date, refreshes, Codecs.readList(buf, MAX_TASKS, TASK));
 	}
 }

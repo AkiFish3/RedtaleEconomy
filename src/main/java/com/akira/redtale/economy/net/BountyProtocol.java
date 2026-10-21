@@ -2,7 +2,6 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -25,33 +24,29 @@ public final class BountyProtocol {
 		}
 	}
 
+	private static final Codec<Entry> ENTRY = Codec.of("bounty/entry",
+			(buf, e) -> {
+				buf.writeVarInt(e.index());
+				buf.writeString(e.id() == null ? "" : e.id(), 128);
+				buf.writeVarInt(Math.max(0, e.progress()));
+				buf.writeVarInt(Math.max(1, e.need()));
+				buf.writeLong(Math.max(0, e.reward()));
+				buf.writeBoolean(e.claimed());
+			},
+			buf -> new Entry(buf.readVarInt(), buf.readString(128), buf.readVarInt(),
+					buf.readVarInt(), buf.readLong(), buf.readBoolean()));
+
+	/** 面板最多保留的条目数（读完即丢）。 */
+	private static final int MAX_ENTRIES = 64;
+
 	private BountyProtocol() {
 	}
 
 	public static void write(PacketByteBuf buf, Snapshot s) {
-		buf.writeVarInt(s.entries().size());
-		for (Entry e : s.entries()) {
-			buf.writeVarInt(e.index());
-			buf.writeString(e.id() == null ? "" : e.id(), 128);
-			buf.writeVarInt(Math.max(0, e.progress()));
-			buf.writeVarInt(Math.max(1, e.need()));
-			buf.writeLong(Math.max(0, e.reward()));
-			buf.writeBoolean(e.claimed());
-		}
+		Codecs.writeList(buf, s.entries(), ENTRY);
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
-		int n = buf.readVarInt();
-		List<Entry> out = new ArrayList<>(Math.min(n, 64));
-		for (int i = 0; i < n; i++) {
-			int index = buf.readVarInt();
-			String id = buf.readString(128);
-			int progress = buf.readVarInt();
-			int need = buf.readVarInt();
-			long reward = buf.readLong();
-			boolean claimed = buf.readBoolean();
-			if (i < 64) out.add(new Entry(index, id, progress, need, reward, claimed));
-		}
-		return new Snapshot(out);
+		return new Snapshot(Codecs.readList(buf, MAX_ENTRIES, ENTRY));
 	}
 }

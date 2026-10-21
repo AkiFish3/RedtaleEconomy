@@ -90,9 +90,10 @@ public final class WarehouseNetworking {
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_SPREAD,
 				(server, player, h, buf, sender) -> {
-					int n = Math.min(buf.readVarInt(), 256);
-					int[] slots = new int[n];
-					for (int i = 0; i < n; i++) slots[i] = buf.readVarInt();
+					// T33：读完再截断。老写法 min(n,256) 一旦超限就把后面的 even 当成槽位读
+					java.util.List<Integer> raw = Codecs.readList(buf, 256, Codecs.VAR_INT);
+					int[] slots = new int[raw.size()];
+					for (int i = 0; i < slots.length; i++) slots[i] = raw.get(i);
 					boolean even = buf.readBoolean();
 					server.execute(() -> spread(player, slots, even));
 				});

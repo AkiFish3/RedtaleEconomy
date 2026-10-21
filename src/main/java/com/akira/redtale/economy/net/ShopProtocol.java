@@ -3,7 +3,6 @@ package com.akira.redtale.economy.net;
 import com.akira.redtale.economy.config.ShopConfig;
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +10,9 @@ import java.util.List;
  *
  * <p>核心约束：服务端<b>永不</b>下发全量商品。一次请求 = 一页 = {@code shop.pageSize} 条。
  * 客户端发来的 page 会被钳进 [0, totalPages-1]，负数/超大值都不会导致越界。
+ *
+ * <p>T33：三处列表（商品 / 模组 facet / 分类 facet）统一走 {@link Codecs}。
+ * 旧写法 {@code min(n, 200)} 只读 200 条就把后面当 facet 分类读，超限必然错位。
  */
 public final class ShopProtocol {
 
@@ -50,6 +52,27 @@ public final class ShopProtocol {
 
 	/** readPage 顺带读到的「一屏行数」；客户端接收方用 {@link #lastVisibleRows()} 取。 */
 	private static volatile int lastVisibleRows = 9;
+
+	private static final Codec<Entry> ENTRY = Codec.of("shop/entry",
+			(buf, e) -> {
+				buf.writeString(e.itemId() == null ? "" : e.itemId(), 128);
+				buf.writeLong(e.buyPrice());
+				buf.writeLong(e.sellPrice());
+				buf.writeLong(e.stock());
+				buf.writeBoolean(e.canBuy());
+				buf.writeBoolean(e.canSell());
+			},
+			buf -> new Entry(buf.readString(128), buf.readLong(), buf.readLong(), buf.readLong(),
+					buf.readBoolean(), buf.readBoolean()));
+
+	private static final Codec<String> TAX_ITEM = Codecs.string(128);
+	private static final Codec<String> MOD = Codecs.string(48);
+	private static final Codec<String> CATEGORY = Codecs.string(64);
+
+	/** 税率名单上限 / facet 上限（读完即丢，不影响后面的 visibleRows）。 */
+	private static final int MAX_TAX_ITEMS = 512;
+	private static final int MAX_MODS = 200;
+	private static final int MAX_CATEGORIES = 400;
 
 	/**
 	 * T01：税率信息（打开商店时下发一次）。
@@ -120,10 +143,7 @@ public final class ShopProtocol {
 		buf.writeVarInt(t.sellPct());
 		buf.writeBoolean(t.exemptMine());
 		buf.writeString(t.mode() == null ? "blacklist" : t.mode(), 16);
-		buf.writeVarInt(t.items().size());
-		for (String it : t.items()) {
-			buf.writeString(it == null ? "" : it, 128);
-		}
+		Codecs.writeList(buf, t.items(), TAX_ITEM);
 	}
 
 	public static TaxInfo readTax(PacketByteBuf buf) {
@@ -132,11 +152,7 @@ public final class ShopProtocol {
 		int sellPct = buf.readVarInt();
 		boolean exempt = buf.readBoolean();
 		String mode = buf.readString(16);
-		int n = Math.min(buf.readVarInt(), 512);
-		List<String> items = new ArrayList<>(n);
-		for (int i = 0; i < n; i++) {
-			items.add(buf.readString(128));
-		}
+		List<String> items = Codecs.readList(buf, MAX_TAX_ITEMS, TAX_ITEM);
 		return new TaxInfo(enabled, buyPct, sellPct, exempt, mode, items);
 	}
 
@@ -153,20 +169,10 @@ public final class ShopProtocol {
 		buf.writeVarInt(p.page());
 		buf.writeVarInt(p.totalPages());
 		buf.writeVarInt(p.totalItems());
-		buf.writeVarInt(p.entries().size());
-		for (Entry e : p.entries()) {
-			buf.writeString(e.itemId(), 128);
-			buf.writeLong(e.buyPrice());
-			buf.writeLong(e.sellPrice());
-			buf.writeLong(e.stock());
-			buf.writeBoolean(e.canBuy());
-			buf.writeBoolean(e.canSell());
-		}
+		Codecs.writeList(buf, p.entries(), ENTRY);
 		// U11b：筛选维度（facet），客户端拿去画分类栏；必须紧跟 entries，readPage 按此顺序读
-		buf.writeVarInt(p.mods().size());
-		for (String m : p.mods()) buf.writeString(m, 48);
-		buf.writeVarInt(p.categories().size());
-		for (String c : p.categories()) buf.writeString(c, 64);
+		Codecs.writeList(buf, p.mods(), MOD);
+		Codecs.writeList(buf, p.categories(), CATEGORY);
 		// 最后：GUI 一屏行数（服务端 shop/settings.json 的 visibleRows），接收方在 readPage 之后读
 		buf.writeVarInt(com.akira.redtale.economy.config.ShopConfig.visibleRows());
 	}
@@ -178,24 +184,10 @@ public final class ShopProtocol {
 		int page = buf.readVarInt();
 		int totalPages = buf.readVarInt();
 		int totalItems = buf.readVarInt();
-		int n = buf.readVarInt();
-		int max = ShopConfig.pageSize() + 1; // 容错一档，防止恶意端塞超长列表
-		List<Entry> list = new ArrayList<>(Math.min(n, max));
-		for (int i = 0; i < n; i++) {
-			String id = buf.readString(128);
-			long buy = buf.readLong();
-			long sell = buf.readLong();
-			long stock = buf.readLong();
-			boolean canBuy = buf.readBoolean();
-			boolean canSell = buf.readBoolean();
-			if (i < max) list.add(new Entry(id, buy, sell, stock, canBuy, canSell));
-		}
-		List<String> mods = new ArrayList<>();
-		int mn = Math.min(buf.readVarInt(), 200);
-		for (int i = 0; i < mn; i++) mods.add(buf.readString(48));
-		List<String> cats = new ArrayList<>();
-		int cn = Math.min(buf.readVarInt(), 400);
-		for (int i = 0; i < cn; i++) cats.add(buf.readString(64));
+		// 容错一档，防止恶意端塞超长列表；超出的读完即丢，不打断后续字段
+		List<Entry> list = Codecs.readList(buf, ShopConfig.pageSize() + 1, ENTRY);
+		List<String> mods = Codecs.readList(buf, MAX_MODS, MOD);
+		List<String> cats = Codecs.readList(buf, MAX_CATEGORIES, CATEGORY);
 		// 尾部：visibleRows（服务端 visibleRows，客户端一屏几行）；读完协议才算对称
 		if (buf.isReadable()) {
 			lastVisibleRows = Math.max(1, Math.min(54, buf.readVarInt()));

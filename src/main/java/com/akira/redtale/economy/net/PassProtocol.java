@@ -2,13 +2,15 @@ package com.akira.redtale.economy.net;
 
 import net.minecraft.network.PacketByteBuf;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 战令快照协议（R20/U4）。
  *
  * <p>只传展示所需数据；领取判定仍在服务端（客户端只发命令）。
+ *
+ * <p>T33：三条列表（两条奖励轨 + 两条已领档位）走 {@link Codecs}，
+ * 截断只影响显示条数，不会让「已领」集合从奖励轨中间开始读。
  */
 public final class PassProtocol {
 
@@ -28,6 +30,29 @@ public final class PassProtocol {
 		}
 	}
 
+	/** 每条轨最多保留的档位数 / 每档最多物品数 / 已领档位条数。 */
+	private static final int MAX_REWARDS = 512;
+	private static final int MAX_ITEMS = 16;
+	private static final int MAX_CLAIMED = 512;
+
+	private static final Codec<Integer> INT = Codecs.VAR_INT;
+
+	private static final Codec<ItemReward> ITEM = Codec.of("pass/item",
+			(buf, it) -> {
+				buf.writeString(it.id() == null ? "" : it.id(), 128);
+				buf.writeVarInt(it.count());
+			},
+			buf -> new ItemReward(buf.readString(128), buf.readVarInt()));
+
+	private static final Codec<Reward> REWARD = Codec.of("pass/reward",
+			(buf, r) -> {
+				buf.writeVarInt(r.level());
+				buf.writeLong(r.money());
+				Codecs.writeList(buf, r.items(), ITEM);
+			},
+			buf -> new Reward(buf.readVarInt(), buf.readLong(),
+					Codecs.readList(buf, MAX_ITEMS, ITEM)));
+
 	private PassProtocol() {
 	}
 
@@ -37,10 +62,10 @@ public final class PassProtocol {
 		buf.writeLong(s.xp());
 		buf.writeLong(s.xpNext());
 		buf.writeBoolean(s.premium());
-		writeTrack(buf, s.free());
-		writeTrack(buf, s.prem());
-		writeInts(buf, s.claimedFree());
-		writeInts(buf, s.claimedPrem());
+		Codecs.writeList(buf, s.free(), REWARD);
+		Codecs.writeList(buf, s.prem(), REWARD);
+		Codecs.writeList(buf, s.claimedFree(), INT);
+		Codecs.writeList(buf, s.claimedPrem(), INT);
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
@@ -49,51 +74,10 @@ public final class PassProtocol {
 		long xp = buf.readLong();
 		long xpNext = buf.readLong();
 		boolean premium = buf.readBoolean();
-		List<Reward> free = readTrack(buf);
-		List<Reward> prem = readTrack(buf);
-		List<Integer> cf = readInts(buf);
-		List<Integer> cp = readInts(buf);
+		List<Reward> free = Codecs.readList(buf, MAX_REWARDS, REWARD);
+		List<Reward> prem = Codecs.readList(buf, MAX_REWARDS, REWARD);
+		List<Integer> cf = Codecs.readList(buf, MAX_CLAIMED, INT);
+		List<Integer> cp = Codecs.readList(buf, MAX_CLAIMED, INT);
 		return new Snapshot(season, level, xp, xpNext, premium, free, prem, cf, cp);
-	}
-
-	private static void writeTrack(PacketByteBuf buf, List<Reward> list) {
-		buf.writeVarInt(list.size());
-		for (Reward r : list) {
-			buf.writeVarInt(r.level());
-			buf.writeLong(r.money());
-			buf.writeVarInt(r.items().size());
-			for (ItemReward it : r.items()) {
-				buf.writeString(it.id(), 128);
-				buf.writeVarInt(it.count());
-			}
-		}
-	}
-
-	private static List<Reward> readTrack(PacketByteBuf buf) {
-		int n = Math.min(buf.readVarInt(), 512);
-		List<Reward> out = new ArrayList<>(n);
-		for (int i = 0; i < n; i++) {
-			int level = buf.readVarInt();
-			long money = buf.readLong();
-			int ic = Math.min(buf.readVarInt(), 16);
-			List<ItemReward> items = new ArrayList<>(ic);
-			for (int j = 0; j < ic; j++) {
-				items.add(new ItemReward(buf.readString(128), buf.readVarInt()));
-			}
-			out.add(new Reward(level, money, items));
-		}
-		return out;
-	}
-
-	private static void writeInts(PacketByteBuf buf, List<Integer> list) {
-		buf.writeVarInt(list.size());
-		for (int v : list) buf.writeVarInt(v);
-	}
-
-	private static List<Integer> readInts(PacketByteBuf buf) {
-		int n = Math.min(buf.readVarInt(), 512);
-		List<Integer> out = new ArrayList<>(n);
-		for (int i = 0; i < n; i++) out.add(buf.readVarInt());
-		return out;
 	}
 }
