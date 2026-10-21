@@ -4,6 +4,7 @@ import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.ShopConfig;
 import com.akira.redtale.economy.config.StorageConfig;
 import com.akira.redtale.economy.economy.BalanceService;
+import com.akira.redtale.economy.storage.SystemAccount;
 import com.akira.redtale.economy.module.ModuleManager;
 import com.akira.redtale.economy.module.impl.GuildModule;
 import com.akira.redtale.economy.module.impl.PremiumModule;
@@ -174,6 +175,8 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			txn.commit();
 
 			long after = BalanceService.get(player.getUuid());
+			// T63：玩家交给系统的钱进资金池（含税，扣款已成功）
+			SystemAccount.income(price, Ledger.TYPE_SHOP_BUY, ref);
 			// T13：只发成功的成交（事务已 commit，钱货两清）
 			ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
 					price / Math.max(1, count), price, after, true));
@@ -241,6 +244,9 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			save(player.getUuid(), l);
 			txn.state("paid");
 			txn.commit();
+
+			// T63：系统发给玩家的钱只统计、不扣资金池余额（支出不扣口径）
+			SystemAccount.spend(income, Ledger.TYPE_SHOP_SELL, shopId + "/" + itemId + "x" + count);
 
 			long after = BalanceService.get(player.getUuid());
 			ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,

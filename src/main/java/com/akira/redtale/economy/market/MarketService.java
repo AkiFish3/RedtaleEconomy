@@ -3,6 +3,7 @@ package com.akira.redtale.economy.market;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.config.MarketConfig;
 import com.akira.redtale.economy.economy.BalanceService;
+import com.akira.redtale.economy.storage.SystemAccount;
 import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.mail.MailService;
 import com.akira.redtale.economy.module.ModuleManager;
@@ -154,6 +155,8 @@ public final class MarketService {
 			TxnRunner.revert(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "market:list:refund");
 			return Result.err(Code.SAVE_FAIL);
 		}
+		// T63：挂单费进系统资金池（服务端收下，不退的部分才是收入）
+		SystemAccount.income(fee, Ledger.TYPE_MARKET_FEE, "market:list:" + e.id);
 		return Result.ok(Lang.msg("market.ok.list", e.id, escrow.getName().getString(), e.count,
 				BalanceService.format(price), BalanceService.format(fee)),
 				e.id, escrow.getName().getString(), e.count);
@@ -231,6 +234,8 @@ public final class MarketService {
 		e.escrow = "";
 		MarketStore.save();
 		BalanceService.add(UUID.fromString(e.seller), proceeds, Ledger.TYPE_MARKET_SELL, "market:sell:" + e.id);
+		// T63：抽成（成交价 - 卖家实收）被系统收走，进资金池
+		SystemAccount.income(e.price - proceeds, Ledger.TYPE_MARKET_FEE, "market:commission:" + e.id);
 
 		if (MarketConfig.notifyOnSell()) {
 			notifyOnline(e.seller, Lang.msg("market.sell.done", buyer.getGameProfile().getName(),
@@ -369,6 +374,8 @@ public final class MarketService {
 			TxnRunner.revert(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "auction:list:refund");
 			return Result.err(Code.SAVE_FAIL);
 		}
+		// T63：拍卖挂单费同直售，进系统资金池
+		SystemAccount.income(fee, Ledger.TYPE_MARKET_FEE, "auction:list:" + e.id);
 		return Result.ok(Lang.msg("market.ok.auction", e.id, escrow.getName().getString(), e.count,
 				BalanceService.format(startPrice), h, BalanceService.format(fee)), e.id);
 	}
@@ -453,6 +460,8 @@ public final class MarketService {
 			long proceeds = MarketRules.sellerProceeds(e.bid, MarketConfig.commissionPercent());
 			BalanceService.add(UUID.fromString(e.seller), proceeds, Ledger.TYPE_MARKET_SELL,
 					"auction:sell:" + e.id);
+			// T63：拍卖抽成同样计入资金池
+			SystemAccount.income(e.bid - proceeds, Ledger.TYPE_MARKET_FEE, "auction:commission:" + e.id);
 			notifyOnline(e.bidder, Lang.msg("market.auction.won", e.id,
 					stack.isEmpty() ? e.itemId : stack.getName().getString(), e.count,
 					BalanceService.format(e.bid)));

@@ -242,6 +242,9 @@ public final class WarehouseModule implements RedtaleModule {
 					"refund:slots:" + next.slots());
 			return new UpgradeOutcome(UpgradeResult.FAILED, data.slots(), next);
 		}
+		// T63：扩容费是玩家交给系统的钱，进资金池（放在成功分支，退款路径不计）
+		com.akira.redtale.economy.storage.SystemAccount.income(next.price(), Ledger.TYPE_WAREHOUSE,
+				"slots:" + next.slots());
 		return new UpgradeOutcome(UpgradeResult.OK, data.slots(), next);
 	}
 

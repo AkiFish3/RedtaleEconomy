@@ -478,6 +478,8 @@ public final class BattlePassModule implements RedtaleModule {
 	private static void grant(UUID uuid, BattlePassConfig.Reward reward, String detail) {
 		if (reward.money() > 0) {
 			BalanceService.add(uuid, reward.money(), Ledger.TYPE_PASS, detail);
+			// T63：战令奖励是系统发放，计支出统计
+			com.akira.redtale.economy.storage.SystemAccount.spend(reward.money(), Ledger.TYPE_PASS, detail);
 		}
 		ServerPlayerEntity p = RedtaleEconomy.server() == null ? null
 				: RedtaleEconomy.server().getPlayerManager().getPlayer(uuid);

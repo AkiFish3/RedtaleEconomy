@@ -33,7 +33,7 @@ public final class Modules {
 	}
 
 	public static boolean locked(String id) {
-		return ModuleManager.ALWAYS_ON.equals(id);
+		return ModuleManager.locked(id);
 	}
 
 	/** 全量视图（服务端下发给客户端的唯一口径，顺序 = 注册顺序）。 */
@@ -60,7 +60,7 @@ public final class Modules {
 		ModuleManager mm = ModuleManager.get();
 		if (id == null || id.isBlank()) return new Result(false, "缺少模块 id");
 		if (!mm.known(id)) return new Result(false, "没有模块 " + id);
-		if (locked(id)) return new Result(false, id + " 不可关闭（经济基础）");
+		if (locked(id)) return new Result(false, id + " 不可关闭（" + (ModuleManager.ALWAYS_ON.equals(id) ? "经济基础" : "余额/流水本体") + "）");
 		if (!mm.toggleable(id)) return new Result(false, id + " 不支持开关");
 		boolean cur = mm.isEnabled(id);
 		if (cur == on) return new Result(true, id + " 已经是" + (on ? "开启" : "关闭") + "状态");

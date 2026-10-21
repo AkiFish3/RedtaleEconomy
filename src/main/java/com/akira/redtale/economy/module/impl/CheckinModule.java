@@ -292,6 +292,9 @@ public final class CheckinModule implements RedtaleModule {
 		if (reward > 0) {
 			BalanceService.add(uuid, reward, com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN,
 					"streak:" + s.streak);
+			// T63：系统发出去的钱只统计、不扣资金池（支出不扣口径）
+			com.akira.redtale.economy.storage.SystemAccount.spend(reward,
+					com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN, "streak:" + s.streak);
 		}
 		if (tier != null) grantItems(uuid, tier.items());
 		// R32：签到涨协会声望
@@ -473,6 +476,9 @@ public final class CheckinModule implements RedtaleModule {
 		if (reward > 0) {
 			BalanceService.add(uuid, reward, com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN,
 					"makeup:" + target);
+			// T63：补签同正常签到，计入系统支出
+			com.akira.redtale.economy.storage.SystemAccount.spend(reward,
+					com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN, "makeup:" + target);
 		}
 		LAST_MAKEUP_DATE = target.toString();
 		return MakeupResult.OK;

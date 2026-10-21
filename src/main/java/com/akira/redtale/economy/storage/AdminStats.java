@@ -60,6 +60,11 @@ public final class AdminStats {
 			return errs.isEmpty() ? "无" : errs.size() + " 条";
 		}, "最近一次加载失败的文件（详见日志）");
 		add(out, "商店回收站", AdminStats::trash, "被删商品/商店的备份文件数");
+		// T63：系统资金池（收入入账、支出不扣；详细口径见 /rt admin system）
+		add(out, "系统资金池", () -> {
+			var pool = com.akira.redtale.economy.storage.SystemAccount.pool();
+			return pool.balance() + "（收 " + pool.incomeTotal() + " / 支 " + pool.spendTotal() + "）";
+		}, "系统账户 __system__：余额=累计回收量，支出只统计不扣");
 		add(out, "数据根", () -> String.valueOf(DataRoot.path()), "redtale-data 的实际落点");
 		return out;
 	}

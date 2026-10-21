@@ -49,6 +49,9 @@ public final class Ledger {
 	public static final String TYPE_MARKET_SELL = "market.sell";
 	/** R41：拍卖出价托管 / 被超越退款 / 流拍退物，都走这个类型。 */
 	public static final String TYPE_MARKET_AUCTION = "market.auction";
+	/** T63：系统资金池（{@code __system__}）的回收 / 发放，uuid 固定，供资金池统计对账。 */
+	public static final String TYPE_SYSTEM_IN = "system.in";
+	public static final String TYPE_SYSTEM_OUT = "system.out";
 
 	private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
 	private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM");

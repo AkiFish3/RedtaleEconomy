@@ -857,6 +857,10 @@ public final class TaskModule implements RedtaleModule {
 		flushOne(uuid);
 		BalanceService.add(uuid, t.reward, com.akira.redtale.economy.storage.Ledger.TYPE_TASK,
 				"slot:" + slot + "/budget:" + t.appliedBudget);
+		// T63：任务奖励属系统发放，计入支出统计（不扣资金池）
+		com.akira.redtale.economy.storage.SystemAccount.spend(t.reward,
+				com.akira.redtale.economy.storage.Ledger.TYPE_TASK,
+				"slot:" + slot + "/budget:" + t.appliedBudget);
 		return t.reward;
 	}
 }

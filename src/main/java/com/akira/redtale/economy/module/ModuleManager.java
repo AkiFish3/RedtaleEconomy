@@ -40,8 +40,23 @@ public final class ModuleManager {
 	/** 命令树句柄（{@code CommandRegistrationCallback} 里记下）；模块热开关后要重发树。 */
 	private CommandDispatcher<ServerCommandSource> dispatcher;
 
-	/** 不可关闭的模块：关了货币就没了（T51 规范 §一）。 */
+	/**
+	 * 不可关闭的模块（T51 规范 §一 + T65）。
+	 *
+	 * <p>{@code economy}：关了货币/账户入口就没了，而 accounts.json 还在 ⇒ 下次打开读到一堆「幽灵余额」。
+	 * {@code storage}：它是余额本体 + 流水 + 快照的唯一实现，关掉后所有 {@code BalanceService}
+	 * 调用都会落到未初始化的 provider 上（余额恒 -1、流水不落盘），属于「看起来模组还在、
+	 * 实际钱全丢」的静默故障 ⇒ 与 economy 同级，配置写 false 只 WARN。
+	 */
+	public static final java.util.Set<String> LOCKED = java.util.Set.of("economy", "storage");
+
+	/** 经济基础模块 id（保留常量，外部判「是否是核心」时用）。 */
 	public static final String ALWAYS_ON = "economy";
+
+	/** 该 id 是否不可关闭。 */
+	public static boolean locked(String id) {
+		return id != null && LOCKED.contains(id);
+	}
 
 	private ModuleManager() {
 	}
@@ -86,9 +101,10 @@ public final class ModuleManager {
 	}
 
 	private ConfigSchema buildModulesSchema() {
-		ConfigSchema obj = ConfigSchema.obj("模块 id → 是否启用（改完 /redtale reload 生效）");
+		ConfigSchema obj = ConfigSchema.obj("模块 id → 是否启用（改完 /redtale reload 生效；economy/storage 不可关）");
 		for (RedtaleModule m : registry.values()) {
-			obj.field(m.id(), ConfigSchema.bool(m.defaultEnabled(), "模块 " + m.id() + "（默认 " + m.defaultEnabled() + "）"));
+			obj.field(m.id(), ConfigSchema.bool(m.defaultEnabled(), "模块 " + m.id() + "（默认 " + m.defaultEnabled()
+					+ (locked(m.id()) ? "，不可关闭" : "") + "）"));
 		}
 		return obj;
 	}
@@ -177,9 +193,9 @@ public final class ModuleManager {
 		return id != null && registry.containsKey(id);
 	}
 
-	/** 该模块是否允许被关闭（{@code economy} 不可关）。 */
+	/** 该模块是否允许被关闭（{@code economy} / {@code storage} 不可关）。 */
 	public boolean toggleable(String id) {
-		return known(id) && !ALWAYS_ON.equals(id);
+		return known(id) && !locked(id);
 	}
 
 	/**
@@ -242,7 +258,7 @@ public final class ModuleManager {
 			// ★只处理归属是「真实模块」的根命令★：core（/redtale /rt）、terminal 等
 			// 不是模块，按 id 查 isEnabled 会一律得到 false —— 第一版就是这么把
 			// /redtale 和 /rt 一起摘掉的（关 shop 连带管理员自己都没命令可用）。
-			if (!known(e.owner()) || ALWAYS_ON.equals(e.owner())) continue;
+			if (!known(e.owner()) || locked(e.owner())) continue;
 			boolean want = isEnabled(e.owner());
 			boolean has = CommandSync.hasRoot(dispatcher, e.name());
 			if (!want && has) {
@@ -300,9 +316,9 @@ public final class ModuleManager {
 			boolean on = !mods.has(m.id())
 					|| (mods.get(m.id()).isJsonPrimitive() && mods.get(m.id()).getAsJsonPrimitive().isBoolean()
 							&& mods.get(m.id()).getAsBoolean());
-			// T51：economy 不可关 —— 关掉它的实例里货币/账户全都没了，而 accounts.json 还在，
-			// 下次打开会读回一堆「幽灵余额」。配置写 false 也只 WARN，不照做。
-			if (!on && ALWAYS_ON.equals(m.id())) {
+			// T51 + T65：economy / storage 不可关 —— 关掉它们的实例里货币/账户/流水全都没了，
+			// 而 accounts.json 还在，下次打开会读回一堆「幽灵余额」。配置写 false 也只 WARN，不照做。
+			if (!on && locked(m.id())) {
 				on = true;
 				RedtaleEconomy.LOGGER.warn("[module] {} 被配置为 false，但它是不可关闭模块，已按 true 处理", m.id());
 			}

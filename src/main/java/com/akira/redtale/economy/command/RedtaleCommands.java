@@ -118,6 +118,8 @@ public final class RedtaleCommands {
 																		.getString(ctx, "season")))))))
 						// R36：数据根目录只读诊断（确认数据确实落在存档里，不用翻文件系统）
 						.then(CommandManager.literal("data").executes(RedtaleCommands::adminData))
+						// T63：系统资金池（回收/发放统计，余额只增不减）
+						.then(CommandManager.literal("system").executes(RedtaleCommands::adminSystem))
 						// T15：外部告警（status 看设置；test 真发一条）
 						.then(CommandManager.literal("alert")
 								.executes(ctx -> adminAlert(ctx, false))
@@ -500,6 +502,30 @@ public final class RedtaleCommands {
 			src.sendError(Text.literal("§c执行失败：" + e.getMessage()));
 			return 0;
 		}
+	}
+
+	/**
+	 * T63：{@code /rt admin system} —— 系统资金池（{@code __system__}）只读视图。
+	 *
+	 * <p>口径写在输出里：<b>收入入账、支出不扣</b> ⇒ 余额是「累计回收量」，不是可花预算。
+	 * 支出明细同样在流水里（uuid 固定），用 {@code /rt ledger} 或导出对账。
+	 */
+	private static int adminSystem(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		var pool = com.akira.redtale.economy.storage.SystemAccount.pool();
+		src.sendFeedback(() -> Text.literal("§6[system] §7账户 §f"
+				+ com.akira.redtale.economy.storage.SystemAccount.NAME
+				+ " §8| §7池余额 §f" + pool.balance()), false);
+		src.sendFeedback(() -> Text.literal("§7累计收入 §f" + pool.incomeTotal()
+				+ " §8| §7累计支出 §f" + pool.spendTotal()
+				+ " §8| §7净额 §f" + pool.net()), false);
+		src.sendFeedback(() -> Text.literal("§8口径：收入入账、支出不扣（余额=累计回收量，不是可花预算）"), false);
+		src.sendFeedback(() -> Text.literal("§8覆盖：商店买卖 / 市场挂单费+抽成 / 仓储扩容 / 签到·任务·战令奖励"), false);
+		src.sendFeedback(() -> Text.literal("§8未计：邮件补发（/rt grant money）与 FTBQ 奖励 —— 待 A 队列白名单扩到 mail/integration"), false);
+		if (!pool.updatedAt().isEmpty()) {
+			src.sendFeedback(() -> Text.literal("§8更新于 §7" + pool.updatedAt()), false);
+		}
+		return 1;
 	}
 
 	/**
