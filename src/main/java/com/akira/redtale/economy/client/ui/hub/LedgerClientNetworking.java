@@ -38,7 +38,7 @@ public final class LedgerClientNetworking {
 			LAST = snap;
 			admin = snap.admin();
 			client.execute(() -> {
-				if (client.currentScreen instanceof HubScreen hub && hub.devPageId().equals("ledger")) {
+				if (client.currentScreen instanceof HubScreen hub && hub.pageId().equals("ledger")) {
 					hub.setStatus("流水 " + snap.total() + " 笔");
 				}
 			});

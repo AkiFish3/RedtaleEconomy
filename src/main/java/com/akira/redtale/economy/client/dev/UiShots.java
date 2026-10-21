@@ -1,5 +1,7 @@
 package com.akira.redtale.economy.client.dev;
 
+import com.akira.redtale.economy.client.ui.hub.HubDev;
+
 import com.akira.redtale.economy.client.checkin.CheckinClientNetworking;
 import com.akira.redtale.economy.client.checkin.CheckinScreen;
 import com.akira.redtale.economy.client.ShopClientState;
@@ -398,18 +400,18 @@ public final class UiShots {
 				// 427x240 逻辑分辨率下「管理员」整组在折叠之外 ⇒ 先滚到底再点，
 				// 否则 rowCenter 返回 null（第一次跑就踩到：hit=false）。
 				if (mc.currentScreen instanceof HubScreen hub) {
-					int max = hub.devSettingsScrollMax();
-					hub.devScrollSettings(max);
+					int max = HubDev.settingsScrollMax(hub);
+					HubDev.scrollSettings(hub, max);
 					LOG.add("settings scroll to " + max + " (contentH="
-							+ hub.devSettingsContentHeight() + ")");
+							+ HubDev.settingsContentHeight(hub) + ")");
 				}
 				clickSettingsRow(mc, HubSettingsPage.Row.ADMIN_HEAD, "expand");
 			});
 			case 49 -> act(mc, () -> {
 				// 展开后内容变长，滚动上限也变 ⇒ 重新滚到底，否则「重载配置」那行被裁掉
 				if (mc.currentScreen instanceof HubScreen hub) {
-					int max = hub.devSettingsScrollMax();
-					hub.devScrollSettings(max);
+					int max = HubDev.settingsScrollMax(hub);
+					HubDev.scrollSettings(hub, max);
 					LOG.add("settings scroll after expand to " + max);
 				}
 			});
@@ -504,7 +506,7 @@ public final class UiShots {
 			});
 			case 88 -> act(mc, () -> {
 				if (mc.currentScreen instanceof HubScreen hub) {
-					LOG.add("shop scroll bottom -> row " + hub.devScrollShopBottom()
+					LOG.add("shop scroll bottom -> row " + HubDev.scrollShopBottom(hub)
 							+ " at tick " + tick);
 				} else {
 					LOG.add("shop scroll skipped: screen is "
@@ -531,10 +533,10 @@ public final class UiShots {
 				// 427x240 逻辑高度下「管理员」整组在折叠线以下 ⇒ 必须滚到底，
 				// 否则 OP / 非 OP 两张图在默认位置长得一模一样，等于没证据。
 				if (mc.currentScreen instanceof HubScreen hub) {
-					int max = hub.devSettingsScrollMax();
-					hub.devScrollSettings(max);
+					int max = HubDev.settingsScrollMax(hub);
+					HubDev.scrollSettings(hub, max);
 					LOG.add("settings scroll to " + max + " (contentH="
-							+ hub.devSettingsContentHeight() + ")");
+							+ HubDev.settingsContentHeight(hub) + ")");
 				}
 				logPerm(mc, "mp");
 			});
@@ -544,7 +546,7 @@ public final class UiShots {
 			case 204 -> act(mc, () -> {
 				boolean before = HubSettingsPage.devAdminOpen();
 				boolean hit = mc.currentScreen instanceof HubScreen hub
-						? hub.devClickSettingsRow(HubSettingsPage.Row.ADMIN_HEAD) : false;
+						? HubDev.clickSettingsRow(hub, HubSettingsPage.Row.ADMIN_HEAD) : false;
 				LOG.add("settings row ADMIN_HEAD[mp-probe] hit=" + hit
 						+ " adminOpen " + before + " -> " + HubSettingsPage.devAdminOpen());
 				HubSettingsPage.setAdminOpen(true);
@@ -677,7 +679,7 @@ public final class UiShots {
 			winShots++;
 		}
 		Screen cur = mc.currentScreen;
-		String pid = cur instanceof HubScreen h ? " page=" + h.devPageId() : "";
+		String pid = cur instanceof HubScreen h ? " page=" + HubDev.pageId(h) : "";
 		LOG.add("shot " + out + " at tick " + tick
 				+ " fb=" + win.getFramebufferWidth() + "x" + win.getFramebufferHeight()
 				+ " logical=" + win.getScaledWidth() + "x" + win.getScaledHeight()
@@ -768,8 +770,8 @@ public final class UiShots {
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
 			return;
 		}
-		boolean hit = hub.devClickSidebar(index);
-		LOG.add("click " + label + " (row " + index + ") hit=" + hit + " page=" + hub.devPageId()
+		boolean hit = HubDev.clickSidebar(hub, index);
+		LOG.add("click " + label + " (row " + index + ") hit=" + hit + " page=" + HubDev.pageId(hub)
 				+ " at tick " + tick);
 	}
 
@@ -781,7 +783,7 @@ public final class UiShots {
 			return;
 		}
 		String before = ShopClientState.filter().categoryOrEmpty();
-		boolean hit = hub.devClickTreeRow(row);
+		boolean hit = HubDev.clickTreeRow(hub, row);
 		LOG.add("tree click row=" + row + " hit=" + hit + " path=" + before + " -> "
 				+ ShopClientState.filter().categoryOrEmpty() + " at tick " + tick);
 	}
@@ -793,7 +795,7 @@ public final class UiShots {
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
 			return;
 		}
-		hub.devSearch(text);
+		HubDev.search(hub, text);
 		LOG.add("search \"" + text + "\" at tick " + tick + " path="
 				+ ShopClientState.filter().categoryOrEmpty());
 	}
@@ -805,9 +807,9 @@ public final class UiShots {
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
 			return;
 		}
-		boolean before = hub.devRankActiveOnly();
-		boolean hit = hub.devClickRankToggle();
-		LOG.add("rank toggle hit=" + hit + " state " + before + " -> " + hub.devRankActiveOnly()
+		boolean before = HubDev.rankActiveOnlyVal(hub);
+		boolean hit = HubDev.clickRankToggle(hub);
+		LOG.add("rank toggle hit=" + hit + " state " + before + " -> " + HubDev.rankActiveOnlyVal(hub)
 				+ " at tick " + tick);
 	}
 
@@ -818,7 +820,7 @@ public final class UiShots {
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
 			return;
 		}
-		boolean hit = hub.devClickRankDropdown();
+		boolean hit = HubDev.clickRankDropdown(hub);
 		LOG.add("rank dropdown hit=" + hit + " at tick " + tick);
 	}
 
@@ -829,8 +831,8 @@ public final class UiShots {
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
 			return;
 		}
-		boolean hit = hub.devClickRankBoard(idx);
-		LOG.add("rank board[" + idx + "] hit=" + hit + " selected=" + hub.devRankBoard()
+		boolean hit = HubDev.clickRankBoard(hub, idx);
+		LOG.add("rank board[" + idx + "] hit=" + hit + " selected=" + HubDev.rankBoardVal(hub)
 				+ " at tick " + tick);
 	}
 
@@ -841,10 +843,10 @@ public final class UiShots {
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
 			return;
 		}
-		int before = hub.devRankSyncCooldownLeft();
-		boolean hit = hub.devClickRankSync();
+		int before = HubDev.rankSyncCooldownLeftVal(hub);
+		boolean hit = HubDev.clickRankSync(hub);
 		LOG.add("rank sync[" + tag + "] hit=" + hit + " cooldownBefore=" + before
-				+ " cooldownAfter=" + hub.devRankSyncCooldownLeft() + " at tick " + tick);
+				+ " cooldownAfter=" + HubDev.rankSyncCooldownLeftVal(hub) + " at tick " + tick);
 	}
 
 	/** 把客户端缓存的榜快照写进日志：行数 / total / 自己那行 / 快照自带的 activeOnly。 */
@@ -858,7 +860,7 @@ public final class UiShots {
 		LOG.add("rank[" + tag + "] rows=" + snap.top().size() + " total=" + snap.total()
 				+ " snapActiveOnly=" + snap.activeOnly()
 				+ " self=" + (self == null ? "null" : self.rank() + "/" + self.name() + "/" + self.balance())
-				+ " uiActiveOnly=" + (mc.currentScreen instanceof HubScreen h ? h.devRankActiveOnly() : null)
+				+ " uiActiveOnly=" + (mc.currentScreen instanceof HubScreen h ? HubDev.rankActiveOnlyVal(h) : null)
 				+ " at tick " + tick);
 		if (!snap.top().isEmpty()) {
 			StringBuilder sb = new StringBuilder("rank[" + tag + "] top=");
@@ -875,7 +877,7 @@ public final class UiShots {
 			return;
 		}
 		boolean before = HubSettingsPage.devAdminOpen();
-		boolean hit = hub.devClickSettingsRow(row);
+		boolean hit = HubDev.clickSettingsRow(hub, row);
 		LOG.add("settings row " + row + "[" + tag + "] hit=" + hit
 				+ " adminOpen " + before + " -> " + HubSettingsPage.devAdminOpen()
 				+ " screen=" + (mc.currentScreen == null ? "null"
