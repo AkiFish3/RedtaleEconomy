@@ -4,6 +4,7 @@ import com.akira.redtale.economy.perm.Permissions;
 import com.akira.redtale.economy.config.CoreConfig;
 import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.net.ShopNetworking;
+import com.akira.redtale.economy.shop.ShopBulk;
 import com.akira.redtale.economy.shop.ShopCatalog;
 import com.akira.redtale.economy.shop.ShopStock;
 import com.mojang.brigadier.CommandDispatcher;
@@ -31,6 +32,10 @@ import java.util.List;
  * /shop admin toggle &#60;shop&#62; &#60;item&#62;
  * /shop admin stock  &#60;shop&#62; &#60;item&#62; &#60;n&#62;   （-1=恢复无限）
  * /shop admin resetstock      清空全部库存覆盖值，回到文件初值
+ * /shop admin export &#60;file&#62;            全部商店导出成一份批量文件（T10）
+ * /shop admin import &#60;file&#62;            批量导入（合并；同 id 商品按字段覆盖）
+ * /shop admin import dry &#60;file&#62;        只算计数不写盘
+ * /shop admin import replace &#60;file&#62;    文件里没有的商品从该店移除（写前自动备份）
  * </pre>
  *
  * 权限：玩家侧只要求能进服；管理命令走 {@code permissions.admin}（默认 OP 2）。
@@ -94,6 +99,33 @@ public final class ShopAdminCommands {
 																.executes(ShopAdminCommands::addItem))))))
 						.then(CommandManager.literal("resetstock")
 								.executes(ShopAdminCommands::resetStock))
+						// T10：批量导入/导出（搬 2803 件）。路径必须 greedyString：
+						// string() 的不带引号段不接受 `/`，`shop/tmp.json` 会解析失败
+						.then(CommandManager.literal("export")
+								.then(CommandManager.argument("file",
+												StringArgumentType.greedyString())
+										.suggests(bulkFiles())
+										.executes(ShopAdminCommands::exportShops)))
+						.then(CommandManager.literal("import")
+								.then(CommandManager.literal("dry")
+										.then(CommandManager.argument("file",
+														StringArgumentType.greedyString())
+												.suggests(bulkFiles())
+												.executes(ctx -> importShops(ctx, false, true))))
+								.then(CommandManager.literal("replace")
+										.then(CommandManager.argument("file",
+														StringArgumentType.greedyString())
+												.suggests(bulkFiles())
+												.executes(ctx -> importShops(ctx, true, false)))
+										.then(CommandManager.literal("dry")
+												.then(CommandManager.argument("file",
+																StringArgumentType.greedyString())
+														.suggests(bulkFiles())
+														.executes(ctx -> importShops(ctx, true, true)))))
+								.then(CommandManager.argument("file",
+												StringArgumentType.greedyString())
+										.suggests(bulkFiles())
+										.executes(ctx -> importShops(ctx, false, false))))
 						// E1：查看/切换价格护栏（卖价必须低于买价）
 						.then(CommandManager.literal("priceguard")
 								.executes(ShopAdminCommands::priceGuard)
@@ -410,10 +442,81 @@ public final class ShopAdminCommands {
 		return 1;
 	}
 
+	// ---------------------------------------------------------------- T10 批量导入/导出
+
+	/** {@code /shop admin export <file>}：全部商店导成一份批量文件（相对路径按数据根目录）。 */
+	private static int exportShops(CommandContext<ServerCommandSource> ctx) {
+		String arg = StringArgumentType.getString(ctx, "file");
+		ShopBulk.ExportReport r;
+		try {
+			r = ShopBulk.exportTo(arg);
+		} catch (Exception e) {
+			ctx.getSource().sendError(Text.literal("§c导出失败：" + e));
+			return 0;
+		}
+		if (r.shops() == 0) {
+			ctx.getSource().sendError(Text.literal("§c没有可导出的商店（shop/shops 为空？）"));
+			return 0;
+		}
+		ctx.getSource().sendFeedback(() -> Text.literal("§a导出完成：§f" + r.file()
+				+ " §7（" + r.shops() + " 店 / " + r.items() + " 件）"), false);
+		for (String err : r.errors()) {
+			ctx.getSource().sendFeedback(() -> Text.literal("§e⚠ " + err), false);
+		}
+		return 1;
+	}
+
+	/**
+	 * {@code /shop admin import <file> [replace] [dry]}。
+	 *
+	 * <p>{@code dry} = 只算计数不写盘；{@code replace} = 文件里没有的商品从该店移除（写前自动备份）。
+	 */
+	private static int importShops(CommandContext<ServerCommandSource> ctx, boolean replace,
+			boolean dry) {
+		String arg = StringArgumentType.getString(ctx, "file");
+		ShopBulk.ImportReport r;
+		try {
+			r = ShopBulk.importFrom(arg, replace, dry);
+		} catch (Exception e) {
+			ctx.getSource().sendError(Text.literal("§c导入失败：" + e));
+			return 0;
+		}
+		String head = (dry ? "§e预演（未写盘）" : "§a导入完成")
+				+ "§7：新增 §f" + r.shopsNew() + " §7店 / 更新 §f" + r.shopsUpdated()
+				+ " §7店；商品 新 §f" + r.itemsNew() + " §7/ 改 §f" + r.itemsUpdated()
+				+ " §7/ 未变 §f" + r.itemsUnchanged() + " §7/ 移除 §f" + r.itemsRemoved();
+		boolean any = (r.shopsNew() + r.shopsUpdated()) > 0;
+		if (any) {
+			ctx.getSource().sendFeedback(() -> Text.literal(head), false);
+			if (!dry) {
+				for (java.nio.file.Path p : r.files()) {
+					ctx.getSource().sendFeedback(() -> Text.literal("§7→ " + p), false);
+				}
+			}
+		} else {
+			// 文件不存在 / 解析失败 / shops 为空 —— 不能画成绿色「导入完成」
+			ctx.getSource().sendError(Text.literal("§c导入失败：没有可导入的商店（文件路径对不对？看下面原因）"));
+		}
+		int shown = 0;
+		for (String err : r.errors()) {
+			if (shown++ >= 5) {
+				ctx.getSource().sendFeedback(() -> Text.literal("§7…还有 "
+						+ (r.errors().size() - 5) + " 条，见日志"), false);
+				break;
+			}
+			ctx.getSource().sendFeedback(() -> Text.literal("§e⚠ " + err), false);
+		}
+		return any ? 1 : 0;
+	}
+
 	// ---------------------------------------------------------------- 补全
 
 	private static com.mojang.brigadier.suggestion.SuggestionProvider<ServerCommandSource> shops() {
 		return (ctx, b) -> CommandSource.suggestMatching(ShopCatalog.shopIds(), b);
+	}
+
+	private static com.mojang.brigadier.suggestion.SuggestionProvider<ServerCommandSource> bulkFiles() {
+		return (ctx, b) -> CommandSource.suggestMatching(ShopBulk.existingBulkFiles(), b);
 	}
 
 	private static com.mojang.brigadier.suggestion.SuggestionProvider<ServerCommandSource> items() {
