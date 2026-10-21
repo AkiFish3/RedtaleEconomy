@@ -79,6 +79,28 @@ class PassSeasonsTest {
 	}
 
 	@Test
+	void needsCloseOnlyForExpiredUnarchivedSeasons() {
+		java.time.LocalDate today = java.time.LocalDate.of(2026, 12, 31);
+		assertTrue(PassSeasons.needsClose(
+				new PassSeasons.Entry("s1", "第一", "2026-10-01", "2026-12-30", ""), today));
+		assertFalse(PassSeasons.needsClose(
+				new PassSeasons.Entry("s1", "第一", "2026-10-01", "2026-12-31", ""), today), "当天不算过期");
+		assertFalse(PassSeasons.needsClose(
+				new PassSeasons.Entry("s1", "第一", "2026-10-01", "2026-12-30", "2026-12-30T00:00:00"), today),
+				"已归档的不重复关账");
+		assertFalse(PassSeasons.needsClose(
+				new PassSeasons.Entry("s1", "第一", "2026-10-01", "", ""), today), "没写 endAt = 不自动关");
+		assertFalse(PassSeasons.needsClose(
+				new PassSeasons.Entry("s1", "第一", "2026-10-01", "不是日期", ""), today), "写错日期不误关");
+	}
+
+	@Test
+	void needsCloseAcceptsIsoDateTime() {
+		assertTrue(PassSeasons.needsClose(new PassSeasons.Entry("s1", "n", "",
+				"2026-10-01T23:59:59", ""), java.time.LocalDate.of(2026, 10, 2)));
+	}
+
+	@Test
 	void missingDirReturnsNoData() {
 		assertEquals(PassSeasons.ArchiveResult.NO_DATA,
 				PassSeasons.archiveDir(dir.resolve("nope"), "s1", 1L));

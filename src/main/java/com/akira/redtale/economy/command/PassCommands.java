@@ -34,6 +34,11 @@ public final class PassCommands {
 				.then(CommandManager.literal("unlock").executes(PassCommands::unlock))
 				// T02：赛季清单（含归档状态与快照摘要）
 				.then(CommandManager.literal("seasons").executes(PassCommands::seasons))
+				// T04：结算并切到下一个赛季（先归档，再改配置指针）
+				.then(CommandManager.literal("rollover")
+						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
+						.then(CommandManager.argument("next", StringArgumentType.word())
+								.executes(ctx -> rollover(ctx, StringArgumentType.getString(ctx, "next")))))
 				// T02：归档某赛季（写快照 + 冻结进度）
 				.then(CommandManager.literal("archive")
 						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
@@ -81,6 +86,20 @@ public final class PassCommands {
 					+ " §8[" + (e.startAt().isBlank() ? "?" : e.startAt()) + " ~ "
 					+ (e.endAt().isBlank() ? "?" : e.endAt()) + "]" + tail + stat), false);
 		}
+		return 1;
+	}
+
+	/** T04：手动结算 + 切换赛季。 */
+	private static int rollover(CommandContext<ServerCommandSource> ctx, String next) {
+		ServerCommandSource src = ctx.getSource();
+		var r = BattlePassModule.rolloverTo(next);
+		if (!r.switched()) {
+			src.sendError(Text.literal("§c未切换（当前仍为 §f" + r.from() + "§c）：目标为空/同名，或配置写入失败，见日志"));
+			return 0;
+		}
+		src.sendFeedback(() -> Text.literal("§a[pass] 赛季 §f" + r.from() + " §a→ §f" + r.to()
+				+ " §7| 归档 §f" + r.archive()), true);
+		src.sendFeedback(() -> Text.literal("§7旧赛季数据保留在 battlepass/" + r.from() + "/（含 _snapshot.json）"), false);
 		return 1;
 	}
 

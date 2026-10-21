@@ -231,6 +231,40 @@ public final class PassSeasons {
 		}
 	}
 
+	/**
+	 * T04：定时结算 —— 把 endAt 已过去的赛季自动归档（不动当前赛季指针）。
+	 *
+	 * <p>「换赛季」是服主的决定（要写配置），不能由程序猜下一个 id；所以这里只做**关账**
+	 * （写快照 + 冻结），换指针留给 {@code /pass rollover <next>}。
+	 *
+	 * @return 本次关掉的赛季 id 列表
+	 */
+	public static synchronized List<String> autoCloseExpired(long nowMs, LocalDate today) {
+		List<String> closed = new ArrayList<>();
+		for (Entry e : list()) {
+			if (!needsClose(e, today)) continue;
+			if (archive(e.id(), nowMs) == ArchiveResult.OK) closed.add(e.id());
+		}
+		if (!closed.isEmpty()) {
+			RedtaleEconomy.LOGGER.info("[pass] 已自动关账 {} 个到期赛季：{}", closed.size(), closed);
+		}
+		return closed;
+	}
+
+	/** 纯判据：有 endAt、已过期、且没归档过 ⇒ 该关账。 */
+	public static boolean needsClose(Entry e, LocalDate today) {
+		if (e == null || e.archived()) return false;
+		if (e.endAt() == null || e.endAt().isBlank()) return false;
+		try {
+			LocalDate end = LocalDate.parse(e.endAt().trim().length() > 10
+					? e.endAt().trim().substring(0, 10) : e.endAt().trim());
+			return end.isBefore(today);
+		} catch (Exception bad) {
+			// 日期写错不该导致误关账
+			return false;
+		}
+	}
+
 	/** 读快照摘要（不存在返回 null）。 */
 	public static Snapshot snapshotOf(String seasonId) {
 		Path dir = root() == null ? null : root().resolve(seasonId);

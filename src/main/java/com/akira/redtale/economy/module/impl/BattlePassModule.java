@@ -133,6 +133,8 @@ public final class BattlePassModule implements RedtaleModule {
 		installHooks();
 		// T02：把当前赛季登记进 seasons.json（服主第一次开服就有一份清单）
 		PassSeasons.ensureCurrent(BattlePassConfig.seasonId(), BattlePassConfig.seasonName());
+		// T04：开服补跑定时结算（停机期间到期的赛季不会漏关账）
+		PassSeasons.autoCloseExpired(System.currentTimeMillis(), java.time.LocalDate.now());
 	}
 
 	@Override
@@ -324,6 +326,45 @@ public final class BattlePassModule implements RedtaleModule {
 		d.dirty = true;
 		save(uuid, d);
 		addXp(uuid, "ftbq", xp);
+	}
+
+	// ---------------------------------------------------------------- 赛季切换（T04）
+
+	/** 换赛季结果：干了什么、切换前后的 id、关账结果。 */
+	public record Rollover(String from, String to, PassSeasons.ArchiveResult archive, boolean switched) {
+	}
+
+	/**
+	 * T04 手动结算：归档当前赛季 → 写配置 {@code battlepass.json → seasonId} → 清缓存。
+	 *
+	 * <p>顺序不能反：先归档再换指针，否则换完指针就找不到"要归档的是谁"了。
+	 * 配置写失败时**不切换**（只归档），返回 {@code switched=false} 让服主看到并重试。
+	 */
+	public static synchronized Rollover rolloverTo(String next) {
+		String from = season();
+		if (next == null || next.isBlank() || next.equals(from)) {
+			return new Rollover(from, next, PassSeasons.ArchiveResult.NO_DATA, false);
+		}
+		flushAll();
+		PassSeasons.ArchiveResult ar = PassSeasons.archive(from, System.currentTimeMillis());
+		boolean wrote;
+		try {
+			com.akira.redtale.economy.config.ConfigStore store =
+					com.akira.redtale.economy.config.ConfigManager.get().store(BattlePassConfig.FILE);
+			store.setPath("seasonId", next);
+			wrote = store.save(true);
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[pass] 写赛季指针失败：{}", e.getMessage());
+			wrote = false;
+		}
+		if (wrote) {
+			CACHE.clear();
+			PassSeasons.ensureCurrent(next, next);
+			RedtaleEconomy.LOGGER.info("[pass] 赛季 {} → {}（归档 {}）", from, next, ar);
+		} else {
+			RedtaleEconomy.LOGGER.error("[pass] 赛季指针未切换（仍为 {}），数据已归档 {}", from, ar);
+		}
+		return new Rollover(from, next, ar, wrote);
 	}
 
 	// ---------------------------------------------------------------- 领取 / 解锁
