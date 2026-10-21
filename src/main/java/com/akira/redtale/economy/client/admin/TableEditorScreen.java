@@ -32,6 +32,20 @@ public final class TableEditorScreen extends Screen {
 
 	private static final int ROW_H = 12;
 	private static final int PAD = 6;
+	/** 顶部固定区（标题行）。 */
+	private static final int CHROME_TOP = 30;
+	/**
+	 * 底部固定区：4 行控件（批量上架/移除、搜索、价格/物品、翻页）。
+	 *
+	 * <p>之前写死 78，但实际布局从 {@code panelH-74} 一直排到 {@code panelH+8}（最后一行
+	 * 20 高却从 -12 起画）⇒ 427×240 下按钮整行掉出面板底边、并且压住最后一条表格行。
+	 */
+	private static final int CHROME_BOTTOM = 96;
+	private static final int MIN_ROWS = 3;
+	private static final int MAX_ROWS = 10;
+	private static final int NAME_X = 18;
+	private static final int NAME_W = 130;
+	private static final int STOCK_X = 250;
 
 	private final String shopId;
 	private int page;
@@ -64,48 +78,55 @@ public final class TableEditorScreen extends Screen {
 		mc.setScreen(new TableEditorScreen(shopId));
 	}
 
+	private int rowsFit = MAX_ROWS;
+
 	private int rows() {
-		return 10;
+		return rowsFit;
 	}
 
 	private int panelH() {
-		return 26 + rows() * ROW_H + 78;
+		return CHROME_TOP + rowsFit * ROW_H + CHROME_BOTTOM;
 	}
 
 	@Override
 	protected void init() {
-		tableW = 300;
+		// 底部四行控件最宽需要 296px（4×56 + 48 + 间距），再窄只会越出屏幕，不做伪适配
+		tableW = Math.min(300, Math.max(296, width - 8));
+		// ★按可用高度裁行数★：GUI Scale 大 / 小窗口时逻辑高度可能只有 240，
+		// 固定 10 行会让表格压到底部四行控件上（T47：427×240 溢出面板）。
+		rowsFit = Math.max(MIN_ROWS, Math.min(MAX_ROWS,
+				(height - 12 - CHROME_TOP - CHROME_BOTTOM) / ROW_H));
 		left = (width - tableW) / 2;
-		top = (height - panelH()) / 2;
-		tableTop = top + 30;
+		top = Math.max(2, (height - panelH()) / 2);
+		tableTop = top + CHROME_TOP;
 		ShopClientNetworking.requestPage(shopId, page, query);
 
-		fSearch = new TextFieldWidget(textRenderer, left, top + panelH() - 52, 140, 16,
+		fSearch = new TextFieldWidget(textRenderer, left, top + panelH() - 70, 140, 16,
 				Text.translatable("gui.redtale_economy.table.search"));
 		fSearch.setMaxLength(64);
 		fSearch.setText(query);
 		addDrawableChild(fSearch);
 
-		fBuy = numField(left + 4, top + panelH() - 32, 60, "gui.redtale_economy.edit.buy");
-		fSell = numField(left + 70, top + panelH() - 32, 60, "gui.redtale_economy.edit.sell");
-		fItem = new TextFieldWidget(textRenderer, left + 136, top + panelH() - 32, 80, 16,
+		fBuy = numField(left + 4, top + panelH() - 48, 60, "gui.redtale_economy.edit.buy");
+		fSell = numField(left + 70, top + panelH() - 48, 60, "gui.redtale_economy.edit.sell");
+		fItem = new TextFieldWidget(textRenderer, left + 136, top + panelH() - 48, 80, 16,
 				Text.translatable("gui.redtale_economy.edit.item"));
 		fItem.setMaxLength(96);
 		addDrawableChild(fItem);
 
-		button(left + 144, top + panelH() - 52, 60, "gui.redtale_economy.table.searchBtn", b -> applySearch());
-		button(left + 208, top + panelH() - 52, 88, "gui.redtale_economy.table.batch", b -> batchPrice());
+		button(left + 144, top + panelH() - 70, 60, "gui.redtale_economy.table.searchBtn", b -> applySearch());
+		button(left + 208, top + panelH() - 70, 88, "gui.redtale_economy.table.batch", b -> batchPrice());
 		// T11：批量上架/批量移除（服务端一次读盘一次写盘；界面只拼一条命令，不逐行发）
 		addDrawableChild(ButtonWidget.builder(Text.literal("批量上架"), b -> batchAddSelected())
-				.dimensions(left + 4, top + panelH() - 74, 96, 20).build());
+				.dimensions(left + 4, top + panelH() - 92, 96, 20).build());
 		addDrawableChild(ButtonWidget.builder(Text.literal("批量移除"), b -> batchRemoveSelected())
-				.dimensions(left + 104, top + panelH() - 74, 96, 20).build());
-		button(left + 220, top + panelH() - 32, 76, "gui.redtale_economy.table.add", b -> addOne());
-		button(left, top + panelH() - 12, 56, "gui.redtale_economy.edit.prev", b -> turn(-1));
-		button(left + 62, top + panelH() - 12, 56, "gui.redtale_economy.table.copy", b -> copyFirst());
-		button(left + 124, top + panelH() - 12, 56, "gui.redtale_economy.edit.refresh", b -> refresh());
-		button(left + 186, top + panelH() - 12, 56, "gui.redtale_economy.edit.next", b -> turn(1));
-		button(left + 248, top + panelH() - 12, 48, "gui.redtale_economy.edit.close", b -> close());
+				.dimensions(left + 104, top + panelH() - 92, 96, 20).build());
+		button(left + 220, top + panelH() - 48, 76, "gui.redtale_economy.table.add", b -> addOne());
+		button(left, top + panelH() - 24, 56, "gui.redtale_economy.edit.prev", b -> turn(-1));
+		button(left + 62, top + panelH() - 24, 56, "gui.redtale_economy.table.copy", b -> copyFirst());
+		button(left + 124, top + panelH() - 24, 56, "gui.redtale_economy.edit.refresh", b -> refresh());
+		button(left + 186, top + panelH() - 24, 56, "gui.redtale_economy.edit.next", b -> turn(1));
+		button(left + 248, top + panelH() - 24, 48, "gui.redtale_economy.edit.close", b -> close());
 	}
 
 	private TextFieldWidget numField(int x, int y, int w, String key) {
@@ -235,7 +256,7 @@ public final class TableEditorScreen extends Screen {
 	 */
 	public String devClickBatchRemove() {
 		selected.clear();
-		boolean hit = mouseClicked(left + 152, top + panelH() - 64, 0);
+		boolean hit = mouseClicked(left + 152, top + panelH() - 82, 0);
 		return "batchRemove hit=" + hit + " toast=\"" + flash + "\"";
 	}
 
@@ -247,7 +268,7 @@ public final class TableEditorScreen extends Screen {
 	 */
 	public String devClickBatchAdd(String itemId) {
 		fItem.setText(itemId == null ? "" : itemId);
-		boolean hit = mouseClicked(left + 52, top + panelH() - 64, 0);
+		boolean hit = mouseClicked(left + 52, top + panelH() - 82, 0);
 		return "batchAdd hit=" + hit + " item=" + fItem.getText() + " toast=\"" + flash + "\"";
 	}
 
@@ -309,23 +330,34 @@ public final class TableEditorScreen extends Screen {
 
 		// 表头（点击排序）
 		int hy = tableTop - 12;
-		header(ctx, left + 14, hy, "gui.redtale_economy.table.colName", Sort.NAME, 180);
+		header(ctx, left + NAME_X, hy, "gui.redtale_economy.table.colName", Sort.NAME, NAME_W);
 		header(ctx, left + 150, hy, "gui.redtale_economy.edit.buy", Sort.BUY, 50);
 		header(ctx, left + 200, hy, "gui.redtale_economy.edit.sell", Sort.SELL, 50);
-		header(ctx, left + 250, hy, "gui.redtale_economy.edit.stock", Sort.STOCK, 44);
+		// 「库存」用字面量：lang 里那条是「库存（-1 无限）」，在 427 宽的面板里会画到边框外
+		header(ctx, left + STOCK_X, hy, Text.literal("库存"), Sort.STOCK, 44);
 
 		List<ShopProtocol.Entry> rows = view();
+		// ★整块表格裁剪★：行数按高度裁过，但字体/长 id 仍可能越界，绝不能压到底部按钮上
+		ctx.enableScissor(left + 4, tableTop - 1, left + tableW - 4, tableTop + rowsFit * ROW_H);
 		for (int i = 0; i < Math.min(rows.size(), rows()); i++) {
 			ShopProtocol.Entry e = rows.get(i);
 			int y = tableTop + i * ROW_H;
 			boolean sel = selected.contains(e.itemId());
 			if (sel) ctx.fill(left + 4, y - 1, left + tableW - 4, y + ROW_H - 2, 0x33C9A227);
 			ctx.drawText(textRenderer, Text.literal(sel ? "☑" : "☐"), left + 6, y, 0xFF2B2118, false);
-			ctx.drawText(textRenderer, Text.literal(e.itemId()), left + 18, y, 0xFF2B2118, false);
 			ctx.drawText(textRenderer, Text.literal(Long.toString(e.buyPrice())), left + 150, y, 0xFF2B2118, false);
 			ctx.drawText(textRenderer, Text.literal(Long.toString(e.sellPrice())), left + 200, y, 0xFF2B2118, false);
 			ctx.drawText(textRenderer, Text.literal(e.stock() < 0 ? "∞" : Long.toString(e.stock())),
-					left + 250, y, 0xFF2B2118, false);
+					left + STOCK_X, y, 0xFF2B2118, false);
+		}
+		ctx.disableScissor();
+		// 名称列单独夹一次：长 id（如 minecraft:polished_deepslate_stairs）会横穿买价/卖价列，
+		// 看起来像「价格串到名字里」（T47 同一张图的第二个现象）
+		for (int i = 0; i < Math.min(rows.size(), rows()); i++) {
+			int y = tableTop + i * ROW_H;
+			ctx.enableScissor(left + NAME_X, y - 1, left + 150 - 2, y + ROW_H - 2);
+			ctx.drawText(textRenderer, Text.literal(rows.get(i).itemId()), left + NAME_X, y, 0xFF2B2118, false);
+			ctx.disableScissor();
 		}
 		if (rows.isEmpty()) {
 			ctx.drawText(textRenderer, Text.translatable("gui.redtale_economy.table.empty"), left + 16,
@@ -336,7 +368,8 @@ public final class TableEditorScreen extends Screen {
 		// 那一行，于是被按钮整个盖住 —— u6-57 那张"toast"图里什么都没有。现在压到按钮行
 		// 上方（最后一行表格区）并在 super.render 之后画，按钮与文字都能看到。
 		if (System.currentTimeMillis() - flashAt < 4000 && !flash.isEmpty()) {
-			int ty = top + panelH() - 90;
+			// 落在表格最后一行（底部控件区之上），仍是最后画 ⇒ 不会被按钮盖住
+			int ty = top + panelH() - CHROME_BOTTOM - 12;
 			ctx.fill(left + 4, ty - 1, left + tableW - 4, ty + 10, 0xF2E8DCC8);
 			ctx.fill(left + 4, ty - 1, left + tableW - 4, ty, 0x55C9A227);
 			ctx.drawText(textRenderer, Text.literal(flash), left + PAD, ty, 0xFFB4462F, false);
@@ -344,9 +377,15 @@ public final class TableEditorScreen extends Screen {
 	}
 
 	private void header(DrawContext ctx, int x, int y, String key, Sort s, int w) {
+		header(ctx, x, y, Text.translatable(key), s, w);
+	}
+
+	/** 表头统一出口：按列宽裁剪，长文案不会越出面板（原先只有 lang key 版本会溢出边框）。 */
+	private void header(DrawContext ctx, int x, int y, Text label, Sort s, int w) {
 		String mark = sort == s ? (sortAsc ? " ▲" : " ▼") : "";
-		ctx.drawText(textRenderer, Text.translatable(key).copy().append(Text.literal(mark)), x, y,
-				0xFF6B5A45, false);
+		ctx.enableScissor(x, y - 1, x + w + 6, y + 10);
+		ctx.drawText(textRenderer, label.copy().append(Text.literal(mark)), x, y, 0xFF6B5A45, false);
+		ctx.disableScissor();
 	}
 
 	@Override
@@ -359,7 +398,7 @@ public final class TableEditorScreen extends Screen {
 				if (mx >= left + 150 && mx < left + 200) hit = Sort.BUY;
 				else if (mx >= left + 200 && mx < left + 250) hit = Sort.SELL;
 				else if (mx >= left + 250 && mx < left + 294) hit = Sort.STOCK;
-				else if (mx >= left + 14 && mx < left + 150) hit = Sort.NAME;
+				else if (mx >= left + NAME_X && mx < left + 150) hit = Sort.NAME;
 				if (hit != null) {
 					if (sort == hit) sortAsc = !sortAsc;
 					else {
