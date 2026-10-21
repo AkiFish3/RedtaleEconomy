@@ -56,6 +56,11 @@ dependencies {
 
 	// 开发环境运行时模组（不进发布包）：让 runClient 与正式客户端渲染路径一致
 	// 只需把 jar 丢进 libs/dev/，不需要写坐标；缺目录时静默跳过
+	// ★警告★：只能放「不依赖 mixin 硬编码 intermediary 名」的模组。sodium / iris / sodium-extra
+	// 把 `method_XXXX` 直接写进 @Inject，且不带 refmap，remap 无法改写注解字符串 ⇒ 在任何
+	// yarn 命名的 dev 环境必崩（BufferBuilder / Identifier 处 MixinApplyError，2026-10-21 实测
+	// modRuntimeOnly / modLocalRuntime / modImplementation 三种配置全部崩）。
+	// 它们已移到 libs/dev/_disabled/，只在正式客户端用，dev 截图不需要。
 	def devDir = file('libs/dev')
 	if (devDir.isDirectory()) {
 		devDir.listFiles().findAll { it.name.endsWith('.jar') }.sort { it.name }.each { f ->
