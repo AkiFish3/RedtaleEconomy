@@ -227,11 +227,28 @@ public final class TableEditorScreen extends Screen {
 				+ " panelH=" + panelH() + " left=" + left + " top=" + top;
 	}
 
-	/** T44：模拟点「批量移除」。未勾选时只出提示、不改数据 —— 截图轮不碰真实商店内容。 */
+	/**
+	 * T11 验收：走 <b>真实 mouseClicked</b> 命中「批量移除」按钮（未勾选时只出提示、不改数据）。
+	 *
+	 * <p>不直接调 {@code batchRemoveSelected()} —— 那样只能证明方法能跑，证明不了按钮在
+	 * 那个坐标上确实接得住点击（T11 卡了两轮的就是后者）。
+	 */
 	public String devClickBatchRemove() {
 		selected.clear();
-		batchRemoveSelected();
-		return "batchRemove toast=\"" + flash + "\"";
+		boolean hit = mouseClicked(left + 152, top + panelH() - 64, 0);
+		return "batchRemove hit=" + hit + " toast=\"" + flash + "\"";
+	}
+
+	/**
+	 * T11 验收：走真实 mouseClicked 命中「批量上架」。
+	 *
+	 * <p>物品框先写成一个服务端不认识（非法）的 id，服务端会逐条跳过 ⇒ 能证明
+	 * 「点击 → 读输入框 → 拼命令 → 发包」整条链路通，且不污染真实商店数据。
+	 */
+	public String devClickBatchAdd(String itemId) {
+		fItem.setText(itemId == null ? "" : itemId);
+		boolean hit = mouseClicked(left + 52, top + panelH() - 64, 0);
+		return "batchAdd hit=" + hit + " item=" + fItem.getText() + " toast=\"" + flash + "\"";
 	}
 
 	/** 复制选中第一行的价格到输入框（再配合批量改价即可「一处定价、全店套用」）。 */
@@ -314,10 +331,16 @@ public final class TableEditorScreen extends Screen {
 			ctx.drawText(textRenderer, Text.translatable("gui.redtale_economy.table.empty"), left + 16,
 					tableTop + 8, 0xFFB4462F, false);
 		}
-		if (System.currentTimeMillis() - flashAt < 4000 && !flash.isEmpty()) {
-			ctx.drawText(textRenderer, Text.literal(flash), left + PAD, top + panelH() - 62, 0xFFB4462F, false);
-		}
 		super.render(ctx, mouseX, mouseY, delta);
+		// ★浮层最后画★：toast 原来画在 super.render 之前、y 又正好落在「批量上架/移除」
+		// 那一行，于是被按钮整个盖住 —— u6-57 那张"toast"图里什么都没有。现在压到按钮行
+		// 上方（最后一行表格区）并在 super.render 之后画，按钮与文字都能看到。
+		if (System.currentTimeMillis() - flashAt < 4000 && !flash.isEmpty()) {
+			int ty = top + panelH() - 90;
+			ctx.fill(left + 4, ty - 1, left + tableW - 4, ty + 10, 0xF2E8DCC8);
+			ctx.fill(left + 4, ty - 1, left + tableW - 4, ty, 0x55C9A227);
+			ctx.drawText(textRenderer, Text.literal(flash), left + PAD, ty, 0xFFB4462F, false);
+		}
 	}
 
 	private void header(DrawContext ctx, int x, int y, String key, Sort s, int w) {

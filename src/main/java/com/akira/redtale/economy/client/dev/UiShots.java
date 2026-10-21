@@ -472,10 +472,14 @@ public final class UiShots {
 							? t.devProbe() : "not-editor:" + mc.currentScreen)));
 			case 101 -> act(mc, () -> LOG.add("table click "
 					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
+							? t.devClickBatchAdd("devprobe:__none__") : "not-editor:" + mc.currentScreen)));
+			case 102 -> act(mc, () -> LOG.add("table click "
+					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
 							? t.devClickBatchRemove() : "not-editor:" + mc.currentScreen)));
-			case 102 -> shotKeep(mc, "u6-57-table-toast.png", () -> {
-			});
-			case 103 -> act(mc, () -> mc.setScreen(null));
+			case 103 -> shotKeep(mc, "u6-57-table-toast.png", () -> LOG.add("table probe "
+					+ (mc.currentScreen instanceof com.akira.redtale.economy.client.admin.TableEditorScreen t
+							? t.devProbe() : "not-editor:" + mc.currentScreen)));
+			case 104 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}
 	}
@@ -813,7 +817,11 @@ public final class UiShots {
 
 	private static boolean isOurs(Screen s) {
 		return s instanceof HubScreen || s instanceof TaskScreen || s instanceof CheckinScreen
-				|| s instanceof ShopScreen;
+				|| s instanceof ShopScreen
+				// ★T11 卡了两轮的真因★：表格编辑器不在名单里 ⇒ shotKeep 认为"还没开"，
+				// 每 25 tick 重跑一次 action（只记日志），13 次后 timeout skip，一张图都不拍。
+				|| s instanceof com.akira.redtale.economy.client.admin.TableEditorScreen
+				|| s instanceof com.akira.redtale.economy.client.admin.ShopEditScreen;
 	}
 
 	private static void next(int s) {
