@@ -197,13 +197,17 @@ public class PackageEntity extends Entity implements GeoEntity {
                 }
             }
 
-            // 获取目标玩家：优先使用所有者
+            // 获取目标玩家：有主包裹只认主人
             PlayerEntity targetPlayer = null;
             if (ownerUuid != null) {
+                // ★主人下线时不能退化成「谁离得近给谁」★：包裹是主人右键放出来的，
+                // 主人断线后实体仍留在原地继续 tick，旧实现在 getPlayerByUuid 返回 null 时
+                // 回落到 getClosestPlayer(…,5.0,…) ⇒ 站在旁边的任何陌生人都会被当成收件人，
+                // 把主人没领完的奖励直接收进背包（2026-10-22 实测：主人领 5/12、剩余 7 件全进陌生人，
+                // 地面掉落 0）。现在主人不在线就按「掉落」处理，与代码注释的原意一致。
                 targetPlayer = this.getWorld().getPlayerByUuid(ownerUuid);
-            }
-            // 如果所有者不在线，则尝试找最近的玩家（但ALL/RANDOM模式下我们倾向于掉落）
-            if (targetPlayer == null) {
+            } else {
+                // 无主包裹（命令/活动生成）才允许就近发放
                 targetPlayer = this.getWorld().getClosestPlayer(this.getX(), this.getY(), this.getZ(), 5.0, false);
             }
 
