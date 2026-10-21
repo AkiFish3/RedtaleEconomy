@@ -10,6 +10,7 @@ import com.akira.redtale.economy.client.tasks.TaskScreen;
 import com.akira.redtale.economy.client.ui.hub.ClientUiConfig;
 import com.akira.redtale.economy.client.ui.hub.HubBoardPage;
 import com.akira.redtale.economy.client.ui.hub.HubLedgerPage;
+import com.akira.redtale.economy.client.ui.hub.HubMoney;
 import com.akira.redtale.economy.client.ui.hub.HubPage;
 import com.akira.redtale.economy.client.ui.hub.HubScreen;
 import com.akira.redtale.economy.client.ui.hub.HubSettingsPage;
@@ -59,7 +60,7 @@ public final class UiShots {
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
 	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2 + T44 商店滚动 1，到 89）。 */
-	private static final int LAST_STEP = 224;
+	private static final int LAST_STEP = 237;
 	/**
 	 * 多人模式（连专用服务器）的起点 step。
 	 *
@@ -725,6 +726,43 @@ public final class UiShots {
 				ClientUiConfig.save();
 				LOG.add("shop view restored to grid");
 			});
+			// ★T68 阶段2 抽样★：阶段 1 新增/重做的页面各拍一张（任务/战令/协会/邮件/仓储/签到/称号/市场）。
+			// 每步先 setScreen(null) 再发命令 —— shotKeep 看到「已经是 HubScreen」会以为已打开，
+			// 拍的还是上一页（T12 踩过一次）。
+			case 225 -> shotKeep(mc, "u6-73-hub-tasks.png",
+					() -> openFresh(mc, HubPage.TASKS, "rt tasks"));
+			case 226 -> act(mc, () -> LOG.add("tasks page rows="
+					+ com.akira.redtale.economy.client.ui.hub.TasksHubClientNetworking.LAST.tasks().size()
+					+ " refreshes="
+					+ com.akira.redtale.economy.client.ui.hub.TasksHubClientNetworking.LAST.refreshesLeft()));
+			case 227 -> shotKeep(mc, "u6-74-hub-pass.png",
+					() -> openFresh(mc, HubPage.PASS, "rt pass"));
+			case 228 -> act(mc, () -> LOG.add("pass page season="
+					+ com.akira.redtale.economy.client.pass.PassClientNetworking.LAST.season()
+					+ " lv=" + com.akira.redtale.economy.client.pass.PassClientNetworking.LAST.level()
+					+ " xp=" + com.akira.redtale.economy.client.pass.PassClientNetworking.LAST.xp()
+					+ "/" + com.akira.redtale.economy.client.pass.PassClientNetworking.LAST.xpNext()
+					+ " free=" + com.akira.redtale.economy.client.pass.PassClientNetworking.LAST.free().size()));
+			case 229 -> shotKeep(mc, "u6-75-hub-guild.png",
+					() -> openFresh(mc, HubPage.GUILD, "rt guild"));
+			case 230 -> shotKeep(mc, "u6-76-hub-mail.png",
+					() -> openFresh(mc, HubPage.MAIL, "rt mail"));
+			case 231 -> act(mc, () -> {
+				var snap = com.akira.redtale.economy.client.ui.hub.MailClientNetworking.LAST;
+				LOG.add("mail page entries=" + snap.entries().size()
+						+ " pendingMoney=" + snap.pendingMoney() + " items=" + snap.itemCount()
+						+ " full=" + snap.mailboxFull());
+			});
+			case 232 -> shotKeep(mc, "u6-77-hub-storage.png",
+					() -> openFresh(mc, HubPage.STORAGE, "rt storage"));
+			case 233 -> shotKeep(mc, "u6-78-hub-checkin.png",
+					() -> openFresh(mc, HubPage.CHECKIN, "rt checkin"));
+			case 234 -> act(mc, () -> clickPage(mc, HubPage.TITLES));
+			case 235 -> shotKeep(mc, "u6-79-hub-titles.png", () -> clickPage(mc, HubPage.TITLES));
+			case 236 -> shotKeep(mc, "u6-80-hub-market.png",
+					() -> openFresh(mc, HubPage.MARKET, "rt market"));
+			// T70/T67 证据：硬币走贴图还是几何圆片，日志里给 true/false，别靠肉眼量 1 像素。
+			case 237 -> act(mc, () -> LOG.add("money " + HubMoney.texProbe()));
 			// ★稀疏编号★：这个 step 号没有动作时直接跳下一个，不要 finish。
 			// 以前是 `default -> finish`，于是「在末尾追加 218+」会被 123 这个空号直接截断
 			// （整轮只跑到 122 就退出，新步骤永远不执行、也不报错）。
@@ -919,6 +957,17 @@ public final class UiShots {
 		}
 	}
 
+	/**
+	 * T68：先清屏再发命令。
+	 *
+	 * <p>★不能直接 {@link #open}★：{@code shotKeep} 判「是 HubScreen 就拍」，换页时屏幕还是上一页，
+	 * 于是画的是旧页面、日志还说成功了（T12 的 board 截图拍成商店页就是这么来的）。
+	 */
+	private static void openFresh(MinecraftClient mc, HubPage page, String command) {
+		mc.setScreen(null);
+		open(mc, page, command);
+	}
+
 	private static void shot(MinecraftClient mc, String name, Runnable action) {
 		if (stateOnly) {
 			stateOnlyStep(mc, name, action);
@@ -995,6 +1044,17 @@ public final class UiShots {
 		boolean hit = HubDev.clickSidebar(hub, index);
 		LOG.add("click " + label + " (row " + index + ") hit=" + hit + " page=" + HubDev.pageId(hub)
 				+ " at tick " + tick);
+	}
+
+	/** T68：按页面点侧栏（下标会随模块开关变，不能写死）。 */
+	private static void clickPage(MinecraftClient mc, HubPage page) {
+		if (!(mc.currentScreen instanceof HubScreen hub)) {
+			LOG.add("page click " + page + " skipped: screen is "
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+			return;
+		}
+		boolean hit = HubDev.clickSidebar(hub, page);
+		LOG.add("page click " + page + " hit=" + hit + " page=" + HubDev.pageId(hub) + " at tick " + tick);
 	}
 
 	/** 点商店目录树第 row 行（走 HubScreen 真实 mouseClicked 命中路径），并记录路径变化。 */

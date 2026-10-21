@@ -22,6 +22,20 @@ public final class HubDev {
 		return host.pageId();
 	}
 
+	/**
+	 * 按页面点侧栏。
+	 *
+	 * <p>★别写死下标★：模块开关（T51）会让 {@link HubPage#visible()} 少一项，之后的每个下标都前移，
+	 * 写死的 11 可能点到「排行」。
+	 */
+	public static boolean clickSidebar(HubScreen host, HubPage page) {
+		HubPage[] all = HubPage.visible();
+		for (int i = 0; i < all.length; i++) {
+			if (all[i] == page) return clickSidebar(host, i);
+		}
+		return false;
+	}
+
 	public static boolean clickSettingsRow(HubScreen host, HubSettingsPage.Row row) {
 		if (host.page != HubPage.SETTINGS) return false;
 		int cx = host.frame.contentX();

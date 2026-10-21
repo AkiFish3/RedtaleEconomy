@@ -125,8 +125,8 @@ public final class HubMarketPage {
 		// 底栏
 		int barY = y + h - 24;
 		dc.fill(x, barY, x + w, barY + 20, HubTheme.BAR_SUB);
-		String pg = "第 " + (snap.totalPages() <= 0 ? 0 : snap.page() + 1) + " / " + Math.max(0, snap.totalPages())
-				+ " 页";
+		String pg = snap.totalPages() <= 0 ? "共 0 页"
+				: "第 " + (snap.page() + 1) + " / " + snap.totalPages() + " 页";
 		dc.drawText(tr, Text.literal(trim(tr, pg, w - 120)), x + 5, barY + 6, HubTheme.MUTED, false);
 		dc.drawText(tr, Text.literal("‹"), x + w - 101, barY + 6, HubTheme.MUTED, false);
 		dc.drawText(tr, Text.literal("›"), x + w - 65, barY + 6, HubTheme.MUTED, false);

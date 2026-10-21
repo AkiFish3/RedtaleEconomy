@@ -125,6 +125,18 @@ public final class HubMoney {
 		return found;
 	}
 
+	/**
+	 * T70/T67 开发期探针：三种硬币贴图 + 金币字体的实际可用性。
+	 *
+	 * <p>为什么需要探针：截图里「贴图 8px」和「几何圆片 7px」差 1 像素，肉眼判不出用的是哪条路径；
+	 * 日志里给 true/false 才是可判定的证据。也顺手把「资源重载后是否自恢复」暴露出来。
+	 */
+	public static String texProbe() {
+		boolean g = texOk(0), s = texOk(1), b = texOk(2);
+		return "coins tex gold=" + g + " silver=" + s + " bronze=" + b
+				+ " iconW=" + iconW() + " font=" + fontReady();
+	}
+
 	/** 三段全显的文字（余额口径）：{@code 0金0银5铜}。 */
 	public static String fullText(long raw) {
 		long[] p = split(raw);

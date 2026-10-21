@@ -126,7 +126,13 @@ public final class HubMailPage {
 
 		// 左侧标记：货币画硬币、物品画物品图标（都走位图/几何，不用字形）
 		if (e.kind() == MailProtocol.KIND_MONEY) {
-			HubMoney.draw(dc, tr, x + 6, ry + 5, e.money(), w - 20);
+			// ★金额行也要有文字★：只画「硬币+数字」时，列表里一条邮件长得像「🔸4」，
+			// 不看右侧详情根本不知道是补偿还是结算（T68 抽样目视发现）。标题左、金额右对齐。
+			int mw = HubMoney.width(tr, e.money());
+			int room = Math.max(8, w - mw - 16);
+			String name = HubText.trim(tr, e.title(), room);
+			dc.drawText(tr, Text.literal(name), x + 6, ry + 5, HubTheme.MUTED, false);
+			HubMoney.draw(dc, tr, x + w - 4 - mw, ry + 5, e.money(), w - 20);
 		} else {
 			ItemStack st = stackOf(e.parts());
 			if (!st.isEmpty()) dc.drawItem(st, x + 4, ry + 1);
