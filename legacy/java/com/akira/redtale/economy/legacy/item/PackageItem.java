@@ -23,6 +23,7 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
 import net.minecraft.util.TypedActionResult;
+import net.minecraft.util.math.Box;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoItem;
@@ -69,6 +70,12 @@ public class PackageItem extends Item implements GeoItem {
             PackageData data = PackageData.fromNbt(stack.getNbt());
 
             if (data.mode() == PackageData.PackageMode.CHOOSE) {
+                // ★一个玩家同时只能有一个「未激活的 CHOOSE 实体」★
+                // 旧实现每次右键都 spawn 一个新实体、不清理上一个 ⇒ 连点两下（或改过的客户端连发
+                // interact 包）会在同一格堆出 N 个 choose 实体，界面只开最后一个，其余全成孤儿：
+                // 它们带着整包内容飘在世界上、既不会被奖励也不会被清理，只能等 1 小时超时/主人走远。
+                // 2026-10-22 实测：连点两次 → `kill @e[type=package_entity]` 回 "Killed 2 entities"。
+                discardStaleChooseEntities(world, player);
                 PackageEntity entity = new PackageEntity(
                         world,
                         context.getBlockPos().getX() + 0.5,
@@ -129,6 +136,22 @@ public class PackageItem extends Item implements GeoItem {
         }
 
         return ActionResult.PASS;
+    }
+
+    /**
+     * 销毁该玩家身上「未激活」的旧 CHOOSE 实体（本人 + 16 格内）。
+     *
+     * <p>只清未激活的：已选择（{@code activated}）的实体正处在发奖过程中，
+     * 杀掉它就等于吞掉玩家已经选中的奖励。距离限制 16 格是为了不误伤同一玩家在别的维度/远处
+     * 正常打开的第二个界面（正常情况下不可能同时开两个，留余量）。
+     */
+    private static void discardStaleChooseEntities(World world, PlayerEntity player) {
+        if (world.isClient() || player == null) return;
+        Box box = player.getBoundingBox().expand(16.0);
+        for (PackageEntity old : world.getEntitiesByClass(PackageEntity.class, box,
+                e -> e.isChooseModeActive() && !e.isActivated() && player.getUuid().equals(e.getOwnerUuid()))) {
+            old.destroyImmediately();
+        }
     }
 
     @Override

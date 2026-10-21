@@ -5,16 +5,11 @@ import com.akira.redtale.economy.legacy.bound.BoundItemsConfig;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.slot.Slot;
-import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 绑定物槽位拦截：非主人不许从槽里拿走。
@@ -30,9 +25,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mixin(Slot.class)
 public class BoundSlotMixin {
 
-	private static final long MESSAGE_COOLDOWN_MS = 1000L;
-	private static final Map<UUID, Long> LAST_MESSAGE = new ConcurrentHashMap<>();
-
 	@Inject(method = "canTakeItems", at = @At("HEAD"), cancellable = true)
 	private void onCanTakeItems(PlayerEntity player, CallbackInfoReturnable<Boolean> cir) {
 		// 客户端不参与归属判定（判定与提示都只在服务端做，避免本地伪造提示）
@@ -47,7 +39,8 @@ public class BoundSlotMixin {
 		}
 
 		if (BoundItemsConfig.blockNonOwnerInSlot() && !BoundItemHandler.isOwner(stack, player)) {
-			notifyNotOwner(player);
+			// 冷却集中在 BoundItemHandler（槽位点击与拾取碰撞共用 1 秒窗口）
+			BoundItemHandler.notifyNotOwner(player);
 			cir.setReturnValue(false);
 			return;
 		}
@@ -70,15 +63,5 @@ public class BoundSlotMixin {
 		if (BoundItemsConfig.blockNonOwnerInSlot() && !BoundItemHandler.isOwner(stack, player)) {
 			ci.cancel();
 		}
-	}
-
-	private static void notifyNotOwner(PlayerEntity player) {
-		long now = System.currentTimeMillis();
-		Long last = LAST_MESSAGE.get(player.getUuid());
-		if (last != null && now - last < MESSAGE_COOLDOWN_MS) {
-			return;
-		}
-		LAST_MESSAGE.put(player.getUuid(), now);
-		player.sendMessage(Text.translatable(BoundItemHandler.MSG_NOT_OWNER), true);
 	}
 }
