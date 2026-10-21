@@ -151,9 +151,12 @@ public class RENetworking {
         return false;
     }
 
+    /**
+     * 是否包裹。★按类型判断，不按 id 白名单★：包裹现在是数据驱动的（3 系列 × 6 档 + surprise = 19 个 id），
+     * 写死 id 列表的结果是「新加的档位右键没反应、还看不出哪里错」。
+     */
     public static boolean isPackage(ItemStack stack) {
-        return stack.isOf(REItems.NORMAL_PACKAGE) ||
-                stack.isOf(REItems.RARE_PACKAGE) ||
-                stack.isOf(REItems.LEGENDARY_PACKAGE);
+        return stack != null && !stack.isEmpty()
+                && stack.getItem() instanceof com.akira.redtale.economy.legacy.item.PackageItem;
     }
 }

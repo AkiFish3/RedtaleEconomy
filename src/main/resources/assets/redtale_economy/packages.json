@@ -1,0 +1,92 @@
+{
+  "_version": 1,
+  "_doc": "包裹注册表：series × tiers 自动生成物品 id <series>_<tier>；special 的档位不随系列展开（全局单件）。改完跑 python _pkg_gen.py 生成模型/贴图/lang。",
+  "series": [
+    {
+      "id": "package",
+      "nameZh": "包裹",
+      "nameEn": "Package",
+      "geo": "redtale_economy:geo/package.geo.json",
+      "anim": "redtale_economy:animations/package.animation.json",
+      "iconDir": "item/package",
+      "animItem": "redtale_economy:animations/package_item.animation.json"
+    },
+    {
+      "id": "chest",
+      "nameZh": "宝箱",
+      "nameEn": "Chest",
+      "geo": "redtale_economy:geo/package.geo.json",
+      "anim": "redtale_economy:animations/package.animation.json",
+      "iconDir": "item/chest",
+      "animItem": "redtale_economy:animations/package_item.animation.json"
+    },
+    {
+      "id": "crate",
+      "nameZh": "货箱",
+      "nameEn": "Crate",
+      "geo": "redtale_economy:geo/package.geo.json",
+      "anim": "redtale_economy:animations/package.animation.json",
+      "iconDir": "item/crate",
+      "animItem": "redtale_economy:animations/package_item.animation.json"
+    }
+  ],
+  "tiers": [
+    {
+      "id": "normal",
+      "nameZh": "普通",
+      "nameEn": "Normal",
+      "color": "#D8CBB0",
+      "p": 1.0,
+      "rarity": "common"
+    },
+    {
+      "id": "rare",
+      "nameZh": "稀有",
+      "nameEn": "Rare",
+      "color": "#4FA3D1",
+      "p": 1.2,
+      "rarity": "uncommon"
+    },
+    {
+      "id": "epic",
+      "nameZh": "史诗",
+      "nameEn": "Epic",
+      "color": "#9B59D0",
+      "p": 1.4,
+      "rarity": "rare"
+    },
+    {
+      "id": "legend",
+      "nameZh": "传说",
+      "nameEn": "Legendary",
+      "color": "#FFD24A",
+      "p": 1.6,
+      "rarity": "epic"
+    },
+    {
+      "id": "mythic",
+      "nameZh": "神话",
+      "nameEn": "Mythic",
+      "color": "#E04B4B",
+      "p": 1.8,
+      "rarity": "epic"
+    },
+    {
+      "id": "event",
+      "nameZh": "活动",
+      "nameEn": "Event",
+      "color": "#58D6A8",
+      "p": 1.3,
+      "rarity": "rare"
+    },
+    {
+      "id": "surprise",
+      "nameZh": "惊喜",
+      "nameEn": "Surprise",
+      "color": "#FFFFFF",
+      "p": 1.0,
+      "rarity": "epic",
+      "special": "egg"
+    }
+  ]
+}

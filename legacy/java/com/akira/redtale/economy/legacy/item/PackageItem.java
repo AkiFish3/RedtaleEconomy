@@ -252,6 +252,18 @@ public class PackageItem extends Item implements GeoItem {
             tooltipText.setStyle(tooltipText.getStyle().withColor(Formatting.GRAY));
             tooltip.add(tooltipText);
         }
+
+        // 档位行：皮肤 key 的后半段就是 tier id（package_rare → rare），名字走 lang 的 tier.* 键。
+        String path = net.minecraft.registry.Registries.ITEM.getId(this).getPath();
+        String[] skin = com.akira.redtale.economy.legacy.data.PackageCatalog.skinOf(path);
+        if (skin != null && skin[1] != null) {
+            MutableText tierLine = Text.translatable("tooltip.redtale_economy.tier")
+                    .append(": ")
+                    .append(Text.translatable("tier.redtale_economy." + skin[1]));
+            tierLine.setStyle(tierLine.getStyle().withColor(Formatting.DARK_GRAY));
+            tooltip.add(tierLine);
+        }
+
         super.appendTooltip(stack, world, tooltip, context);
     }
 }

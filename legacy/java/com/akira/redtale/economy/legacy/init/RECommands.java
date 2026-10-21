@@ -145,9 +145,11 @@ public class RECommands {
                 .then(literal("spawnpkg")
                         .then(argument("tier", StringArgumentType.word())
                                 .suggests((context, builder) -> {
-                                    builder.suggest("normal");
-                                    builder.suggest("rare");
-                                    builder.suggest("legendary");
+                                    // 补全直接来自 packages.json（加系列/档位不用改这里）
+                                    for (com.akira.redtale.economy.legacy.data.PackageCatalog.ItemDef def
+                                            : com.akira.redtale.economy.legacy.data.PackageCatalog.items()) {
+                                        builder.suggest(def.id());
+                                    }
                                     return builder.buildFuture();
                                 })
                                 .then(argument("mode", StringArgumentType.word())
@@ -185,11 +187,16 @@ public class RECommands {
         String tier = StringArgumentType.getString(context, "tier").toLowerCase(Locale.ROOT);
         String modeArg = StringArgumentType.getString(context, "mode").toLowerCase(Locale.ROOT);
 
-        Item item = switch (tier) {
-            case "rare" -> REItems.RARE_PACKAGE;
-            case "legendary" -> REItems.LEGENDARY_PACKAGE;
-            default -> REItems.NORMAL_PACKAGE;
-        };
+        // 数据驱动后 id 有 19 个：`<series>_<tier>` / `surprise` / 旧别名。
+        // 参数先按完整 id 查，查不到再补 `package_` 前缀（旧用法 spawnpkg rare 继续可用）。
+        Item item = Registries.ITEM.get(new Identifier(LegacyInit.MOD_ID, tier));
+        if (item == Items.AIR) {
+            item = Registries.ITEM.get(new Identifier(LegacyInit.MOD_ID, "package_" + tier));
+        }
+        if (item == Items.AIR) {
+            source.sendError(Text.literal("未知包裹 id：" + tier + "（例：package_rare / chest_legend / surprise）"));
+            return 0;
+        }
         PackageData.PackageMode mode = switch (modeArg) {
             case "choose" -> PackageData.PackageMode.CHOOSE;
             case "random" -> PackageData.PackageMode.RANDOM;

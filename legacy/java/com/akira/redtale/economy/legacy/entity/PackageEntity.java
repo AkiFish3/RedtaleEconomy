@@ -50,9 +50,9 @@ public class PackageEntity extends Entity implements GeoEntity {
 
     private static final TrackedData<String> ANIMATION_STATE = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.STRING);
     private static final TrackedData<Boolean> CHOOSE_MODE_ACTIVE = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
-    /** 包裹档位（normal/rare/legendary）。★必须同步★：客户端拿不到 packageStack（只有服务端构造器有），
-     *  渲染贴图只能靠 DataTracker 下发，否则三种包裹在世界上长得一模一样。 */
-    private static final TrackedData<String> PACKAGE_TIER = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.STRING);
+    /** 包裹皮肤（{@code <series>_<tier>} 形式的物品 path）。★必须同步★：客户端拿不到 packageStack，
+     *  渲染贴图只能靠 DataTracker 下发，否则所有系列/档位在世界上长得一模一样。 */
+    private static final TrackedData<String> PACKAGE_SKIN = DataTracker.registerData(PackageEntity.class, TrackedDataHandlerRegistry.STRING);
 
     private boolean activated = false;
     private PackageData.PackageItem selectedItem = null;
@@ -80,28 +80,38 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.setNoGravity(true);
         this.dataTracker.set(ANIMATION_STATE, initialAnimationState != null ? initialAnimationState : "open");
         this.dataTracker.set(CHOOSE_MODE_ACTIVE, isChooseMode);
-        this.dataTracker.set(PACKAGE_TIER, tierOf(this.packageStack));
+        this.dataTracker.set(PACKAGE_SKIN, skinOf(this.packageStack));
     }
 
     @Override
     protected void initDataTracker() {
         this.dataTracker.startTracking(ANIMATION_STATE, "open");
         this.dataTracker.startTracking(CHOOSE_MODE_ACTIVE, false);
-        this.dataTracker.startTracking(PACKAGE_TIER, "normal");
+        this.dataTracker.startTracking(PACKAGE_SKIN, "package_normal");
     }
 
-    /** 物品 id 的前缀就是档位：{@code rare_package} / {@code legendary_package} / 其余按 normal。 */
-    private static String tierOf(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return "normal";
+    /**
+     * 物品 id 就是皮肤：{@code chest_legend} / {@code package_rare} / 旧别名 {@code legendary_package}。
+     * 解析统一走 {@link PackageCatalog}（同一份 packages.json），别在这里写前缀判断 —— 3 个系列 × 6 档后
+     * {@code startsWith("rare")} 这类写法会全部落到 normal。
+     */
+    private static String skinOf(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return "package_normal";
         String path = net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath();
-        if (path.startsWith("legendary")) return "legendary";
-        if (path.startsWith("rare")) return "rare";
-        return "normal";
+        String[] skin = com.akira.redtale.economy.legacy.data.PackageCatalog.skinOf(path);
+        return skin == null ? "package_normal" : path;
     }
 
-    /** 渲染层用：客户端只有这个值可用（packageStack 不同步）。 */
+    /** 皮肤 key（{@code <series>_<tier>}）。渲染层 / 粒子层都用这个。 */
+    public String getPackageSkin() {
+        return this.dataTracker.get(PACKAGE_SKIN);
+    }
+
+    /** 档位 id（皮肤的后半段）。 */
     public String getPackageTier() {
-        return this.dataTracker.get(PACKAGE_TIER);
+        String skin = getPackageSkin();
+        int i = skin.lastIndexOf('_');
+        return i < 0 ? "normal" : skin.substring(i + 1);
     }
 
     public void setAnimationState(String state) {
@@ -309,9 +319,9 @@ public class PackageEntity extends Entity implements GeoEntity {
     @Override
     protected void writeCustomDataToNbt(NbtCompound nbt) {
         nbt.putString("AnimationState", this.getAnimationState());
-        // ★必须存★：packageStack 不落盘（重载后是无参构造的 EMPTY），档位只能靠这个字段还原，
-        // 否则实体存盘再读回会统一变 normal 贴图。
-        nbt.putString("PackageTier", this.getPackageTier());
+        // ★必须存★：packageStack 不落盘（重载后是无参构造的 EMPTY），皮肤只能靠这个字段还原，
+        // 否则实体存盘再读回会统一变 package_normal 贴图。
+        nbt.putString("PackageSkin", this.getPackageSkin());
         // ★必须存★（本轮修复）：packageStack 才是奖励内容的唯一真值。旧实现只存档位字符串，
         // 读回时 packageStack = EMPTY ⇒ cachedData = null ⇒ tick 里直接 `rewardGiven = true` 静默结束
         // ⇒ **区块卸载/存档重载后包裹实体不发奖也不报错**（多人服挂机过区块边界即复现）。
@@ -345,8 +355,13 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.rewardGiven = nbt.getBoolean("RewardGiven");
         this.activated = nbt.getBoolean("Activated");
         this.dataTracker.set(CHOOSE_MODE_ACTIVE, nbt.getBoolean("ChooseModeActive"));
-        if (nbt.contains("PackageTier")) {
-            this.dataTracker.set(PACKAGE_TIER, nbt.getString("PackageTier"));
+        if (nbt.contains("PackageSkin")) {
+            this.dataTracker.set(PACKAGE_SKIN, nbt.getString("PackageSkin"));
+        } else if (nbt.contains("PackageTier")) {
+            // 旧存档：只有档位、没有系列 ⇒ 归到 package 系列（legendary 是旧 id 的写法）
+            String old = nbt.getString("PackageTier");
+            if ("legendary".equals(old)) old = "legend";
+            this.dataTracker.set(PACKAGE_SKIN, "package_" + old);
         }
         this.chooseModeTickCount = nbt.getInt("ChooseModeTickCount");
         this.giveCounter = nbt.getInt("GiveCounter");
@@ -364,6 +379,10 @@ public class PackageEntity extends Entity implements GeoEntity {
             this.packageStack = ItemStack.fromNbt(nbt.getCompound("PackageStack"));
         }
         this.cachedData = PackageData.fromNbt(this.packageStack.getNbt());
+        if (!nbt.contains("PackageSkin") && !nbt.contains("PackageTier") && !this.packageStack.isEmpty()) {
+            // 更老的存档（连 PackageTier 都没写）：皮肤直接从物品 id 反推
+            this.dataTracker.set(PACKAGE_SKIN, skinOf(this.packageStack));
+        }
         if (this.packageStack.isEmpty() && !this.isChooseModeActive()) {
             // 落盘里没有 PackageStack（本修复之前存档的实体）⇒ 奖励内容真丢了，留一条可诊断的日志。
             // ★注意：fromNbt(null) 返回的是 RANDOM/空列表而不是 null★，所以不能靠 cachedData == null 判断，
