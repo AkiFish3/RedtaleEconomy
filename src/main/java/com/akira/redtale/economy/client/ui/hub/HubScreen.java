@@ -140,8 +140,17 @@ public class HubScreen extends Screen {
 	/** 打开 Hub（可指定初始页）。 */
 	public static void open(HubPage page) {
 		HubScreen s = new HubScreen();
-		s.page = page == null ? HubPage.CHECKIN : page;
+		// T51：深链接进被关闭的模块 ⇒ 落到签到页并说明，不是进一个永远空着的页面
+		HubPage want = page == null ? HubPage.CHECKIN : page;
+		if (!HubPage.accessible(want)) {
+			s.page = HubPage.CHECKIN;
+			s.statusLine.set("该模块未开启");
+		} else {
+			s.page = want;
+		}
 		MinecraftClient.getInstance().setScreen(s);
+		// T51：侧栏可见性要用服务端下发的真实开关，首帧先按「全开」渲染，收到包后自动收窄
+		ModulesClientNetworking.request();
 		// ★首屏也要拉数据★：以前只走 setPage 才请求，于是「直接打开 Hub 落在排行/商店页」
 		// （K 键、/rt rank、服务端 HUB_OPEN）会永远停在空态 —— 2026-10-21 专用服截图抓到的。
 		s.pullData(s.page);
@@ -150,11 +159,27 @@ public class HubScreen extends Screen {
 	/** U8b：/rt 切页时复用当前界面，别把搜索词和滚动位置清掉。 */
 	public void setPage(HubPage p) {
 		if (p == null || p == page) return;
+		if (!HubPage.accessible(p)) {
+			statusLine.set("该模块未开启");
+			return;
+		}
 		this.page = p;
 		statusLine.clear();
 		this.searchFocused = false;
 		this.rankDropdown = false;
 		pullData(p);
+	}
+
+	/**
+	 * T51：当前页在模块被关掉后必须能下来。
+	 *
+	 * <p>只在 {@link HubPage#visible()} 里过滤是不够的 —— 玩家正停在该页时
+	 * 侧栏已经没有那一行了，但内容区还在画已关闭模块的数据。
+	 */
+	void clampPageToVisible() {
+		if (HubPage.accessible(page)) return;
+		this.page = HubPage.SETTINGS;
+		pullData(page);
 	}
 
 	/** 切到某页时顺手拉一次数据（服务端只回快照，不做写操作）。 */

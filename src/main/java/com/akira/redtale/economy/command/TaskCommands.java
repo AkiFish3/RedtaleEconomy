@@ -32,7 +32,7 @@ public final class TaskCommands {
 	}
 
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
-		CommandTable.declare(d, "tasks", "task");
+		CommandTable.declare(d, "tasks", "tasks");
 		d.register(CommandManager.literal("tasks").requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(TaskCommands::list)
 				.then(CommandManager.literal("refresh").executes(TaskCommands::refresh))

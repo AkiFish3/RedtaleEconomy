@@ -7,33 +7,46 @@ package com.akira.redtale.economy.client.ui.hub;
  */
 public enum HubPage {
 
-	CHECKIN("checkin", "签到", false, "minecraft:clock"),
-	SHOP("shop", "商店", false, "minecraft:chest"),
-	MARKET("market", "市场", false, "minecraft:emerald_block"),
-	STORAGE("storage", "仓储", false, "minecraft:barrel"),
-	BOUNTY("bounty", "悬赏", false, "minecraft:iron_sword"),
-	BOARD("board", "委托", false, "minecraft:oak_sign"),
-	PASS("pass", "战令", false, "minecraft:nether_star"),
-	GUILD("guild", "协会", false, "minecraft:emerald"),
-	MAIL("mail", "邮件", false, "minecraft:paper"),
-	RANK("rank", "排行", false, "minecraft:gold_ingot"),
-	PAY("pay", "转账", false, "minecraft:emerald"),
-	TITLES("titles", "称号", false, "minecraft:name_tag"),
-	SETTINGS("settings", "设置", false, "minecraft:comparator"),
-	LEDGER("ledger", "流水", false, "minecraft:book"),
+	CHECKIN("checkin", "签到", false, "minecraft:clock", "checkin"),
+	SHOP("shop", "商店", false, "minecraft:chest", "shop"),
+	MARKET("market", "市场", false, "minecraft:emerald_block", "market"),
+	STORAGE("storage", "仓储", false, "minecraft:barrel", "warehouse"),
+	BOUNTY("bounty", "悬赏", false, "minecraft:iron_sword", "bounty"),
+	BOARD("board", "委托", false, "minecraft:oak_sign", "board"),
+	PASS("pass", "战令", false, "minecraft:nether_star", "battlepass"),
+	GUILD("guild", "协会", false, "minecraft:emerald", "guild"),
+	MAIL("mail", "邮件", false, "minecraft:paper", "mail"),
+	RANK("rank", "排行", false, "minecraft:gold_ingot", "economy"),
+	PAY("pay", "转账", false, "minecraft:emerald", "economy"),
+	TITLES("titles", "称号", false, "minecraft:name_tag", "title"),
+	SETTINGS("settings", "设置", false, "minecraft:comparator", null),
+	LEDGER("ledger", "流水", false, "minecraft:book", "economy"),
 	/** T28：管理员控制台（只读概览）。★永远加在末尾★：侧栏下标被夹具与点击共用。 */
-	ADMIN("admin", "控制台", true, "minecraft:command_block");
+	ADMIN("admin", "控制台", true, "minecraft:command_block", null);
 
 	public final String id;
 	public final String label;
 	public final boolean adminOnly;
 	public final String icon;
+	/**
+	 * T51：这一页属于哪个模块（{@code null} = 恒可见）。
+	 *
+	 * <p>模块关闭后入口必须消失（不是点了进空页），所以侧栏过滤和「深链接」校验
+	 * 都读同一个字段；id 必须与 {@code RedtaleModule.id()} 一致。
+	 */
+	public final String module;
 
-	HubPage(String id, String label, boolean adminOnly, String icon) {
+	HubPage(String id, String label, boolean adminOnly, String icon, String module) {
 		this.id = id;
 		this.label = label;
 		this.adminOnly = adminOnly;
 		this.icon = icon;
+		this.module = module;
+	}
+
+	/** 本页所属模块是否开启（{@code null} = 恒开）。 */
+	public boolean moduleOn() {
+		return module == null || ModulesClientNetworking.isEnabled(module);
 	}
 
 	/** 本机玩家是否能看管理员页（服务端仍会独立判权限，这里只决定「侧栏显示不显示」）。 */
@@ -55,11 +68,19 @@ public enum HubPage {
 		HubPage[] out = new HubPage[all.length];
 		int n = 0;
 		for (HubPage p : all) {
-			if (!p.adminOnly) out[n++] = p;
+			// T51：模块关闭 ⇒ 侧栏不显示（数据仍在服务端，重开即恢复）
+			if (!p.adminOnly && p.moduleOn()) out[n++] = p;
 		}
 		HubPage[] trimmed = new HubPage[n];
 		System.arraycopy(out, 0, trimmed, 0, n);
 		return trimmed;
+	}
+
+	/** 该页当前是否可进（管理员页额外要求权限）。深链接也必须过这一关。 */
+	public static boolean accessible(HubPage p) {
+		if (p == null) return false;
+		if (p.adminOnly && !canAdmin()) return false;
+		return p.moduleOn();
 	}
 
 	public static HubPage byId(String id) {

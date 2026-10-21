@@ -596,6 +596,46 @@ public final class UiShots {
 			case 108 -> shotKeep(mc, "u6-59-admin-refresh.png", () -> LOG.add("admin probe "
 					+ com.akira.redtale.economy.client.ui.hub.HubAdminPage.devProbe()));
 			case 109 -> act(mc, () -> mc.setScreen(null));
+			// ★T51 模块总开关★：设置页管理员区的「模块开关」子区 + 关掉 shop 后侧栏消失。
+			// ★滚动不能塞进 shotKeep 的 action★：open() 是发 /rt settings，屏幕要等一个往返才出现，
+			// 同 tick 判 instanceof 恒 false（首轮就是这么丢掉 scrollToModule，导致点行 hit=false）。
+			case 110 -> act(mc, () -> {
+				mc.setScreen(null);
+				com.akira.redtale.economy.client.ui.hub.HubSettingsPage.setAdminOpen(true);
+				com.akira.redtale.economy.client.ui.hub.HubSettingsPage.setModulesOpen(true);
+				LOG.add("modules states(before)=" + com.akira.redtale.economy.client.ui.hub
+						.ModulesClientNetworking.devStates());
+			});
+			case 111 -> shotKeep(mc, "u6-60-modules.png", () -> open(mc, HubPage.SETTINGS, "rt settings"));
+			case 112 -> act(mc, () -> {
+				if (mc.currentScreen instanceof HubScreen hub) {
+					com.akira.redtale.economy.client.ui.hub.HubSettingsPage.scrollToModule("shop",
+							HubDev.settingsContentHeight(hub));
+					LOG.add("modules scroll=" + com.akira.redtale.economy.client.ui.hub
+							.HubSettingsPage.devScroll());
+				} else {
+					LOG.add("modules scroll skipped: screen="
+							+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+				}
+			});
+			case 113 -> shotKeep(mc, "u6-61-modules-rows.png", () -> { });
+			case 114 -> act(mc, () -> {
+				if (mc.currentScreen instanceof HubScreen hub) {
+					LOG.add("modules click shop hit=" + HubDev.clickModuleRow(hub, "shop"));
+				} else {
+					LOG.add("modules click shop skipped: screen="
+							+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()));
+				}
+			});
+			case 115 -> shotKeep(mc, "u6-62-modules-shop-off.png", () -> LOG.add("modules states(after)="
+					+ com.akira.redtale.economy.client.ui.hub.ModulesClientNetworking.devStates()));
+			case 116 -> act(mc, () -> mc.setScreen(null));
+			case 117 -> shotKeep(mc, "u6-63-sidebar-no-shop.png", () -> open(mc, HubPage.CHECKIN, "rt checkin"));
+			// 还原：截图不能把 dev 环境留在「商店关闭」状态（后续轮次会被它误伤）
+			case 118 -> act(mc, () -> {
+				com.akira.redtale.economy.client.ui.hub.ModulesClientNetworking.set("shop", true);
+				LOG.add("modules restore shop=on");
+			});
 			default -> finish(mc);
 		}
 	}

@@ -63,6 +63,11 @@ public final class PacketIds {
 	public static final Identifier C2S_ADMIN_REQ = RedtaleEconomy.id("admin/request");
 	public static final Identifier S2C_ADMIN = RedtaleEconomy.id("admin/snapshot");
 
+	/** T51：模块总开关（请求快照 / 切换单模块 / 下发快照）。 */
+	public static final Identifier C2S_MODULES_REQ = RedtaleEconomy.id("modules/request");
+	public static final Identifier C2S_MODULE_SET = RedtaleEconomy.id("modules/set");
+	public static final Identifier S2C_MODULES = RedtaleEconomy.id("modules/snapshot");
+
 	// R40 玩家市场
 	public static final Identifier C2S_MARKET_REQ = RedtaleEconomy.id("market/request");
 	public static final Identifier C2S_MARKET_BUY = RedtaleEconomy.id("market/buy");

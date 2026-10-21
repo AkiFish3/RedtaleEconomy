@@ -39,9 +39,22 @@ public final class RedtaleCommands {
 							ctx.getSource().sendFeedback(() -> Text.literal("§a配置已保存（含备份）"), true);
 							return 1;
 						}))
+				// T51：模块总开关（列表 / 开 / 关）。切换立即生效并落盘，不需要重启。
 				.then(CommandManager.literal("modules")
-						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
-						.executes(RedtaleCommands::modules))
+						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
+						.executes(RedtaleCommands::modules)
+						.then(CommandManager.literal("on")
+								.then(CommandManager.argument("id",
+												com.mojang.brigadier.arguments.StringArgumentType.word())
+										.suggests((ctx, b) -> net.minecraft.command.CommandSource.suggestMatching(
+												ModuleManager.get().all().stream().map(RedtaleModule::id).toList(), b))
+										.executes(ctx -> moduleSet(ctx, true))))
+						.then(CommandManager.literal("off")
+								.then(CommandManager.argument("id",
+												com.mojang.brigadier.arguments.StringArgumentType.word())
+										.suggests((ctx, b) -> net.minecraft.command.CommandSource.suggestMatching(
+												ModuleManager.get().all().stream().map(RedtaleModule::id).toList(), b))
+										.executes(ctx -> moduleSet(ctx, false)))))
 				.then(CommandManager.literal("info")
 						.executes(RedtaleCommands::info))
 				.then(CommandManager.literal("confirm")
@@ -231,13 +244,29 @@ public final class RedtaleCommands {
 		src.sendFeedback(() -> Text.literal("§6模块状态："), false);
 		for (RedtaleModule m : mm.all()) {
 			boolean on = mm.isEnabled(m.id());
-			String line = on
+			String line = (on
 					? "§a  ✔ " + m.id()
-					: "§7  ✘ " + m.id() + " §8(" + mm.reason(m.id()) + ")";
-			src.sendFeedback(() -> Text.literal(line), false);
+					: "§7  ✘ " + m.id() + " §8(" + mm.reason(m.id()) + ")")
+					+ (mm.toggleable(m.id()) ? "" : " §8[不可关闭]");
+			final String text = line;
+			src.sendFeedback(() -> Text.literal(text), false);
 		}
-		src.sendFeedback(() -> Text.literal("§8改 config/redtale/modules.json 后 /redtale reload 生效"), false);
+		src.sendFeedback(() -> Text.literal(
+				"§7用法：§f/redtale modules on|off <id> §8（立即生效并写入 modules.json）"), false);
 		return 1;
+	}
+
+	/** T51：切换单个模块并回显结果（权限在命令节点上判，这里只做业务）。 */
+	private static int moduleSet(CommandContext<ServerCommandSource> ctx, boolean on) {
+		String id = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id");
+		var r = com.akira.redtale.economy.module.Modules.set(id, on);
+		ServerCommandSource src = ctx.getSource();
+		if (r.ok()) {
+			src.sendFeedback(() -> Text.literal("§a" + r.note()), true);
+			return 1;
+		}
+		src.sendError(Text.literal("§c" + r.note()));
+		return 0;
 	}
 
 	/** T15：外部告警诊断 —— 先看设置，test 时真发一条（不计入每分钟限流）。 */

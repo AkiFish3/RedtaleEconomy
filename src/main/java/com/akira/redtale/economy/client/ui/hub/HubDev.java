@@ -33,6 +33,16 @@ public final class HubDev {
 		return host.mouseClicked(p[0], p[1], 0);
 	}
 
+	/** T51 夹具：点某个模块行（走真实 mouseClicked，命中不到就返回 false）。 */
+	public static boolean clickModuleRow(HubScreen host, String moduleId) {
+		if (host.page != HubPage.SETTINGS) return false;
+		double[] p = HubSettingsPage.rowCenterForModule(moduleId,
+				host.frame.contentX(), host.frame.contentY(),
+				host.frame.contentW(), host.frame.contentH());
+		if (p == null) return false;
+		return host.mouseClicked(p[0], p[1], 0);
+	}
+
 	public static int settingsContentHeight(HubScreen host) {
 		return host.panelH - HubFrame.TOP_BAR - HubFrame.BOTTOM_BAR - 16;
 	}

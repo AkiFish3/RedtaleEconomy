@@ -19,11 +19,21 @@ public final class HubSettingsPage {
 		/** U10：跳原版按键设置（不自己造键位界面）。 */
 		KEYBINDS,
 		/** U10：管理员折叠区（仅 OP4 可见，默认收起）。 */
-		ADMIN_HEAD, ADMIN_SHOP, ADMIN_CONFIG, ADMIN_RELOAD
+		ADMIN_HEAD, ADMIN_SHOP, ADMIN_CONFIG, ADMIN_RELOAD,
+		/** T51：模块总开关（管理员区里的二级折叠；行数随模块数变化）。 */
+		MODULES_HEAD,
+		/** 单个模块行 —— id 放在 {@link #clickedModuleId}（枚举不能带参数）。 */
+		MODULE
 	}
 
 	/** 管理员区是否展开（每帧由 HubScreen 传入，这里只存会话内状态）。 */
 	private static boolean adminOpen;
+
+	/** T51：模块开关子区是否展开。 */
+	private static boolean modulesOpen;
+
+	/** T51：最近一次点中的模块 id（{@link Row#MODULE} 行专用）。 */
+	private static String clickedModuleId = "";
 
 	/** 内容滚动偏移（GUI Scale 2 下内容区装不下 5 行以上，必须能滚）。 */
 	private static int scroll;
@@ -78,6 +88,9 @@ public final class HubSettingsPage {
 		String label;
 		String value;
 		Row row;
+		/** 非 null 时该行是模块开关行。 */
+		String moduleId;
+		String moduleNote;
 	}
 
 	private static Item[] items() {
@@ -98,9 +111,30 @@ public final class HubSettingsPage {
 				list.add(item("管理员", "商店编辑", "/shop admin edit", Row.ADMIN_SHOP));
 				list.add(item("管理员", "配置编辑", "/redtale edit", Row.ADMIN_CONFIG));
 				list.add(item("管理员", "重载配置", "/redtale reload", Row.ADMIN_RELOAD));
+				// T51：模块开关 —— 列表本身来自服务端快照（客户端不猜有哪些模块）
+				list.add(item("模块", "模块开关", modulesOpen ? "收起 -" : "展开 +", Row.MODULES_HEAD));
+				if (modulesOpen) {
+					for (var v : ModulesClientNetworking.snapshot().modules()) {
+						list.add(moduleItem(v));
+					}
+					if (ModulesClientNetworking.snapshot().modules().isEmpty()) {
+						list.add(item("模块", "（未收到服务端状态）", "—", Row.MODULES_HEAD));
+					}
+				}
 			}
 		}
 		return list.toArray(new Item[0]);
+	}
+
+	private static Item moduleItem(com.akira.redtale.economy.net.ModulesProtocol.ModuleView v) {
+		Item i = new Item();
+		i.group = "模块";
+		i.label = v.id();
+		i.value = v.locked() ? "不可关" : (v.on() ? "开" : "关");
+		i.row = Row.MODULE;
+		i.moduleId = v.id();
+		i.moduleNote = v.note();
+		return i;
 	}
 
 	private static Item item(String g, String l, String v, Row r) {
@@ -165,6 +199,7 @@ public final class HubSettingsPage {
 				cy += 16;
 			}
 			if (mx >= x && mx < x + w && my >= cy && my < cy + 18) {
+				clickedModuleId = it.moduleId == null ? "" : it.moduleId;
 				return it.row;
 			}
 			cy += 20;
@@ -197,6 +232,48 @@ public final class HubSettingsPage {
 		return null;
 	}
 
+	/**
+	 * 仅 dev 夹具：按<b>模块 id</b> 找行中心（模块行是动态的，{@link Row#MODULE} 无法定位到具体哪一个）。
+	 *
+	 * <p>与 {@link #render} 用同一套累加口径：分组标题 + 行高，绝不能另写一份。
+	 */
+	public static double[] rowCenterForModule(String moduleId, int x, int y, int w, int h) {
+		String lastGroup = "";
+		int cy = y - scroll;
+		for (Item it : items()) {
+			if (!it.group.equals(lastGroup)) {
+				lastGroup = it.group;
+				cy += 16;
+			}
+			if (moduleId.equals(it.moduleId)) {
+				double my = cy + 9;
+				if (my < y || my >= y + h) return null;
+				return new double[]{x + w / 2.0, my};
+			}
+			cy += 20;
+		}
+		return null;
+	}
+
+	/** 仅 dev 夹具：把某个模块行滚到可视区靠上位置（模块列表有 16 行，427×240 下必滚）。 */
+	public static void scrollToModule(String moduleId, int h) {
+		String lastGroup = "";
+		int cy = 0;
+		for (Item it : items()) {
+			if (!it.group.equals(lastGroup)) {
+				lastGroup = it.group;
+				cy += 16;
+			}
+			if (moduleId.equals(it.moduleId)) {
+				scrollTo(Math.max(0, cy - 8));
+				int max = maxScroll(h);
+				if (scroll > max) scroll = max;
+				return;
+			}
+			cy += 20;
+		}
+	}
+
 	/** 仅 dev 夹具：当前是否展开管理员区（写日志用）。 */
 	public static boolean devAdminOpen() {
 		return adminOpen;
@@ -210,6 +287,16 @@ public final class HubSettingsPage {
 	/** 仅 dev 夹具：客户端判定自己是不是管理员（读的就是 render 用的同一个判断）。 */
 	public static boolean devAdminVisible() {
 		return isAdmin();
+	}
+
+	/** T51 dev 夹具：展开模块开关子区（截图要看到真实行）。 */
+	public static void setModulesOpen(boolean v) {
+		modulesOpen = v;
+	}
+
+	/** T51 dev 夹具：模块开关子区是否展开。 */
+	public static boolean devModulesOpen() {
+		return modulesOpen;
 	}
 
 	/** 仅 dev 夹具：当前滚动偏移（写日志用）。 */
@@ -247,6 +334,17 @@ public final class HubSettingsPage {
 				var mc = net.minecraft.client.MinecraftClient.getInstance();
 				if (mc.player != null) mc.player.networkHandler.sendChatCommand("redtale edit");
 				return "已请求配置列表";
+			}
+			case MODULES_HEAD -> {
+				modulesOpen = !modulesOpen;
+				return modulesOpen ? "模块开关：展开" : "模块开关：收起";
+			}
+			case MODULE -> {
+				String id = clickedModuleId;
+				if (id.isEmpty()) return "";
+				boolean cur = ModulesClientNetworking.isEnabled(id);
+				ModulesClientNetworking.set(id, !cur);
+				return "正在切换 " + id + " → " + (!cur ? "开" : "关");
 			}
 			case ADMIN_RELOAD -> {
 				var mc = net.minecraft.client.MinecraftClient.getInstance();

@@ -157,6 +157,7 @@ public class RedtaleEconomy implements ModInitializer {
 		com.akira.redtale.economy.net.BoardNetworking.register();
 		com.akira.redtale.economy.net.LedgerNetworking.register();
 		com.akira.redtale.economy.net.AdminNetworking.register();
+		com.akira.redtale.economy.net.ModulesNetworking.register();
 
 		// R36：数据根目录两段式（spec §40.2）
 		// 加载期 %world% 不可用 → 各模块先落 redtale-data.pending；
