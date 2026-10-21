@@ -45,6 +45,16 @@ dependencies {
 		}
 	}
 
+	// 开发环境运行时模组（不进发布包）：让 runClient 与正式客户端渲染路径一致
+	// 只需把 jar 丢进 libs/dev/，不需要写坐标；缺目录时静默跳过
+	def devDir = file('libs/dev')
+	if (devDir.isDirectory()) {
+		devDir.listFiles().findAll { it.name.endsWith('.jar') }.sort { it.name }.each { f ->
+			logger.lifecycle("[redtale] dev runtime mod: ${f.name}")
+			modRuntimeOnly files(f)
+		}
+	}
+
 	// 纯逻辑单测（不加载 Minecraft 运行时）
 	testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
