@@ -24,6 +24,8 @@ public class LegacyInit implements ModInitializer {
 		RENetworking.register();
 		BoundItemsConfig.load();
 		LegacyExchange.register();
+		// 开发期视觉夹具（无 b14-pkg-shots.flag 时 register() 立即返回）
+		com.akira.redtale.economy.legacy.dev.PackageShotHarness.register();
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				RECommands.register(dispatcher));
