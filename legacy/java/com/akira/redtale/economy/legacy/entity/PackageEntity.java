@@ -3,6 +3,7 @@ package com.akira.redtale.economy.legacy.entity;
 import com.akira.redtale.economy.legacy.LegacyInit;
 import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.init.REEntities;
+import com.akira.redtale.economy.legacy.particles.PackageParticles;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
@@ -15,12 +16,10 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.listener.ClientPlayPacketListener;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
-import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
@@ -71,6 +70,11 @@ public class PackageEntity extends Entity implements GeoEntity {
 
     private int giveCounter = 0;
     private int currentGiveIndex = 0;
+
+    /** 开箱爆发只放一次（区块重载/存档读回不重放，否则每次加载都炸一次 60 颗）。 */
+    private boolean burstDone = false;
+    /** 领取特效只放一次（ALL 模式是逐件发，每件 25 颗会刷成粒子墙）。 */
+    private boolean claimDone = false;
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -174,8 +178,18 @@ public class PackageEntity extends Entity implements GeoEntity {
         }
 
         // 服务端逻辑
+        // ★只在「真的开箱」时爆发★：CHOOSE 模式实体刚生成时还是待选状态，玩家选完
+        // （setSelectedItem ⇒ 不再是 choose 模式）才轮到开箱爆发，否则没选就先炸一次。
+        if (this.getWorld() instanceof ServerWorld burstWorld && !burstDone && !this.isChooseModeActive()) {
+            burstDone = true;
+            PackageParticles.openBurst(burstWorld, this.getPos(), this.getPackageTier());
+        }
         if (this.isChooseModeActive()) {
             chooseModeTickCount++;
+            // 选择中也是「待机」：调色板里保证有一圈档位色，玩家才分得出这是哪档包裹
+            if (this.getWorld() instanceof ServerWorld idleWorld && chooseModeTickCount % PackageParticles.IDLE_INTERVAL == 0) {
+                PackageParticles.idle(idleWorld, this.getPos(), this.getPackageTier());
+            }
             if (chooseModeTickCount > CHOOSE_TIMEOUT_TICKS) {
                 this.discard();
                 return;
@@ -194,12 +208,10 @@ public class PackageEntity extends Entity implements GeoEntity {
         // 非 CHOOSE 模式
         age++;
 
-        // 粒子效果
-        if (age >= 20 && age <= BASE_ANIMATION_TICKS + 10) {
-            if (this.getWorld() instanceof ServerWorld serverWorld) {
-                Vec3d pos = getPos();
-                serverWorld.spawnParticles(ParticleTypes.ENCHANT, pos.x, pos.y + 0.5, pos.z, 1, 0.1, 0.1, 0.1, 0.01);
-            }
+        // 待机粒子：旧实现 age 20~70 每 tick 1 颗 ENCHANT（共 50 颗，还都在同一个点），
+        // 「除了出生那几秒完全看不出是个包裹」。现在每 5 tick 3~5 颗 × 档位倍率（见 PackageParticles）。
+        if (this.getWorld() instanceof ServerWorld idleWorld && age % PackageParticles.IDLE_INTERVAL == 0) {
+            PackageParticles.idle(idleWorld, this.getPos(), this.getPackageTier());
         }
 
         // 奖励给予逻辑
@@ -309,6 +321,12 @@ public class PackageEntity extends Entity implements GeoEntity {
     private void playGiveSound(ServerPlayerEntity player) {
         this.getWorld().playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+        // 领取特效（25 颗 TOTEM 上飘）★每个实体只放一次★：ALL 模式逐件发放，
+        // 每件都放一遍就是 12×25=300 颗，画面直接糊成一片白。
+        if (!claimDone && this.getWorld() instanceof ServerWorld claimWorld) {
+            claimDone = true;
+            PackageParticles.claim(claimWorld, this.getPos(), this.getPackageTier());
+        }
     }
 
     /**
@@ -340,6 +358,8 @@ public class PackageEntity extends Entity implements GeoEntity {
         nbt.putInt("ChooseModeTickCount", this.chooseModeTickCount);
         nbt.putInt("GiveCounter", this.giveCounter);
         nbt.putInt("CurrentGiveIndex", this.currentGiveIndex);
+        nbt.putBoolean("BurstDone", this.burstDone);
+        nbt.putBoolean("ClaimDone", this.claimDone);
         if (ownerUuid != null) {
             nbt.putUuid("OwnerUUID", ownerUuid);
         }
@@ -371,6 +391,8 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.chooseModeTickCount = nbt.getInt("ChooseModeTickCount");
         this.giveCounter = nbt.getInt("GiveCounter");
         this.currentGiveIndex = nbt.getInt("CurrentGiveIndex");
+        this.burstDone = nbt.getBoolean("BurstDone");
+        this.claimDone = nbt.getBoolean("ClaimDone");
         if (nbt.containsUuid("OwnerUUID")) {
             this.ownerUuid = nbt.getUuid("OwnerUUID");
         }

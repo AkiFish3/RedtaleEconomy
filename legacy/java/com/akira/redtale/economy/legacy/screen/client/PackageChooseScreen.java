@@ -1,6 +1,8 @@
 package com.akira.redtale.economy.legacy.screen.client;
 
+import com.akira.redtale.economy.legacy.entity.PackageEntity;
 import com.akira.redtale.economy.legacy.init.RENetworking;
+import com.akira.redtale.economy.legacy.particles.PackageParticles;
 import com.akira.redtale.economy.legacy.screen.PackageChooseHandler;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -41,9 +43,45 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        updateHoverParticles(mouseX, mouseY);
         this.renderBackground(context);
         super.render(context, mouseX, mouseY, delta);
         drawMouseoverTooltip(context, mouseX, mouseY);
+    }
+
+    /** 上一次悬停的格子（-1 = 不在任何格子上）。 */
+    private int lastHoverIndex = -1;
+
+    /**
+     * 滚动切换（规格 §十「每次换候选 8 颗」）。
+     *
+     * <p>★当前界面是网格点选，不是滚动轮盘★，所以「换候选」的语义落到「鼠标移到另一格」上：
+     * 换一格放一组粒子，手感与规格描述的滚动一致，且完全在客户端侧完成
+     * （不新增 C2S 包 —— 每次移动鼠标都发包会被服务端的校验/日志淹掉）。
+     *
+     * <p>只在 index 真变化时发射：每帧都放会变成一条粒子尾巴。
+     */
+    private void updateHoverParticles(int mouseX, int mouseY) {
+        int index = hoveredIndex(mouseX, mouseY);
+        if (index == lastHoverIndex) return;
+        lastHoverIndex = index;
+        if (index < 0 || this.client == null || this.client.world == null) return;
+        if (!(this.client.world.getEntityById(handler.getEntityId()) instanceof PackageEntity pkg)) return;
+        PackageParticles.scroll(this.client.world, pkg.getPos(), pkg.getPackageTier());
+    }
+
+    /** 鼠标位置 → 候选格 index；不在格子区域或超出实际物品数返回 -1。 */
+    private int hoveredIndex(double mouseX, double mouseY) {
+        int slotsStartX = (this.width - this.backgroundWidth) / 2 + 8;
+        int slotsStartY = (this.height - this.backgroundHeight) / 2 + 17;
+        int slotsEndY = slotsStartY + handler.rows * 18;
+        if (mouseX < slotsStartX || mouseX >= slotsStartX + 162 || mouseY < slotsStartY || mouseY >= slotsEndY) {
+            return -1;
+        }
+        int slotRow = (int) ((mouseY - slotsStartY) / 18);
+        int slotCol = (int) ((mouseX - slotsStartX) / 18);
+        int slotIndex = slotRow * 9 + slotCol;
+        return slotIndex < handler.getActualItemCount() ? slotIndex : -1;
     }
 
     @Override

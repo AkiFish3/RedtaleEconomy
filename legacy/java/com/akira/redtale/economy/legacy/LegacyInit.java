@@ -23,6 +23,7 @@ public class LegacyInit implements ModInitializer {
 		REHandlers.register();
 		RENetworking.register();
 		BoundItemsConfig.load();
+		com.akira.redtale.economy.legacy.data.PackageConfig.load();
 		LegacyExchange.register();
 		// 开发期视觉夹具：源码在 legacy/devsrc/（不在源集内 ⇒ 发行 jar 不含这些类）。
 		// 需要复测时把 legacy/devsrc 临时加进 main.java.srcDirs，下面按类名可选加载。
