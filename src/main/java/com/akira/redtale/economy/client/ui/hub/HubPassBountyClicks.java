@@ -36,11 +36,11 @@ final class HubPassBountyClicks {
 			int cy = host.frame.contentY();
 			int cw = host.frame.contentW();
 			int ch = host.frame.contentH();
-			// 用几何判定，避免为了命中再画一次
-			int cardH = 44;
-			int idx = (int) ((mouseY - (cy + 16)) / (cardH + 4));
+			// ★命中走页面自己的几何★：以前这里硬算 (mouseY - (cy+16)) / 48，
+			// 不判 x、不判「这张卡画没画出来」⇒ 点标题行会截断成 idx=0，直接把第一条悬赏领了。
 			var list = com.akira.redtale.economy.client.bounty.BountyClientNetworking.LAST.entries();
-			if (idx >= 0 && idx < list.size()) {
+			int idx = HubBountyPage.indexAt(mouseX, mouseY, cx, cy, cw, ch, list.size());
+			if (idx >= 0) {
 				var e = list.get(idx);
 				if (!e.claimed() && e.done()) {
 					var mc = MinecraftClient.getInstance();
