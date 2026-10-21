@@ -40,8 +40,6 @@ public final class PacketIds {
 	public static final Identifier S2C_HUB_OPEN = RedtaleEconomy.id("hub/open");
 	public static final Identifier S2C_RANK = RedtaleEconomy.id("rank/snapshot");	public static final Identifier S2C_WAREHOUSE = RedtaleEconomy.id("warehouse/snapshot");
 	public static final Identifier C2S_WAREHOUSE_REQ = RedtaleEconomy.id("warehouse/request");
-	public static final Identifier C2S_WAREHOUSE_TAKE = RedtaleEconomy.id("warehouse/take");
-	public static final Identifier C2S_WAREHOUSE_PUT = RedtaleEconomy.id("warehouse/put");
 	public static final Identifier C2S_WAREHOUSE_SORT = RedtaleEconomy.id("warehouse/sort");
 	public static final Identifier C2S_WAREHOUSE_UPGRADE = RedtaleEconomy.id("warehouse/upgrade");
 	public static final Identifier C2S_WAREHOUSE_PICK = RedtaleEconomy.id("warehouse/pick");

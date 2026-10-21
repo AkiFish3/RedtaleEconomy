@@ -272,13 +272,6 @@ public final class WarehouseClientNetworking {
 		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_SPREAD, buf);
 	}
 
-	public static void put(int slot, int count) {
-		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
-		buf.writeVarInt(slot);
-		buf.writeVarInt(count);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_PUT, buf);
-	}
-
 	public static void sort() {
 		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_SORT,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
@@ -287,12 +280,5 @@ public final class WarehouseClientNetworking {
 	public static void upgrade() {
 		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_UPGRADE,
 				new PacketByteBuf(io.netty.buffer.Unpooled.buffer()));
-	}
-
-	public static void take(int index, int count) {
-		PacketByteBuf buf = new PacketByteBuf(io.netty.buffer.Unpooled.buffer());
-		buf.writeVarInt(index);
-		buf.writeVarInt(count);
-		ClientPlayNetworking.send(PacketIds.C2S_WAREHOUSE_TAKE, buf);
 	}
 }
