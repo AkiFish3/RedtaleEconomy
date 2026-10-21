@@ -52,7 +52,7 @@ final class HubClicks {
 				host.page = all[idx];
 				if (host.page == HubPage.SHOP) host.requestShopPage();
 				if (host.page == HubPage.MARKET) com.akira.redtale.economy.client.market.MarketClientNetworking.request();
-				if (host.page == HubPage.BOUNTY) host.requestBounty();
+				if (host.page == HubPage.BOUNTY) HubRequests.requestBounty();
 				if (host.page == HubPage.BOARD) {
 					HubBoardPage.resetScroll();
 					com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
@@ -63,12 +63,12 @@ final class HubClicks {
 					com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
 					host.setStatus("正在读取流水…");
 				}
-				if (host.page == HubPage.PASS) host.requestPass();
+				if (host.page == HubPage.PASS) HubRequests.requestPass();
 				if (host.page == HubPage.ADMIN) {
 					HubAdminPage.reset();
 					AdminClientNetworking.request();
 					host.setStatus("正在读取控制台数据…");
-				}				if (host.page == HubPage.GUILD) host.requestGuild();
+				}				if (host.page == HubPage.GUILD) HubRequests.requestGuild();
 				if (host.page == HubPage.STORAGE) {
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
 			com.akira.redtale.economy.client.title.TitlesClientNetworking.request();

@@ -1,7 +1,5 @@
 package com.akira.redtale.economy.client.ui.hub;
 
-import com.akira.redtale.economy.client.ShopClientNetworking;
-import com.akira.redtale.economy.client.ShopClientState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -52,51 +50,13 @@ public class HubScreen extends Screen {
 	int shopSelected = -1;
 	/** R40：市场页选中的行（-1 = 未选） */
 	int marketSelected = -1;
-	private boolean shopRequested;
+	boolean shopRequested;
 	int passScroll;
 	final StringBuilder storageQuery = new StringBuilder();
 	int storageCat ;
 	int storageScroll ;
 	int lastSlotKey = -1;
 	long lastSlotAt ;
-	/** U11b：点击筛选 chip → 循环下一个取值（""/"全部" 也算一档，循环回得去）。 */
-	void cycleFilter(int slot) {
-		var f = ShopClientState.filter();
-		var page = ShopClientState.page();
-		switch (slot) {
-			case 0 -> {
-				var mods = page.mods();
-				int i = mods.indexOf(f.modOrEmpty());
-				String next = (i < 0 || i + 1 >= mods.size()) ? "" : mods.get(i + 1);
-				ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
-						next, f.categoryOrEmpty(), f.minPrice(), f.maxPrice(), f.inStockOnly()));
-			}
-			case 1 -> {
-				var cats = page.categories();
-				int i = cats.indexOf(f.categoryOrEmpty());
-				String next = (i < 0 || i + 1 >= cats.size()) ? "" : cats.get(i + 1);
-				ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
-						f.modOrEmpty(), next, f.minPrice(), f.maxPrice(), f.inStockOnly()));
-			}
-			case 2 -> {
-				long[] steps = {0, 10, 100, 1_000, 10_000, 100_000};
-				int i = 0;
-				for (int k = 0; k < steps.length; k++) {
-					if (steps[k] == f.maxPrice()) {
-						i = k;
-						break;
-					}
-				}
-				long next = steps[(i + 1) % steps.length];
-				ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
-						f.modOrEmpty(), f.categoryOrEmpty(), 0, next, f.inStockOnly()));
-			}
-			default -> ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
-					f.modOrEmpty(), f.categoryOrEmpty(), f.minPrice(), f.maxPrice(), !f.inStockOnly()));
-		}
-		shopSelected = -1;
-	}
-
 	boolean dragPlacing ;
 	int dragButton = -1;
 	boolean searchFocused ;
@@ -184,22 +144,7 @@ public class HubScreen extends Screen {
 
 	/** 切到某页时顺手拉一次数据（服务端只回快照，不做写操作）。 */
 	private void pullData(HubPage p) {
-		var mc = MinecraftClient.getInstance();
-		if (mc.player == null) return;
-		switch (p) {
-			case SHOP -> {
-				String sid = ShopClientState.shopIdToRequest();
-				if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
-			}
-			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
-			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
-			case BOARD -> com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
-			case LEDGER -> com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
-			case ADMIN -> com.akira.redtale.economy.client.ui.hub.AdminClientNetworking.request();
-			case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
-			default -> {
-			}
-		}
+		HubRequests.pullData(this, p);
 	}
 
 	/** T32 批次3：Screen.renderBackground / hasShiftDown 是 protected，给同包渲染类一个桥。 */
@@ -315,26 +260,8 @@ public class HubScreen extends Screen {
 		return (int) Math.ceil(left / 1000.0);
 	}
 
-	void requestGuild() {
-		var mc = MinecraftClient.getInstance();
-		if (mc.player != null) mc.player.networkHandler.sendChatCommand("guild");
-	}
-
-	void requestPass() {
-		var mc = MinecraftClient.getInstance();
-		if (mc.player != null) mc.player.networkHandler.sendChatCommand("pass");
-	}
-
-	void requestBounty() {
-		var mc = MinecraftClient.getInstance();
-		if (mc.player != null) mc.player.networkHandler.sendChatCommand("bounty list");
-	}
-
 	void requestShopPage() {
-		shopRequested = true;
-		String sid = ShopClientState.shopIdToRequest();
-		if (sid.isEmpty()) return;   // 还没收到 S2C_OPEN，等它到了再请求，别发空 id 换回空页
-		ShopClientNetworking.requestPage(sid, 0, shopQuery.toString());
+		HubRequests.requestShopPage(this);
 	}
 
 	@Override

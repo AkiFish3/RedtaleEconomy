@@ -59,19 +59,19 @@ final class HubShopClicks {
 				}
 				// U11b：筛选变化一律回到第 1 页，条件随请求发服务端
 				case FILTER_MOD -> {
-					host.cycleFilter(0);
+					cycleFilter(host, 0);
 					host.requestShopPage();
 				}
 				case FILTER_CAT -> {
-					host.cycleFilter(1);
+					cycleFilter(host, 1);
 					host.requestShopPage();
 				}
 				case FILTER_PRICE -> {
-					host.cycleFilter(2);
+					cycleFilter(host, 2);
 					host.requestShopPage();
 				}
 				case FILTER_STOCK -> {
-					host.cycleFilter(3);
+					cycleFilter(host, 3);
 					host.requestShopPage();
 				}
 				// U11：目录树下钻 / 回上一级 —— 树位置即筛选条件，一次点击同时完成两件事
@@ -91,6 +91,48 @@ final class HubShopClicks {
 			if (a != HubShopPage.Action.NONE) return HubClicks.R.HANDLED;
 		}
 		return HubClicks.R.PASS;
+	}
+
+	/**
+	 * T32 批次6：点筛选 chip → 循环下一个取值（""/"全部" 也算一档，循环回得去）。
+	 *
+	 * <p>原在 {@link HubScreen}，与商店页其余点击逻辑放在一起更内聚。
+	 */
+	private static void cycleFilter(HubScreen host, int slot) {
+		var f = ShopClientState.filter();
+		var page = ShopClientState.page();
+		switch (slot) {
+			case 0 -> {
+				var mods = page.mods();
+				int i = mods.indexOf(f.modOrEmpty());
+				String next = (i < 0 || i + 1 >= mods.size()) ? "" : mods.get(i + 1);
+				ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
+						next, f.categoryOrEmpty(), f.minPrice(), f.maxPrice(), f.inStockOnly()));
+			}
+			case 1 -> {
+				var cats = page.categories();
+				int i = cats.indexOf(f.categoryOrEmpty());
+				String next = (i < 0 || i + 1 >= cats.size()) ? "" : cats.get(i + 1);
+				ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
+						f.modOrEmpty(), next, f.minPrice(), f.maxPrice(), f.inStockOnly()));
+			}
+			case 2 -> {
+				long[] steps = {0, 10, 100, 1_000, 10_000, 100_000};
+				int i = 0;
+				for (int k = 0; k < steps.length; k++) {
+					if (steps[k] == f.maxPrice()) {
+						i = k;
+						break;
+					}
+				}
+				long next = steps[(i + 1) % steps.length];
+				ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
+						f.modOrEmpty(), f.categoryOrEmpty(), 0, next, f.inStockOnly()));
+			}
+			default -> ShopClientState.setFilter(new com.akira.redtale.economy.net.ShopFilter(
+					f.modOrEmpty(), f.categoryOrEmpty(), f.minPrice(), f.maxPrice(), !f.inStockOnly()));
+		}
+		host.shopSelected = -1;
 	}
 
 }
