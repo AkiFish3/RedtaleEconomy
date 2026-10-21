@@ -187,10 +187,14 @@ public class PackageEditHandler extends ScreenHandler {
         ItemStack current = player.getStackInHand(this.hand);
         if (!isSamePackage(current)) return false;
         this.inventory.saveToNbt();
-        if (this.originalStack.hasNbt()) {
-            current.setNbt(this.originalStack.getNbt().copy());
-            this.originalNbtSnapshot = current.getNbt() == null ? null : current.getNbt().copy();
-        }
+        // ★快照与基准必须无条件跟着刷新★：旧实现写成 `if (originalStack.hasNbt())` —— 但
+        // originalStack 是「开窗/换档那一刻」的**副本**，那时包裹还没有 NBT ⇒ hasNbt()==false
+        // ⇒ 快照永远是 null。只要发生过一次换档，下一次 isSamePackage 就会把
+        // 「有 NBT 的同一件包裹」判成「玩家换了包裹」而**静默拒写**
+        // （2026-10-22 实测：切档后拖进去的两格全丢，items.count=0，零报错）。
+        this.originalNbtSnapshot = current.getNbt() == null ? null : current.getNbt().copy();
+        this.originalStack = current.copy();
+        this.handStackRef = current;
         return true;
     }
 

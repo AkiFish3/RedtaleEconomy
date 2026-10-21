@@ -86,7 +86,13 @@
       "color": "#FFFFFF",
       "p": 1.0,
       "rarity": "epic",
-      "special": "egg"
+      "special": {
+        "form": "egg",
+        "geo": "redtale_economy:geo/surprise.geo.json",
+        "anim": "redtale_economy:animations/surprise.animation.json",
+        "animItem": "redtale_economy:animations/surprise_item.animation.json",
+        "iconDir": "item/surprise"
+      }
     }
   ]
 }

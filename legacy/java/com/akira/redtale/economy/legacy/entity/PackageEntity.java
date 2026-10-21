@@ -76,6 +76,16 @@ public class PackageEntity extends Entity implements GeoEntity {
     /** 领取特效只放一次（ALL 模式是逐件发，每件 25 颗会刷成粒子墙）。 */
     private boolean claimDone = false;
 
+    // ————————————————— T74 special（surprise 彩蛋） —————————————————
+
+    /** 蛋壳碎裂阶段长度（tick）。碎裂演完才切 open + 爆发，否则「先炸后裂」顺序反了。 */
+    private static final int CRACK_TICKS = 12;
+    /** 开箱时随机决定的档位 id（只有 special 会填，其它包裹档位来自物品 id）。 */
+    private String rolledTier = null;
+    /** 正在播 crack：-1 = 不适用；>=0 = 已播的 tick 数。 */
+    private int crackTicks = -1;
+    private boolean eggCrackStarted = false;
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public PackageEntity(EntityType<?> type, World world) {
@@ -127,6 +137,52 @@ public class PackageEntity extends Entity implements GeoEntity {
         return i < 0 ? "normal" : skin.substring(i + 1);
     }
 
+    /** 物品 path（{@code chest_legend} / {@code surprise}）。判 special 用。 */
+    private String itemPath() {
+        if (this.packageStack == null || this.packageStack.isEmpty()) return "";
+        return net.minecraft.registry.Registries.ITEM.getId(this.packageStack.getItem()).getPath();
+    }
+
+    /** 是否是 special 单件（T74：彩蛋开箱随机档位）。 */
+    public boolean isSpecialPackage() {
+        return com.akira.redtale.economy.legacy.data.PackageCatalog.isSpecial(itemPath());
+    }
+
+    /**
+     * 粒子/特效用的**有效档位**：special 在开箱时掷出一个普通档位，其它包裹就是自身档位。
+     *
+     * <p>★不能用 getPackageTier() 替代★：surprise 的皮肤档位恒是 {@code surprise}，
+     * 粒子表里查不到 ⇒ 倍率回落 1.0，"开到传说"和"开到普通"的光效完全一样。
+     */
+    public String getEffectiveTier() {
+        return this.rolledTier != null ? this.rolledTier : getPackageTier();
+    }
+
+    /** 掷一个非 special 档位（均匀）。同一实体只掷一次，落在 {@link #rolledTier}。 */
+    private void rollTierIfSpecial() {
+        if (this.rolledTier != null || !isSpecialPackage()) return;
+        java.util.List<com.akira.redtale.economy.legacy.data.PackageCatalog.Tier> pool =
+                new java.util.ArrayList<>();
+        for (com.akira.redtale.economy.legacy.data.PackageCatalog.Tier t
+                : com.akira.redtale.economy.legacy.data.PackageCatalog.tiers()) {
+            if (!t.special()) pool.add(t);
+        }
+        if (pool.isEmpty()) return;
+        this.rolledTier = pool.get(this.random.nextInt(pool.size())).id();
+        LegacyInit.LOGGER.info("[legacy] surprise 开出档位 {} @ {}", this.rolledTier, this.getBlockPos());
+    }
+
+    /** special 先裂壳再开箱；普通包裹直接 open。 */
+    private void beginOpenAnimation() {
+        if (isSpecialPackage()) {
+            this.eggCrackStarted = true;
+            this.crackTicks = 0;
+            this.setAnimationState("crack");
+        } else {
+            this.setAnimationState("open");
+        }
+    }
+
     public void setAnimationState(String state) {
         this.dataTracker.set(ANIMATION_STATE, state);
     }
@@ -151,7 +207,7 @@ public class PackageEntity extends Entity implements GeoEntity {
         if (activated) return;
         this.selectedItem = item;
         this.activated = true;
-        this.setAnimationState("open");
+        this.beginOpenAnimation();
         this.dataTracker.set(CHOOSE_MODE_ACTIVE, false);
         this.appliedAnimation = null;
         this.chooseModeTickCount = 0;
@@ -178,17 +234,30 @@ public class PackageEntity extends Entity implements GeoEntity {
         }
 
         // 服务端逻辑
+        // ★T74 special★：蛋壳先裂再炸 —— 掷档位 → 播 crack（CRACK_TICKS）→ 切 open 才允许爆发。
+        // 普通包裹 crackTicks 恒 -1，走的还是原来那条「第一 tick 就爆」的路径。
+        if (!this.isChooseModeActive() && isSpecialPackage()) {
+            rollTierIfSpecial();
+            if (!eggCrackStarted) {
+                beginOpenAnimation();
+            } else if (this.crackTicks >= 0 && ++this.crackTicks >= CRACK_TICKS) {
+                this.crackTicks = -1;
+                this.setAnimationState("open");
+            }
+        }
+
         // ★只在「真的开箱」时爆发★：CHOOSE 模式实体刚生成时还是待选状态，玩家选完
         // （setSelectedItem ⇒ 不再是 choose 模式）才轮到开箱爆发，否则没选就先炸一次。
-        if (this.getWorld() instanceof ServerWorld burstWorld && !burstDone && !this.isChooseModeActive()) {
+        if (this.getWorld() instanceof ServerWorld burstWorld && !burstDone && !this.isChooseModeActive()
+                && this.crackTicks < 0) {
             burstDone = true;
-            PackageParticles.openBurst(burstWorld, this.getPos(), this.getPackageTier());
+            PackageParticles.openBurst(burstWorld, this.getPos(), this.getEffectiveTier());
         }
         if (this.isChooseModeActive()) {
             chooseModeTickCount++;
             // 选择中也是「待机」：调色板里保证有一圈档位色，玩家才分得出这是哪档包裹
             if (this.getWorld() instanceof ServerWorld idleWorld && chooseModeTickCount % PackageParticles.IDLE_INTERVAL == 0) {
-                PackageParticles.idle(idleWorld, this.getPos(), this.getPackageTier());
+                PackageParticles.idle(idleWorld, this.getPos(), this.getEffectiveTier());
             }
             if (chooseModeTickCount > CHOOSE_TIMEOUT_TICKS) {
                 this.discard();
@@ -211,7 +280,7 @@ public class PackageEntity extends Entity implements GeoEntity {
         // 待机粒子：旧实现 age 20~70 每 tick 1 颗 ENCHANT（共 50 颗，还都在同一个点），
         // 「除了出生那几秒完全看不出是个包裹」。现在每 5 tick 3~5 颗 × 档位倍率（见 PackageParticles）。
         if (this.getWorld() instanceof ServerWorld idleWorld && age % PackageParticles.IDLE_INTERVAL == 0) {
-            PackageParticles.idle(idleWorld, this.getPos(), this.getPackageTier());
+            PackageParticles.idle(idleWorld, this.getPos(), this.getEffectiveTier());
         }
 
         // 奖励给予逻辑
@@ -325,7 +394,7 @@ public class PackageEntity extends Entity implements GeoEntity {
         // 每件都放一遍就是 12×25=300 颗，画面直接糊成一片白。
         if (!claimDone && this.getWorld() instanceof ServerWorld claimWorld) {
             claimDone = true;
-            PackageParticles.claim(claimWorld, this.getPos(), this.getPackageTier());
+            PackageParticles.claim(claimWorld, this.getPos(), this.getEffectiveTier());
         }
     }
 
@@ -360,6 +429,11 @@ public class PackageEntity extends Entity implements GeoEntity {
         nbt.putInt("CurrentGiveIndex", this.currentGiveIndex);
         nbt.putBoolean("BurstDone", this.burstDone);
         nbt.putBoolean("ClaimDone", this.claimDone);
+        // T74：special 掷出的档位必须落盘 —— 否则区块重载后同一次开箱会重掷一个不同档位
+        // （粒子/日志与实际发放对不上，且重掷没有上限）。
+        if (this.rolledTier != null) {
+            nbt.putString("RolledTier", this.rolledTier);
+        }
         if (ownerUuid != null) {
             nbt.putUuid("OwnerUUID", ownerUuid);
         }
@@ -393,6 +467,13 @@ public class PackageEntity extends Entity implements GeoEntity {
         this.currentGiveIndex = nbt.getInt("CurrentGiveIndex");
         this.burstDone = nbt.getBoolean("BurstDone");
         this.claimDone = nbt.getBoolean("ClaimDone");
+        if (nbt.contains("RolledTier")) {
+            this.rolledTier = nbt.getString("RolledTier");
+        }
+        // 读回时碎裂阶段一律视为已结束：重放 crack 会把「已经开过的蛋」再裂一次，
+        // 且 crackTicks 归零会卡住 burst 门（burstDone 已 true，不会再炸）。
+        this.eggCrackStarted = true;
+        this.crackTicks = -1;
         if (nbt.containsUuid("OwnerUUID")) {
             this.ownerUuid = nbt.getUuid("OwnerUUID");
         }

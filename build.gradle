@@ -121,6 +121,24 @@ processResources {
 	}
 }
 
+// ★dev 启动必须显式钉住游戏版本★（2026-10-22 B）
+// Loom 在 dev 环境把「minecraft」这个合成 mod 的版本设成
+//   minecraft-merged-project-root-1.20.1-net.fabricmc.yarn.1_20_1.1.20.1+build.10-v2
+// 它不是 semver，Fabric Loader 解析区间依赖时会抛
+//   `Invalid game version ... doesn't support range comparisons`
+// 而本项目 fabric.mod.json 声明了 `minecraft: ~1.20.1` ⇒ 客户端直接起不来。
+// Loader 自己的建议就是「显式指定 fabric.gameVersion」。
+loom {
+	runs {
+		client {
+			property "fabric.gameVersion", project.minecraft_version
+		}
+		server {
+			property "fabric.gameVersion", project.minecraft_version
+		}
+	}
+}
+
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 17
 }

@@ -47,7 +47,32 @@ public final class PackageCatalog {
 
     /** 一个档位。{@code color} 是 0xRRGGBB，{@code particle} 是粒子倍率 k。 */
     public record Tier(String id, String nameZh, String nameEn, int color, double particle,
-                       Rarity rarity, boolean special) {
+                       Rarity rarity, SpecialForm specialForm) {
+        /** 是否 special 单件（不随系列展开）。保留方法名：调用方一直写 {@code t.special()}。 */
+        public boolean special() {
+            return specialForm != null;
+        }
+    }
+
+    /**
+     * special 档位的**独立形态**（T74：surprise 是彩蛋，不复用包裹/宝箱剪影）。
+     *
+     * <p>{@code geo/anim/animItem/iconDir} 与 {@link Series} 同构 ⇒ 渲染侧可以走同一条解析路径，
+     * 不用为 special 分裂出第二套 if。
+     */
+    public record SpecialForm(String form, String geo, String anim, String animItem, String iconDir) {
+        public String texturePath(String tierId) {
+            return iconDir + "/" + tierId + ".png";
+        }
+    }
+
+    /**
+     * 一个皮肤要用的渲染资源。{@code texturePath} 是**相对 {@code textures/}** 的路径
+     * （如 {@code item/surprise/surprise.png}）。
+     *
+     * <p>系列与 special 都在这里收口：模型类只要调 {@link #renderOf(String)}，不再各自判 series==null。
+     */
+    public record RenderSpec(String geo, String anim, String animItem, String texturePath) {
     }
 
     /** 一个要注册的物品。{@code legacy=true} 表示旧 id 别名。 */
@@ -99,6 +124,35 @@ public final class PackageCatalog {
     public static String tierOf(String itemPath) {
         String[] s = SKIN.get(itemPath);
         return s == null ? null : s[1];
+    }
+
+    /**
+     * 一个物品 id 的渲染资源（geo / 实体动画 / 物品动画 / 贴图）。
+     *
+     * <p>★special 与系列走同一个出口★：{@code surprise} 的 skin[0] 是 null，以前所有模型类都
+     * {@code return DEFAULT} ⇒ 彩蛋永远画成普通包裹。现在 special 形态在 packages.json 里自带
+     * geo/动画/贴图目录，解析结果与系列同构。
+     *
+     * <p>未知 id / 数据不全返回 null，调用方各自回落到默认资源。
+     */
+    public static RenderSpec renderOf(String itemPath) {
+        String[] skin = SKIN.get(itemPath);
+        if (skin == null || skin[1] == null) return null;
+        String tierId = skin[1];
+        if (skin[0] != null) {
+            Series s = seriesById(skin[0]);
+            return s == null ? null : new RenderSpec(s.geo(), s.anim(), s.animItem(), s.texturePath(tierId));
+        }
+        Tier t = tierById(tierId);
+        if (t == null || t.specialForm() == null) return null;
+        SpecialForm f = t.specialForm();
+        return new RenderSpec(f.geo(), f.anim(), f.animItem(), f.texturePath(tierId));
+    }
+
+    /** special 单件是否参与「开箱随机档位」（T74）。 */
+    public static boolean isSpecial(String itemPath) {
+        Tier t = tierById(tierOf(itemPath));
+        return t != null && t.special();
     }
 
     /**
@@ -188,7 +242,7 @@ public final class PackageCatalog {
                     parseColor(opt(o, "color", "#D8CBB0")),
                     o.has("p") ? o.get("p").getAsDouble() : 1.0,
                     rarityOf(opt(o, "rarity", "common")),
-                    o.has("special") && !o.get("special").isJsonNull()));
+                    parseSpecial(o.get("special"))));
         }
 
         // series × tiers（跳过 special）
@@ -220,8 +274,33 @@ public final class PackageCatalog {
         alias("legendary_package", "package", "legend");
     }
 
-    private static void alias(String legacyId, String seriesId, String tierId) {
-        Series s = seriesById(seriesId);
+    /**
+     * 解析 {@code tiers[].special}。
+     *
+     * <p>两种写法都吃：对象（T74 起，带独立 geo/动画/贴图目录）与字符串（旧格式，只表达
+     * "这是 special"）。字符串按 {@code <id>} 推出默认资源路径，保证旧 json 不炸。
+     */
+    private static SpecialForm parseSpecial(JsonElement el) {
+        if (el == null || el.isJsonNull()) return null;
+        if (el.isJsonPrimitive()) {
+            String form = el.getAsString();
+            return new SpecialForm(form,
+                    "redtale_economy:geo/" + form + ".geo.json",
+                    "redtale_economy:animations/" + form + ".animation.json",
+                    "redtale_economy:animations/" + form + "_item.animation.json",
+                    "item/" + form);
+        }
+        if (!el.isJsonObject()) return null;
+        JsonObject o = el.getAsJsonObject();
+        String form = opt(o, "form", "egg");
+        return new SpecialForm(form,
+                opt(o, "geo", "redtale_economy:geo/" + form + ".geo.json"),
+                opt(o, "anim", "redtale_economy:animations/" + form + ".animation.json"),
+                opt(o, "animItem", "redtale_economy:animations/" + form + "_item.animation.json"),
+                opt(o, "iconDir", "item/" + form));
+    }
+
+    private static void alias(String legacyId, String seriesId, String tierId) {        Series s = seriesById(seriesId);
         Tier t = tierById(tierId);
         if (s == null || t == null) return;
         ITEMS.add(new ItemDef(legacyId, s, t, true));
@@ -272,10 +351,20 @@ public final class PackageCatalog {
         };
         for (String[] row : t) {
             TIERS.add(new Tier(row[0], row[1], row[2], parseColor(row[3]),
-                    Double.parseDouble(row[4]), rarityOf(row[5]), false));
+                    Double.parseDouble(row[4]), rarityOf(row[5]), null));
             ITEMS.add(new ItemDef("package_" + row[0], SERIES.get(0), TIERS.get(TIERS.size() - 1), false));
             SKIN.put("package_" + row[0], new String[]{"package", row[0]});
         }
+        // special 单件（与 json 同构：内置表也要有，否则 json 坏掉时 surprise 不存在）
+        Tier surprise = new Tier("surprise", "惊喜", "Surprise", 0xFFFFFF, 1.0, Rarity.EPIC,
+                new SpecialForm("egg",
+                        "redtale_economy:geo/surprise.geo.json",
+                        "redtale_economy:animations/surprise.animation.json",
+                        "redtale_economy:animations/surprise_item.animation.json",
+                        "item/surprise"));
+        TIERS.add(surprise);
+        ITEMS.add(new ItemDef("surprise", null, surprise, false));
+        SKIN.put("surprise", new String[]{null, "surprise"});
         alias("normal_package", "package", "normal");
         alias("rare_package", "package", "rare");
         alias("legendary_package", "package", "legend");

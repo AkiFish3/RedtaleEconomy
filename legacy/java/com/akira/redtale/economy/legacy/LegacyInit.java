@@ -41,6 +41,7 @@ public class LegacyInit implements ModInitializer {
 		// 需要复测时把 legacy/devsrc 临时加进 main.java.srcDirs，下面按类名可选加载。
 		invokeDev("com.akira.redtale.economy.legacy.dev.PackageShotHarness");
 		invokeDev("com.akira.redtale.economy.legacy.dev.TooltipShotHarness");
+		invokeDev("com.akira.redtale.economy.legacy.dev.EditShotHarness");
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				RECommands.register(dispatcher));

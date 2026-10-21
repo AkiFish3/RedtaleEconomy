@@ -10,6 +10,9 @@ import software.bernie.geckolib.model.GeoModel;
 /**
  * 包裹物品模型：与实体同源（geo/动画按系列，贴图按档位）。
  * 物品 id 直接就是皮肤 key（{@code chest_legend}），查 {@link PackageCatalog} 即可。
+ *
+ * <p>T74：special（{@code surprise}）与系列**同一个出口** {@link PackageCatalog#renderOf}；
+ * 旧写法 series==null 就回落默认包裹，彩蛋拿到手也是普通包裹外观。
  */
 public class PackageItemModel extends GeoModel<PackageItem> {
 
@@ -19,38 +22,29 @@ public class PackageItemModel extends GeoModel<PackageItem> {
 
     @Override
     public Identifier getModelResource(PackageItem animatable) {
-        PackageCatalog.Series s = seriesOf(animatable);
-        return s == null ? GEO_DEFAULT : idFromSpec(s.geo(), GEO_DEFAULT);
+        PackageCatalog.RenderSpec spec = specOf(animatable);
+        return spec == null ? GEO_DEFAULT : idFromSpec(spec.geo(), GEO_DEFAULT);
     }
 
     @Override
     public Identifier getTextureResource(PackageItem animatable) {
-        PackageCatalog.Series s = seriesOf(animatable);
-        if (s == null) return TEX_DEFAULT;
-        return LegacyInit.id("textures/" + s.texturePath(tierOf(animatable)));
+        PackageCatalog.RenderSpec spec = specOf(animatable);
+        if (spec == null) return TEX_DEFAULT;
+        return LegacyInit.id("textures/" + spec.texturePath());
     }
 
     @Override
     public Identifier getAnimationResource(PackageItem animatable) {
-        PackageCatalog.Series s = seriesOf(animatable);
-        if (s == null) return ANIM_DEFAULT;
+        PackageCatalog.RenderSpec spec = specOf(animatable);
+        if (spec == null) return ANIM_DEFAULT;
         // ★物品动画与实体动画是两个文件★：物品只有 {@code item.idle}（键在 package_item.animation.json 里），
         // 拿实体的 package.animation.json 当物品动画 ⇒ geckolib 找不到动画、物品永远静止。
-        return idFromSpec(s.animItem(), ANIM_DEFAULT);
+        return idFromSpec(spec.animItem(), ANIM_DEFAULT);
     }
 
-    private static String tierOf(PackageItem animatable) {
-        if (animatable == null) return "normal";
-        String path = Registries.ITEM.getId(animatable).getPath();
-        String[] skin = PackageCatalog.skinOf(path);
-        return skin == null ? "normal" : skin[1];
-    }
-
-    private static PackageCatalog.Series seriesOf(PackageItem animatable) {
+    private static PackageCatalog.RenderSpec specOf(PackageItem animatable) {
         if (animatable == null) return null;
-        String path = Registries.ITEM.getId(animatable).getPath();
-        String[] skin = PackageCatalog.skinOf(path);
-        return skin == null || skin[0] == null ? null : PackageCatalog.seriesById(skin[0]);
+        return PackageCatalog.renderOf(Registries.ITEM.getId(animatable).getPath());
     }
 
     private static Identifier idFromSpec(String spec, Identifier def) {
