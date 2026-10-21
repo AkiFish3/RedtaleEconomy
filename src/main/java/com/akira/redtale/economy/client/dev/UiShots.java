@@ -41,6 +41,17 @@ import java.util.List;
 public final class UiShots {
 
 	private static final String FLAG = "u6-shots.flag";
+	/**
+	 * T48 步骤白名单（可选）：{@code <gameDir>/u6-steps.txt}，内容形如 {@code 94,95,96,97}
+	 * 或按行写。存在且非空时只对列出的 step 拍照，其余 step 仍执行但其动作用「快速推进」，
+	 * 不再等 25 tick 渲染、也不再切全屏（一次全量 sweep 要 ~5 分钟，回归一轮只需几张图）。
+	 *
+	 * <p>★它只是过滤器，不改顺序★：某步依赖前一步状态（如 95 依赖 94 发的 /rt ledger），
+	 * 就必须把前一步一起写进白名单。
+	 */
+	private static final String STEPS_FILE = "u6-steps.txt";
+	/** 白名单外的 step 推进间隔（tick）。只够命令出队，不保证界面画好——反正不拍。 */
+	private static final int FAST_SETTLE = 2;
 	/** 等主世界加载的上限（tick），超时就在标题界面拍照。 */
 	private static final int JOIN_TIMEOUT = 400;
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
@@ -93,6 +104,22 @@ public final class UiShots {
 	/** 成对率统计：窗口版 / 全屏版各存了几张。 */
 	private static int winShots;
 	private static int fsShots;
+	/** T48：要拍照的 step 集合；{@code null} = 全量（旧行为）。 */
+	private static java.util.Set<Integer> whitelist;
+	/** 当前 step 是否只是「跑状态、不拍照」。 */
+	private static boolean stateOnly;
+	/**
+	 * 白名单模式下「本 step 的 action 是否已跑过一次」。
+	 *
+	 * <p>不加这条会拍到上一屏：state-only 步骤（例如 step 1 的 /rt checkin）刚开出来的
+	 * HubScreen 还在，白名单里的 step 2 一看「screen 是我们的」就跳过自己的 action 直接拍，
+	 * 结果 u6-02 存的是签到页（u6-19 那次「HubScreen 已开着」的假阳性同源）。
+	 */
+	private static boolean actionRanThisStep;
+	/** 被快速跳过的 step 数（收尾写进日志，用来证明白名单真的生效）。 */
+	private static int skipped;
+	/** 已落盘的日志行数（增量追加用；被别的夹具提前 scheduleStop 时至少留下已有的证据）。 */
+	private static int persisted;
 	private static final List<String> LOG = new ArrayList<>();
 
 	private UiShots() {
@@ -126,7 +153,82 @@ public final class UiShots {
 			LOG.add("flag parse failed (" + e.getMessage() + "), use default scale=" + GUI_SCALE);
 		}
 		LOG.add("shots start, gameDir=" + gameDir.toAbsolutePath());
+		warnForeignFlags(gameDir);
+		readWhitelist(gameDir);
+		try {
+			// 每轮从头记：不然上一轮的追加会混进来，pairs 统计就不可信了
+			Files.deleteIfExists(gameDir.resolve("u6-shots.log"));
+		} catch (IOException ignored) {
+			// 删不掉就追加，至少不丢
+		}
+		flushLog(gameDir);
 		ClientTickEvents.END_CLIENT_TICK.register(UiShots::onTick);
+	}
+
+	/**
+	 * 别的队列的截图夹具在同一次 client 里也会 arm，它们跑完会 {@code scheduleStop()}。
+	 *
+	 * <p>2026-10-21 实测：{@code run/} 是全队共用的 gameDir，B 的 {@code b14-pkg-shots.flag}
+	 * 留在那里 ⇒ 同一进程里 B 的夹具 15 秒跑完就把客户端关了，我方一张图都拍不到、
+	 * 连 u6-shots.log 都不会生成（finish() 永远到不了）。这条 warning 是给下一次的定位线索。
+	 */
+	private static void warnForeignFlags(Path gameDir) {
+		try (var stream = Files.list(gameDir)) {
+			for (Path p : stream.toList()) {
+				String n = p.getFileName().toString();
+				if (n.endsWith(".flag") && n.contains("shots") && !n.equals(FLAG)) {
+					LOG.add("WARN foreign shot flag present: " + n
+							+ " (另一队列的夹具会提前 scheduleStop，本轮大概率拍不到图)");
+				}
+			}
+		} catch (IOException e) {
+			LOG.add("WARN flag scan failed: " + e.getMessage());
+		}
+	}
+
+	/** 增量落盘：拍一张就追加一次，别等 finish()（被提前关掉时才有证据）。 */
+	private static void flushLog(Path dir) {
+		if (persisted >= LOG.size()) {
+			return;
+		}
+		List<String> tail = new ArrayList<>(LOG.subList(persisted, LOG.size()));
+		try {
+			Files.write(dir.resolve("u6-shots.log"), tail, StandardCharsets.UTF_8,
+					java.nio.file.StandardOpenOption.CREATE,
+					java.nio.file.StandardOpenOption.APPEND);
+			persisted = LOG.size();
+		} catch (IOException ignored) {
+			// 写不出来不影响已经存下的图
+		}
+	}
+
+	/** T48：读步骤白名单。文件不存在或解析出 0 个号 ⇒ 保持全量。 */
+	private static void readWhitelist(Path gameDir) {
+		Path f = gameDir.resolve(STEPS_FILE);
+		if (!Files.exists(f)) {
+			return;
+		}
+		try {
+			String body = Files.readString(f, StandardCharsets.UTF_8).trim();
+			java.util.Set<Integer> set = new java.util.TreeSet<>();
+			for (String tok : body.split("[,\\s]+")) {
+				String s = tok.trim();
+				if (s.isEmpty() || s.startsWith("#")) continue;
+				try {
+					set.add(Integer.parseInt(s));
+				} catch (NumberFormatException e) {
+					LOG.add("steps: ignore bad token \"" + s + "\"");
+				}
+			}
+			if (set.isEmpty()) {
+				LOG.add("steps: " + STEPS_FILE + " present but empty -> full sweep");
+				return;
+			}
+			whitelist = set;
+			LOG.add("steps: whitelist=" + set + " (others = state-only, no capture)");
+		} catch (Exception e) {
+			LOG.add("steps: read failed (" + e.getMessage() + ") -> full sweep");
+		}
 	}
 
 	private static void onTick(MinecraftClient mc) {
@@ -158,6 +260,7 @@ public final class UiShots {
 			return;
 		}
 
+		stateOnly = whitelist != null && !whitelist.contains(step);
 		switch (step) {
 			case 1 -> shot(mc, "u6-01-hub-checkin.png", () -> open(mc, HubPage.CHECKIN, "rt checkin"));
 			case 2 -> shot(mc, "u6-02-hub-shop.png", () -> open(mc, HubPage.SHOP, "rt shop"));
@@ -580,6 +683,7 @@ public final class UiShots {
 				+ " logical=" + win.getScaledWidth() + "x" + win.getScaledHeight()
 				+ " scale=" + win.getScaleFactor()
 				+ " screen=" + (cur == null ? "null" : cur.getClass().getSimpleName()) + pid);
+		flushLog(mc.runDirectory.toPath());
 	}
 
 	/** 先开界面 → 等 SETTLE tick 后拍。step 里做的是「打开」，下一 step 才是「拍照」。 */
@@ -592,6 +696,17 @@ public final class UiShots {
 	}
 
 	private static void shot(MinecraftClient mc, String name, Runnable action) {
+		if (stateOnly) {
+			stateOnlyStep(mc, name, action);
+			return;
+		}
+		if (whitelist != null && !actionRanThisStep) {
+			actionRanThisStep = true;
+			action.run();
+			stepAt = tick + SETTLE;
+			LOG.add("whitelist step " + step + " ran its own action at tick " + tick);
+			return;
+		}
 		Screen cur = mc.currentScreen;
 		if (cur == null || !isOurs(cur)) {
 			// 还没开：这一 step 用来「打开」，再等 SETTLE
@@ -618,6 +733,17 @@ public final class UiShots {
 	 * 连续几步要在同一屏上点侧边栏（U4）时用，否则每步都被迫重新打开、页面状态丢失。
 	 */
 	private static void shotKeep(MinecraftClient mc, String name, Runnable action) {
+		if (stateOnly) {
+			stateOnlyStep(mc, name, action);
+			return;
+		}
+		if (whitelist != null && !actionRanThisStep) {
+			actionRanThisStep = true;
+			action.run();
+			stepAt = tick + SETTLE;
+			LOG.add("whitelist step " + step + " ran its own action at tick " + tick);
+			return;
+		}
 		Screen cur = mc.currentScreen;
 		if (cur == null || !isOurs(cur)) {
 			action.run();
@@ -763,6 +889,10 @@ public final class UiShots {
 	 * <p>不清屏 —— 下一步自己负责把界面关掉。
 	 */
 	private static void shotRaw(MinecraftClient mc, String name) {
+		if (stateOnly) {
+			stateOnlyStep(mc, name, null);
+			return;
+		}
 		Screen cur = mc.currentScreen;
 		if (cur == null) {
 			LOG.add("raw shot " + name + " skipped: screen is null at tick " + tick);
@@ -811,8 +941,36 @@ public final class UiShots {
 	/** 仅执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */
 	private static void act(MinecraftClient mc, Runnable action) {
 		action.run();
+		if (stateOnly) {
+			// 白名单外：动作照跑（它是后面截图步骤的前置状态），但不等渲染
+			nextFast("act");
+			return;
+		}
 		LOG.add("act step " + step + " at tick " + tick);
 		next(step + 1);
+	}
+
+	/**
+	 * T48：白名单外的拍摄步骤 —— 只跑「打开界面/改状态」那半个动作，绝不存图、不切全屏。
+	 *
+	 * <p>存在的意义是把 90 多个 step 的整轮回归压成十几秒的前置走位，
+	 * 让「只补一张图」的成本从 5 分钟降到 1 分钟。
+	 */
+	private static void stateOnlyStep(MinecraftClient mc, String tag, Runnable action) {
+		Screen cur = mc.currentScreen;
+		if (action != null && (cur == null || !isOurs(cur))) {
+			action.run();
+		}
+		nextFast(tag);
+	}
+
+	/** 快速推进：不落盘、不切全屏，只留 2 tick 让命令出队。 */
+	private static void nextFast(String tag) {
+		skipped++;
+		LOG.add("state-only step " + step + " (" + tag + ") at tick " + tick);
+		step = step + 1;
+		stepAt = tick + (step > LAST_STEP ? 10 : FAST_SETTLE);
+		actionRanThisStep = false;
 	}
 
 	private static boolean isOurs(Screen s) {
@@ -827,6 +985,7 @@ public final class UiShots {
 	private static void next(int s) {
 		step = s;
 		stepAt = tick + SETTLE;
+		actionRanThisStep = false;
 		if (s > LAST_STEP) {
 			// 拍完再等几 tick 让最后一张落盘
 			stepAt = tick + 10;
@@ -838,13 +997,11 @@ public final class UiShots {
 		if (mc.getWindow().isFullscreen()) {
 			mc.getWindow().toggleFullscreen(); // 别把下一次开发运行留在全屏
 		}
-		try {
-			Path dir = FabricLoader.getInstance().getGameDir();
-			LOG.addAll(pairReport(dir.resolve("screenshots")));
-			Files.write(dir.resolve("u6-shots.log"), LOG, StandardCharsets.UTF_8);
-		} catch (IOException ignored) {
-			// 日志写不出来不影响已经存下的图
-		}
+		Path dir = FabricLoader.getInstance().getGameDir();
+		LOG.add("steps: whitelist=" + (whitelist == null ? "ALL (full sweep)" : whitelist.toString())
+				+ " stateOnlySteps=" + skipped);
+		LOG.addAll(pairReport(dir.resolve("screenshots")));
+		flushLog(dir);
 		mc.scheduleStop();
 	}
 
