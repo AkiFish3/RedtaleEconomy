@@ -131,9 +131,23 @@ class PassArchiveTest {
 		assertFalse(PassArchive.entryOf(dir, FREE).premium());
 	}
 
+	/** 写端（PassSeasons）→ 读端（PassArchive）必须对得上：这是「快照字段改名」类漂移的唯一防线。 */
 	@Test
-	void accessParseIsConservative() {
-		assertEquals(PassArchive.Access.OFF, PassArchive.Access.parse(null));
+	void realArchiveOutputIsClaimable() throws Exception {
+		Files.writeString(dir.resolve(PAID + ".json"),
+				"{\"season\":\"s1\",\"xp\":900,\"premium\":true,\"claimed\":{\"free\":[],\"premium\":[]}}",
+				StandardCharsets.UTF_8);
+		assertEquals(PassSeasons.ArchiveResult.OK, PassSeasons.archiveDir(dir, "s1", 1_700_000_000_000L));
+		assertTrue(PassArchive.archived(dir));
+		assertEquals(1, PassArchive.entries(dir).size(), "快照自己不能被当成玩家");
+		assertEquals(900L, PassArchive.entryOf(dir, PAID).xp());
+		assertTrue(PassArchive.entryOf(dir, PAID).premium());
+		assertEquals(PassArchive.Result.OK, claim(PAID, "premium", 1, PassArchive.Access.PURCHASED));
+		assertEquals(PassArchive.Result.ALREADY, claim(PAID, "premium", 1, PassArchive.Access.PURCHASED));
+	}
+
+	@Test
+	void accessParseIsConservative() {		assertEquals(PassArchive.Access.OFF, PassArchive.Access.parse(null));
 		assertEquals(PassArchive.Access.OFF, PassArchive.Access.parse(""));
 		assertEquals(PassArchive.Access.OFF, PassArchive.Access.parse("yes"));
 		assertEquals(PassArchive.Access.PURCHASED, PassArchive.Access.parse("Purchased"));

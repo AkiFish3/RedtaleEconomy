@@ -119,7 +119,9 @@ public final class RedtaleCommands {
 				.then(CommandManager.literal("lang")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("code", com.mojang.brigadier.arguments.StringArgumentType.word())
-								.executes(RedtaleCommands::lang)));
+								.executes(RedtaleCommands::lang)))
+				// T27：经济事件日历（只读展示，配置在 core.json → calendar）
+				.then(CommandManager.literal("calendar").executes(RedtaleCommands::calendar));
 
 		// U8 收尾：/rt bal、/rt pay（根命名空间的 /bal /pay 保留）
 		EconomyCommands.attach(root);
@@ -317,6 +319,30 @@ public final class RedtaleCommands {
 			first = false;
 		}
 		return sb.toString();
+	}
+
+	/** T27：事件日历一览（进行中/未开始/已结束 + 当前战令倍率）。 */
+	private static int calendar(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		var list = com.akira.redtale.economy.storage.EconomyCalendar.list();
+		var now = java.time.LocalDateTime.now();
+		if (list.isEmpty()) {
+			src.sendFeedback(() -> Text.literal(
+					"§7[calendar] 未配置事件（core.json → calendar，格式见 config/redtale/README.md）"), false);
+			return 1;
+		}
+		src.sendFeedback(() -> Text.literal("§6[calendar] §7共 §f" + list.size() + " §7条"), false);
+		for (var e : list) {
+			String status = e.activeAt(now) ? "§a进行中" : (e.before(now) ? "§7未开始" : "§8已结束");
+			String sc = e.scopes().isEmpty() ? "全部" : String.join(",", e.scopes());
+			src.sendFeedback(() -> Text.literal("§8- " + status + " §f" + e.name()
+					+ " §7×§f" + e.multiplier() + " §7[" + sc + "] §8"
+					+ e.from().toLocalDate() + "~" + e.to().toLocalDate()), false);
+		}
+		var hit = com.akira.redtale.economy.storage.EconomyCalendar.hit("battlepass");
+		src.sendFeedback(() -> Text.literal("§7战令当前倍率：§f×" + hit.multiplier()
+				+ (hit.active() ? " §7（" + hit.name() + "）" : "")), false);
+		return 1;
 	}
 
 	private static int lang(CommandContext<ServerCommandSource> ctx) {

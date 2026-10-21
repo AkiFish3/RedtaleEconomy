@@ -283,7 +283,10 @@ public final class BattlePassModule implements RedtaleModule {
 		if (!PassSeasons.writable(season())) return;   // T02：已归档赛季进度冻结
 		PassData d = data(uuid);
 		double bonus = d.premium ? 1.0 + Math.max(0, BattlePassConfig.premiumBonus()) : 1.0;
-		long gain = Math.max(1, Math.round(amount * bonus));
+		// T27：经济事件日历（scope=battlepass）叠加倍率，只放大不缩小
+		long gain = com.akira.redtale.economy.storage.EconomyCalendar.apply(
+				Math.max(1, Math.round(amount * bonus)), com.akira.redtale.economy.storage.EconomyCalendar
+						.multiplier("battlepass"));
 		int before = levelFor(d.xp);
 		d.xp += gain;
 		d.dirty = true;

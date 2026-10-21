@@ -68,7 +68,10 @@ public final class CoreConfig {
 					.field("events", ConfigSchema.obj("事件开关")
 							.field("largeShop", ConfigSchema.bool(true, "大额商店成交"))
 							.field("altGuard", ConfigSchema.bool(true, "防小号拦截"))
-							.field("configError", ConfigSchema.bool(false, "配置加载失败"))));
+							.field("configError", ConfigSchema.bool(false, "配置加载失败"))))
+			.field("calendar", ConfigSchema.rawList(new com.google.gson.JsonArray(),
+					"经济事件日历（T27）：[{id,name,from,to,multiplier,scopes:[battlepass,checkin,shop]}]；"
+							+ "from/to 支持 yyyy-MM-dd（含当天）或 ISO 时间；重叠取最大倍率，不叠乘"));
 
 	private CoreConfig() {
 	}
