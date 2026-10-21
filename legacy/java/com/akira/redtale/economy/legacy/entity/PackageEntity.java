@@ -57,7 +57,16 @@ public class PackageEntity extends Entity implements GeoEntity {
     private boolean activated = false;
     private PackageData.PackageItem selectedItem = null;
     private UUID ownerUuid = null;
-    private static final int MAX_CHOOSE_MODE_TICKS = 72000;
+    /**
+     * CHOOSE 模式选择超时：**100 tick（5 秒）**，见 `_PACKAGE_SPEC.md` §三
+     * 「滚动动画 + 玩家确认；100 tick 未选自动 discard」。
+     *
+     * <p>★旧实现是 72000 tick（1 小时）★，两处口径还不一致：有主走 72000，无主走 100。
+     * 结果是「玩家关掉界面走人」的包裹实体带着整包奖励在地上飘一小时
+     * （每区块 tick 都在算目标玩家/距离），既是性能垃圾也是刷物品的入口
+     * （1 小时内允许中途回来再选）。现在统一 100 tick。
+     */
+    private static final int CHOOSE_TIMEOUT_TICKS = 100;
     private int chooseModeTickCount = 0;
 
     private int giveCounter = 0;
@@ -167,18 +176,14 @@ public class PackageEntity extends Entity implements GeoEntity {
         // 服务端逻辑
         if (this.isChooseModeActive()) {
             chooseModeTickCount++;
-            if (chooseModeTickCount > MAX_CHOOSE_MODE_TICKS) {
+            if (chooseModeTickCount > CHOOSE_TIMEOUT_TICKS) {
                 this.discard();
                 return;
             }
+            // 有主：只认主人（下线/走远都直接销毁，别把整包内容留在世界里）
             if (ownerUuid != null) {
                 PlayerEntity owner = this.getWorld().getPlayerByUuid(ownerUuid);
                 if (owner == null || owner.squaredDistanceTo(this) > 400.0) {
-                    this.discard();
-                    return;
-                }
-            } else {
-                if (chooseModeTickCount > 100) {
                     this.discard();
                     return;
                 }

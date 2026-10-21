@@ -2,11 +2,11 @@ package com.akira.redtale.economy.legacy.dev;
 
 import com.akira.redtale.economy.legacy.LegacyInit;
 import com.akira.redtale.economy.legacy.entity.PackageEntity;
-import com.akira.redtale.economy.legacy.init.REItems;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.item.Item;
+import net.minecraft.registry.Registries;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -31,7 +31,12 @@ import java.util.List;
  */
 public final class PackageShotHarness {
 	private static final String FLAG = "b14-pkg-shots.flag";
-	static final String[] TIERS = {"normal", "rare", "legendary"};
+	/** 拍摄清单：物品 path（= 皮肤 key）。T72 要证明三系列剪影不同，所以必须跨系列取样。 */
+	static final String[] SHOTS = {
+			"package_normal", "package_rare",
+			"chest_normal", "chest_legend",
+			"crate_normal", "crate_epic",
+	};
 	/** 玩家锚点与包裹位置（固定，保证背景一致）。 */
 	static final double ANCHOR_X = 0.5;
 	static final double ANCHOR_Y = 200.0;
@@ -61,12 +66,9 @@ public final class PackageShotHarness {
 		LegacyInit.LOGGER.info("[b14] pkg shot harness armed (flag={})", flag);
 	}
 
+	/** 按注册表查物品：新增系列不该再改夹具（旧实现硬编码 3 个 REItems 常量）。 */
 	static Item tierItem(int idx) {
-		return switch (idx) {
-			case 1 -> REItems.RARE_PACKAGE;
-			case 2 -> REItems.LEGENDARY_PACKAGE;
-			default -> REItems.NORMAL_PACKAGE;
-		};
+		return Registries.ITEM.get(LegacyInit.id(SHOTS[idx]));
 	}
 
 	private static void onServerTick(MinecraftServer server) {
@@ -77,12 +79,17 @@ public final class PackageShotHarness {
 		if (players.isEmpty()) {
 			return;
 		}
+		// ★每 tick 都钉住时间/天气★：只在"冻结分支"里设的话，切换 shot 的过渡期
+		// （清场 12 tick + 拍 60 tick）会累积推进 ~0.3 天 ⇒ 后两个 shot 拍到黄昏，
+		// 空场帧与实体帧亮度整体不同，掩码直接铺满整屏（实测 57200px / 260×220）。
+		ServerPlayerEntity anchor = players.get(0);
+		((ServerWorld) anchor.getWorld()).setTimeOfDay(6000L);
+		((ServerWorld) anchor.getWorld()).setWeather(6000, 0, false, false);
+
 		int req = spawnRequest;
 		if (req == lastHandled) {
-			// 冻住，防止 capture 期间玩家掉落导致取景变化；正午也每秒重申一次
-			ServerPlayerEntity p = players.get(0);
-			p.setVelocity(0, 0, 0);
-			((ServerWorld) p.getWorld()).setTimeOfDay(6000L);
+			// 冻住，防止 capture 期间玩家掉落导致取景变化
+			anchor.setVelocity(0, 0, 0);
 			return;
 		}
 		lastHandled = req;
@@ -103,7 +110,7 @@ public final class PackageShotHarness {
 		player.setVelocity(0, 0, 0);
 		player.teleport(world, ANCHOR_X, ANCHOR_Y, ANCHOR_Z, 0.0F, 0.0F);
 
-		if (req < 0 || req >= TIERS.length) {
+		if (req < 0 || req >= SHOTS.length) {
 			LegacyInit.LOGGER.info("[b14] cleared package field");
 			return;
 		}
@@ -115,7 +122,7 @@ public final class PackageShotHarness {
 		entity.setOwnerUuid(player.getUuid());
 		world.spawnEntity(entity);
 		current = entity;
-		LegacyInit.LOGGER.info("[b14] spawned tier={} item={} at y={} playerEyeY={}",
-				TIERS[req], stack.getItem(), entity.getY(), player.getEyeY());
+		LegacyInit.LOGGER.info("[b14] spawned shot={} item={} skin={} at y={} playerEyeY={}",
+				SHOTS[req], stack.getItem(), entity.getPackageSkin(), entity.getY(), player.getEyeY());
 	}
 }

@@ -15,8 +15,8 @@
       "id": "chest",
       "nameZh": "宝箱",
       "nameEn": "Chest",
-      "geo": "redtale_economy:geo/package.geo.json",
-      "anim": "redtale_economy:animations/package.animation.json",
+      "geo": "redtale_economy:geo/chest.geo.json",
+      "anim": "redtale_economy:animations/chest.animation.json",
       "iconDir": "item/chest",
       "animItem": "redtale_economy:animations/package_item.animation.json"
     },
@@ -24,8 +24,8 @@
       "id": "crate",
       "nameZh": "货箱",
       "nameEn": "Crate",
-      "geo": "redtale_economy:geo/package.geo.json",
-      "anim": "redtale_economy:animations/package.animation.json",
+      "geo": "redtale_economy:geo/crate.geo.json",
+      "anim": "redtale_economy:animations/crate.animation.json",
       "iconDir": "item/crate",
       "animItem": "redtale_economy:animations/package_item.animation.json"
     }
