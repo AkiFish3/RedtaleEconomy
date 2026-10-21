@@ -6,6 +6,7 @@ import com.akira.redtale.economy.client.ShopClientState;
 import com.akira.redtale.economy.client.shop.ShopScreen;
 import com.akira.redtale.economy.client.tasks.TaskScreen;
 import com.akira.redtale.economy.client.ui.hub.ClientUiConfig;
+import com.akira.redtale.economy.client.ui.hub.HubBoardPage;
 import com.akira.redtale.economy.client.ui.hub.HubPage;
 import com.akira.redtale.economy.client.ui.hub.HubScreen;
 import com.akira.redtale.economy.client.ui.hub.HubSettingsPage;
@@ -451,7 +452,7 @@ public final class UiShots {
 				// 写在 shot 的 action 里会拍到上一帧（16:34 那轮拍到的是商店页）。
 				mc.player.networkHandler.sendChatCommand("board");
 			});
-			case 92 -> shotKeep(mc, "u6-53-board.png", () -> { });
+			case 92 -> shotKeep(mc, "u6-53-board.png", () -> LOG.add("board probe " + HubBoardPage.devProbe()));
 			case 93 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}

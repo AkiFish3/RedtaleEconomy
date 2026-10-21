@@ -51,6 +51,14 @@ public final class HubBoardPage {
 		return scroll;
 	}
 
+	/** 探针：当前快照里几条委托、几条是我发布的 —— 截图轮用它断言"版面不是空的"。 */
+	public static String devProbe() {
+		var list = BoardClientNetworking.LAST.entries();
+		int mine = 0;
+		for (var e : list) if (e.minePoster()) mine++;
+		return "entries=" + list.size() + " mine=" + mine + " scroll=" + scroll;
+	}
+
 	private static int rowsVisible(int h) {
 		return Math.max(1, (h - HEAD_H - 2) / ROW_H);
 	}
