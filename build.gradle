@@ -31,8 +31,17 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-	// GeckoLib 依赖
-	modImplementation "software.bernie.geckolib:geckolib-fabric-1.20.1:4.2.3"
+	// GeckoLib 依赖（T41）：优先用 libs/ 本地 jar 4.7.1.2（与赤物语客户端/服务端实装版本一致，
+	// 可用 `--offline` 构建）；jar 不在时回落到 maven 坐标，保证换机器/CI 也能编。
+	// 本地 jar 是 intermediary 映射的生产包，loom 会自动 remap 到 dev 命名空间。
+	def geckolibJar = file("libs/geckolib-fabric-1.20.1-${project.geckolib_version}.jar")
+	if (geckolibJar.exists()) {
+		logger.lifecycle("[redtale] geckolib: local ${geckolibJar.name}")
+		modImplementation files(geckolibJar)
+	} else {
+		logger.warn("[redtale] 缺少 libs/geckolib-fabric-1.20.1-${project.geckolib_version}.jar —— 回落 maven 坐标 ${project.geckolib_version}")
+		modImplementation "software.bernie.geckolib:geckolib-fabric-1.20.1:${project.geckolib_version}"
+	}
 
 	// 软依赖编译期依赖（不打包）：FTB Quests / FTB Library，仅用于 R9 的 reward 类型
 	// 运行时由 FTBQ 提供；未安装时本 mod 相关类通过 isModLoaded 守卫不会被加载
