@@ -5,8 +5,10 @@ import com.akira.redtale.economy.legacy.data.PackageCatalog;
 import com.akira.redtale.economy.legacy.item.PackageItem;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroups;
+import net.minecraft.item.ItemGroup;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
 
@@ -22,6 +24,16 @@ import java.util.List;
 public class REItems {
 
     private static final List<Item> REGISTERED = new ArrayList<>();
+
+    /**
+     * 创造栏「功能性方块」的注册键。
+     *
+     * <p>★不用 {@code ItemGroups.FUNCTIONAL}★：那个字段在 yarn 里是 private，靠 Fabric API 的
+     * access widener 才能读 —— 全量重编译（换 loom 缓存/新机器）时会变成
+     * 「FUNCTIONAL 在 ItemGroups 中是 private 访问控制」。手搓 RegistryKey 是等价且不依赖 AW 的写法。
+     */
+    private static final RegistryKey<ItemGroup> TAB_FUNCTIONAL =
+            RegistryKey.of(RegistryKeys.ITEM_GROUP, new Identifier("minecraft", "functional"));
 
     private static Item registerItem(String name, Item item) {
         return Registry.register(Registries.ITEM, new Identifier(LegacyInit.MOD_ID, name), item);
@@ -51,7 +63,7 @@ public class REItems {
         }
 
         if (!REGISTERED.isEmpty()) {
-            ItemGroupEvents.modifyEntriesEvent(ItemGroups.FUNCTIONAL).register(entries -> {
+            ItemGroupEvents.modifyEntriesEvent(TAB_FUNCTIONAL).register(entries -> {
                 for (Item item : REGISTERED) entries.add(item);
             });
         }

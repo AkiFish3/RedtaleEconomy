@@ -16,7 +16,8 @@ import java.util.List;
 public class EditablePackageInventory extends SimpleInventory {
     public static final int SIZE = 90; // 10 行 × 9 列
 
-    private final ItemStack stackInHand;
+    /** ★可换绑★：T71 的「档位选择」要换物品 id（tier 存在 id 里）⇒ 底层 ItemStack 会整颗换掉。 */
+    private ItemStack stackInHand;
     private PackageData.PackageMode mode = PackageData.PackageMode.CHOOSE;
     private final int[] weights; // ✅ 改为 int[]
     /** T76「三保险」第 1 层：任何一次改动（拖入/移出/改权重）都置脏，由 handler 每 tick 判断是否落盘。 */
@@ -107,6 +108,24 @@ public class EditablePackageInventory extends SimpleInventory {
     }
 
     public void setMode(PackageData.PackageMode mode) {
+        if (mode == null || this.mode == mode) return;
         this.mode = mode;
+        // ★改 mode 也算改动★：T76 的三层保存都靠这个脏标记，漏置 ⇒ 改完模式关窗不落盘（零报错）。
+        this.dirty = true;
+    }
+
+    /**
+     * 换绑到另一件 ItemStack（T71 档位切换用：tier 编码在物品 id 上，切档 = 换物品实例）。
+     * 内容（items / weights / mode）保持不变，只换写入目标与后续读取的基准。
+     */
+    public void rebind(ItemStack newStack) {
+        if (newStack == null) return;
+        this.stackInHand = newStack;
+        markDirty();
+    }
+
+    /** 当前绑定的物品栈（供 handler 回读/校准）。 */
+    public ItemStack boundStack() {
+        return this.stackInHand;
     }
 }

@@ -1,10 +1,15 @@
 package com.akira.redtale.economy.legacy.screen;
 
+import com.akira.redtale.economy.legacy.LegacyInit;
+import com.akira.redtale.economy.legacy.data.PackageCatalog;
+import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.init.REHandlers;
+import com.akira.redtale.economy.legacy.init.RENetworking;
 import com.akira.redtale.economy.legacy.item.PackageItem;
 import com.akira.redtale.economy.legacy.misc.EditablePackageInventory;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.PacketByteBuf;
@@ -14,9 +19,22 @@ import net.minecraft.util.Hand;
 
 public class PackageEditHandler extends ScreenHandler {
     private final EditablePackageInventory inventory;
-    private final ItemStack originalStack;
+    /** ★非 final★：T71 档位切换会把整件物品换成同系列的另一个 id（tier 编码在物品 id 上）。 */
+    private ItemStack originalStack;
     private final Hand hand;
-    private static final int EDITOR_SLOTS = 90;
+    /**
+     * 网格 / 背包的**唯一几何真值**：槽位（服务端）与背景绘制 / 命中判定（客户端）都读这里。
+     * 之前两边各写一份常量，改布局时必然出现"图标在 A 处、点击判在 B 处"的错位。
+     */
+    public static final int EDITOR_SLOTS = 90;
+    public static final int GRID_COLS = 9;
+    public static final int GRID_ROWS = 10;
+    public static final int GRID_X = 8;
+    public static final int GRID_Y = 52;
+    public static final int INV_X = 8;
+    public static final int INV_Y = 240;
+    /** 单条权重上限：防客户端塞 Integer.MAX_VALUE 让其它条目永远抽不到（也让 UI 放得下 3 位数）。 */
+    public static final int MAX_WEIGHT = 999;
     private static final int PLAYER_INV_START = EDITOR_SLOTS;
     private static final int PLAYER_INV_END = PLAYER_INV_START + 27;
     private static final int HOTBAR_START = PLAYER_INV_END;
@@ -31,7 +49,7 @@ public class PackageEditHandler extends ScreenHandler {
      */
     private NbtCompound originalNbtSnapshot;
     /** 开界面时手牌那个 ItemStack 的**引用**（不是 copy）：换物品一定是换对象 ⇒ 便宜的第二道身份判据。 */
-    private final ItemStack handStackRef;
+    private ItemStack handStackRef;
     /** 上次落盘时间（毫秒）。T76 第 2 层：改动后最多 1 秒写进物品 NBT。 */
     private long lastFlushMs = 0L;
     private static final long FLUSH_DEBOUNCE_MS = 1000L;
@@ -70,11 +88,11 @@ public class PackageEditHandler extends ScreenHandler {
     }
 
     private void addInventorySlots() {
-        for (int row = 0; row < 10; row++) {
-            for (int col = 0; col < 9; col++) {
-                int idx = row * 9 + col;
-                int x = 8 + col * 18;
-                int y = 18 + row * 18;
+        for (int row = 0; row < GRID_ROWS; row++) {
+            for (int col = 0; col < GRID_COLS; col++) {
+                int idx = row * GRID_COLS + col;
+                int x = GRID_X + col * 18;
+                int y = GRID_Y + row * 18;
                 addSlot(new Slot(inventory, idx, x, y) {
                     @Override
                     public boolean canInsert(ItemStack stack) {
@@ -86,8 +104,8 @@ public class PackageEditHandler extends ScreenHandler {
     }
 
     private void addPlayerInventorySlots(PlayerInventory inv) {
-        int startX = 8;
-        int startY = 212;
+        int startX = INV_X;
+        int startY = INV_Y;
 
         for (int r = 0; r < 3; r++) {
             for (int c = 0; c < 9; c++) {
@@ -184,6 +202,113 @@ public class PackageEditHandler extends ScreenHandler {
         if (player == null) return;
         flushToHand(player);
         this.inventory.consumeDirty();
+    }
+
+    // ———————————————————————— T71 可视化编辑器：服务端动作 ————————————————————————
+
+    /**
+     * 当前编辑状态（mode + 90 条权重 + 上限）。
+     *
+     * <p>★为什么不用原版 Property 同步★：1.20.1 的属性同步按「单个 int / 每次变化一个包」走，
+     * 90 条权重会变成 90 个包；这里一次性发一个 NBT 更省，也让客户端能拿到 complete state
+     * （界面重开、掉线重连后不会残留上一件包裹的权重）。
+     */
+    public NbtCompound toStateNbt() {
+        NbtCompound nbt = new NbtCompound();
+        nbt.putString("mode", inventory.getMode().name());
+        int[] w = new int[EDITOR_SLOTS];
+        for (int i = 0; i < EDITOR_SLOTS; i++) w[i] = inventory.getWeight(i);
+        nbt.putIntArray("weights", w);
+        nbt.putInt("maxWeight", MAX_WEIGHT);
+        return nbt;
+    }
+
+    /** 把状态回发给开界面的玩家（服务端调用；客户端自己调是空操作）。 */
+    public void sendState() {
+        if (ownerPlayer instanceof net.minecraft.server.network.ServerPlayerEntity sp) {
+            RENetworking.sendEditState(sp, toStateNbt());
+        }
+    }
+
+    /** mode 切换。返回是否真的改了。 */
+    public boolean applySetMode(int ordinal) {
+        PackageData.PackageMode[] modes = PackageData.PackageMode.values();
+        if (ordinal < 0 || ordinal >= modes.length) return false;
+        inventory.setMode(modes[ordinal]);
+        return true;
+    }
+
+    /** 权重设置：钳到 [0, MAX_WEIGHT]。0 = 该条目在 RANDOM 里被跳过（但仍留在包里）。 */
+    public boolean applySetWeight(int slot, int weight) {
+        if (slot < 0 || slot >= EDITOR_SLOTS) return false;
+        inventory.setWeight(slot, Math.max(0, Math.min(MAX_WEIGHT, weight)));
+        return true;
+    }
+
+    /** 删除条目：清空格子并把权重复位（不清权重会让新拖入的物品继承上一次的权重）。 */
+    public boolean applyClearSlot(int slot) {
+        if (slot < 0 || slot >= EDITOR_SLOTS) return false;
+        inventory.setStack(slot, ItemStack.EMPTY);
+        inventory.setWeight(slot, 1);
+        return true;
+    }
+
+    /**
+     * 档位切换：tier 编码在**物品 id** 上（{@code package_rare}），所以换档 = 换一件物品，
+     * 内容/NBT 照搬。
+     *
+     * <p>★换完必须整体换绑身份基准★（originalStack / handStackRef / NBT 快照 / 库存绑定）：
+     * 否则下一次 flush 的 {@link #isSamePackage} 会把新物品判成「玩家换了包裹」而拒写，
+     * 症状是「切档后拖进去的物品一个也不保存」，且零报错。
+     */
+    public boolean applySetTier(String tierId) {
+        PlayerEntity player = ownerPlayer;
+        if (player == null || tierId == null) return false;
+        // 先把最新编辑落进当前物品，换档时 NBT 才是最新的
+        flushToHand(player);
+        ItemStack current = player.getStackInHand(this.hand);
+        if (!isSamePackage(current)) return false;
+        String path = net.minecraft.registry.Registries.ITEM.getId(current.getItem()).getPath();
+        String targetId = PackageCatalog.itemIdForTier(path, tierId);
+        if (targetId == null) return false;
+        Item target = net.minecraft.registry.Registries.ITEM.get(
+                new net.minecraft.util.Identifier(LegacyInit.MOD_ID, targetId));
+        if (target == null || target == net.minecraft.item.Items.AIR) return false;
+        if (target == current.getItem()) return true; // 已经是这个档
+
+        ItemStack replacement = new ItemStack(target, Math.max(1, current.getCount()));
+        if (current.hasNbt()) replacement.setNbt(current.getNbt().copy());
+        player.setStackInHand(this.hand, replacement);
+
+        this.originalStack = replacement.copy();
+        this.handStackRef = replacement;
+        this.originalNbtSnapshot = replacement.hasNbt() ? replacement.getNbt().copy() : null;
+        this.inventory.rebind(replacement);
+        LegacyInit.LOGGER.info("[legacy] 包裹换档 {} → {}（{}）", path, targetId,
+                player.getGameProfile().getName());
+        return true;
+    }
+
+    /**
+     * 当前编辑物品的 item path（如 {@code package_rare}）。
+     *
+     * <p>★优先读手牌★：客户端与服务端是**两个** handler 实例，服务端换档不会同步这边的字段；
+     * 手牌物品会随背包同步下来，所以只有它能反映真实档位（否则档位高亮永远停在开界面那一档）。
+     */
+    public String currentItemPath() {
+        ItemStack cur = null;
+        if (ownerPlayer != null) {
+            cur = ownerPlayer.getStackInHand(this.hand);
+        }
+        if (cur == null || cur.isEmpty()) cur = this.originalStack;
+        if (cur == null || cur.isEmpty()) return "";
+        return net.minecraft.registry.Registries.ITEM.getId(cur.getItem()).getPath();
+    }
+
+    /** 当前档位 id（{@code normal/rare/...}）；未知返回空串。 */
+    public String currentTierId() {
+        String t = PackageCatalog.tierOf(currentItemPath());
+        return t == null ? "" : t;
     }
 
     @Override

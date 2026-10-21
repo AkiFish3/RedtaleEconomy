@@ -1,57 +1,406 @@
 package com.akira.redtale.economy.legacy.screen.client;
 
+import com.akira.redtale.economy.legacy.data.PackageCatalog;
+import com.akira.redtale.economy.legacy.data.PackageData;
+import com.akira.redtale.economy.legacy.init.RENetworking;
 import com.akira.redtale.economy.legacy.screen.PackageEditHandler;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.util.Formatting;
 
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 包裹可视化编辑器（T71）。
+ *
+ * <pre>
+ * ┌──────────────────────────────────────────────┐
+ * │ 编辑包裹                                      │
+ * │ 模式  [全部][随机][选择]                       │
+ * │ 档位  [普通][稀有][史诗][传说][神话][活动]      │
+ * │ ┌───────────────────────┐ ┌───────────────┐  │
+ * │ │  9 × 10 候选物品网格   │ │ 权重表        │  │
+ * │ │  （从背包拖入）        │ │ ▶ 图标 - 10 + │  │
+ * │ └───────────────────────┘ └───────────────┘  │
+ * │  玩家背包 / 快捷栏                            │
+ * └──────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <p>保存语义：**没有保存按钮**（规格 §十一 / T76）。拖入、改权重、改模式都会置脏并由服务端
+ * 1 秒 debounce 落盘 + 关窗 + 掉线三保险写入物品 NBT。
+ *
+ * <p>几何全部读 {@link PackageEditHandler} 的常量：槽位位置（服务端）与绘制/命中（这里）共用一份，
+ * 不再出现"图标在 A、点击判在 B"的错位（旧编辑器两处各写了一遍坐标）。
+ */
 public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
-    private static final Identifier TEXTURE = new Identifier("minecraft", "textures/gui/container/generic_54.png");
+
+    // ——— 几何常量（全部相对屏幕左上角，与 handler 的槽位坐标同一坐标系） ———
+    private static final int PANEL_W = 300;
+    private static final int PANEL_H = 318;
+
+    private static final int MODE_Y = 20;
+    private static final int MODE_CHIP_W = 86;
+    private static final int MODE_CHIP_H = 12;
+    private static final int MODE_CHIP_GAP = 4;
+
+    private static final int TIER_Y = 36;
+    private static final int TIER_CHIP_W = 45;
+    private static final int TIER_CHIP_H = 12;
+
+    private static final int TABLE_X = 176;
+    private static final int TABLE_W = 116;
+    private static final int TABLE_Y = PackageEditHandler.GRID_Y;
+    private static final int TABLE_ROW_H = 18;
+    private static final int TABLE_ROWS = PackageEditHandler.GRID_ROWS;
+
+    /** 表格行里三个热区的相对偏移（相对 TABLE_X）。 */
+    private static final int BTN_MINUS_X = 20;
+    private static final int BTN_W = 11;
+    private static final int WEIGHT_X = 33;
+    private static final int BTN_PLUS_X = 52;
+    private static final int NAME_X = 66;
+
+    /** 表格滚动偏移（按"已占用条目"计，不是按格子）。 */
+    private int tableScroll = 0;
+    /** 悬停缓存：用于 tooltip 与滚轮目标。 */
+    private int hoverGridSlot = -1;
+    private int hoverTableRow = -1;
 
     public PackageEditScreen(PackageEditHandler handler, PlayerInventory inventory, Text title) {
         super(handler, inventory, title);
-        this.backgroundHeight = 301;
-        this.playerInventoryTitleY = 17 + 180 + 4; // 玩家背包标题Y
+        this.backgroundWidth = PANEL_W;
+        this.backgroundHeight = PANEL_H;
+        this.playerInventoryTitleY = PackageEditHandler.INV_Y - 12;
     }
 
     @Override
     protected void init() {
         super.init();
-        this.titleX = (this.backgroundWidth - this.textRenderer.getWidth(this.title)) / 2;
+        this.titleX = 8;
         this.titleY = 6;
+        // 状态（mode/weights）不随槽位同步 —— 开界面主动要一份真值
+        RENetworking.sendEditAction(RENetworking.ACT_REQ_STATE, null);
+    }
+
+    // ————————————————————————— 绘制 —————————————————————————
+
+    private int left() {
+        return (this.width - this.backgroundWidth) / 2;
+    }
+
+    private int top() {
+        return (this.height - this.backgroundHeight) / 2;
     }
 
     @Override
     protected void drawBackground(DrawContext context, float delta, int mouseX, int mouseY) {
-        int x = (this.width - this.backgroundWidth) / 2;
-        int y = (this.height - this.backgroundHeight) / 2;
+        int x = left();
+        int y = top();
 
-        // 1. 绘制顶部（17px）
-        context.drawTexture(TEXTURE, x, y, 0, 0, 176, 17);
+        // 面板与描边（不用 vanilla 容器贴图：宽度 300 超出 176 的图集）
+        context.fill(x - 1, y - 1, x + PANEL_W + 1, y + PANEL_H + 1, 0xFF000000);
+        context.fill(x, y, x + PANEL_W, y + PANEL_H, 0xFF1B1B1F);
+        context.fill(x, y, x + PANEL_W, y + 1, 0xFF3C3C46);
 
-        // 2. 绘制中间内容区（10行 * 18px = 180px）
-        int contentY = y + 17;
-        for (int i = 0; i < 10; i++) {
-            int drawY = contentY + i * 18;
-            context.drawTexture(TEXTURE, x, drawY, 0, 17, 176, 18);
+        // 模式 chip
+        for (int i = 0; i < PackageData.PackageMode.values().length; i++) {
+            int cx = x + 8 + i * (MODE_CHIP_W + MODE_CHIP_GAP);
+            boolean active = PackageEditClientState.mode().equals(PackageData.PackageMode.values()[i].name());
+            boolean hover = inside(mouseX, mouseY, cx, y + MODE_Y, MODE_CHIP_W, MODE_CHIP_H);
+            chip(context, cx, y + MODE_Y, MODE_CHIP_W, MODE_CHIP_H, active, hover, 0xFF4A7BD0);
         }
 
-        // 3. 绘制底部+玩家背包（96px）
-        int playerInvY = contentY + 180;
-        context.drawTexture(TEXTURE, x, playerInvY, 0, 125, 176, 96);
+        // 档位 chip（special 档不参与换档）
+        List<PackageCatalog.Tier> tiers = editableTiers();
+        String currentTier = handler.currentTierId();
+        for (int i = 0; i < tiers.size(); i++) {
+            PackageCatalog.Tier tier = tiers.get(i);
+            int cx = x + 8 + i * TIER_CHIP_W;
+            boolean active = tier.id().equals(currentTier);
+            boolean hover = inside(mouseX, mouseY, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H);
+            chip(context, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H, active, hover, 0xFF000000 | tier.color());
+        }
+
+        // 网格底槽
+        int gx = x + PackageEditHandler.GRID_X;
+        int gy = y + PackageEditHandler.GRID_Y;
+        for (int r = 0; r < PackageEditHandler.GRID_ROWS; r++) {
+            for (int c = 0; c < PackageEditHandler.GRID_COLS; c++) {
+                slotBg(context, gx + c * 18 - 1, gy + r * 18 - 1);
+            }
+        }
+
+        // 权重表底
+        int tx = x + TABLE_X;
+        context.fill(tx - 1, gy - 1, tx + TABLE_W + 1, gy + TABLE_ROWS * TABLE_ROW_H + 1, 0xFF141418);
+        List<Integer> entries = occupiedSlots();
+        for (int i = 0; i < TABLE_ROWS; i++) {
+            int idx = tableScroll + i;
+            int ry = gy + i * TABLE_ROW_H;
+            if (idx < entries.size()) {
+                boolean hover = inside(mouseX, mouseY, tx, ry, TABLE_W, TABLE_ROW_H);
+                context.fill(tx, ry, tx + TABLE_W, ry + TABLE_ROW_H - 1,
+                        hover ? 0xFF33333C : 0xFF202027);
+            }
+        }
+
+        // 玩家背包底槽
+        int ix = x + PackageEditHandler.INV_X;
+        int iy = y + PackageEditHandler.INV_Y;
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 9; c++) slotBg(context, ix + c * 18 - 1, iy + r * 18 - 1);
+        }
+        for (int c = 0; c < 9; c++) slotBg(context, ix + c * 18 - 1, iy + 58 - 1);
     }
 
-    @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderBackground(context);
-        super.render(context, mouseX, mouseY, delta);
-        this.drawMouseoverTooltip(context, mouseX, mouseY);
+    private void chip(DrawContext context, int x, int y, int w, int h, boolean active, boolean hover, int accent) {
+        int fill = active ? (0xFF000000 | accent) : (hover ? 0xFF3A3A44 : 0xFF26262E);
+        context.fill(x, y, x + w, y + h, fill);
+        context.fill(x, y, x + w, y + 1, active ? 0xFFFFFFFF : 0xFF4A4A55);
+    }
+
+    private void slotBg(DrawContext context, int x, int y) {
+        context.fill(x, y, x + 18, y + 18, 0xFF2A2A31);
+        context.fill(x, y, x + 18, y + 1, 0xFF14141A);
     }
 
     @Override
     protected void drawForeground(DrawContext context, int mouseX, int mouseY) {
         super.drawForeground(context, mouseX, mouseY);
+
+        int x = left();
+        int y = top();
+
+        // 模式 chip 文案
+        PackageData.PackageMode[] modes = PackageData.PackageMode.values();
+        for (int i = 0; i < modes.length; i++) {
+            int cx = x + 8 + i * (MODE_CHIP_W + MODE_CHIP_GAP);
+            Text label = Text.translatable("screen.redtale_economy.edit.mode."
+                    + modes[i].name().toLowerCase());
+            context.drawText(this.textRenderer, label, cx + (MODE_CHIP_W - this.textRenderer.getWidth(label)) / 2,
+                    y + MODE_Y + 2, 0xFFEDEDF2, false);
+        }
+
+        // 档位 chip 文案
+        List<PackageCatalog.Tier> tiers = editableTiers();
+        for (int i = 0; i < tiers.size(); i++) {
+            PackageCatalog.Tier tier = tiers.get(i);
+            int cx = x + 8 + i * TIER_CHIP_W;
+            String name = tier.nameZh();
+            context.drawText(this.textRenderer, name,
+                    cx + (TIER_CHIP_W - 1 - this.textRenderer.getWidth(name)) / 2,
+                    y + TIER_Y + 2, 0xFF101014, false);
+        }
+
+        // 权重表内容
+        int tx = x + TABLE_X;
+        int gy = y + PackageEditHandler.GRID_Y;
+        List<Integer> entries = occupiedSlots();
+        for (int i = 0; i < TABLE_ROWS; i++) {
+            int entryIndex = tableScroll + i;
+            int ry = gy + i * TABLE_ROW_H;
+            if (entryIndex >= entries.size()) break;
+            int slot = entries.get(entryIndex);
+            ItemStack stack = this.handler.getSlot(slot).getStack();
+            if (stack.isEmpty()) continue;
+
+            // 图标（不缩放，16×16 正好塞进 18 行高）
+            context.drawItem(stack, tx + 1, ry + 1);
+
+            int weight = PackageEditClientState.weight(slot);
+            context.drawText(this.textRenderer, "-", tx + BTN_MINUS_X + 3, ry + 5, 0xFFB9B9C4, false);
+            String w = String.valueOf(weight);
+            context.drawText(this.textRenderer, w, tx + WEIGHT_X + 17 - this.textRenderer.getWidth(w),
+                    ry + 5, weight == 0 ? 0xFFE06C6C : 0xFFEDEDF2, false);
+            context.drawText(this.textRenderer, "+", tx + BTN_PLUS_X + 3, ry + 5, 0xFFB9B9C4, false);
+
+            String name = stack.getName().getString();
+            name = trim(name, TABLE_W - NAME_X - 2);
+            context.drawText(this.textRenderer, name, tx + NAME_X, ry + 5, 0xFFA9A9B4, false);
+        }
+
+        // 汇总：总权重（RANDOM 模式下就是抽取概率的分母）——放标题右侧，不占背包区
+        int total = 0;
+        for (int slot : entries) total += Math.max(0, PackageEditClientState.weight(slot));
+        String summary = Text.translatable("screen.redtale_economy.edit.total", total,
+                entries.size()).getString();
+        context.drawText(this.textRenderer, summary,
+                x + PANEL_W - 8 - this.textRenderer.getWidth(summary), y + 6, 0xFF8E8E9A, false);
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        updateHover(mouseX, mouseY);
+        this.renderBackground(context);
+        super.render(context, mouseX, mouseY, delta);
+
+        // 悬停提示：网格格子上显示「物品 / 权重 / 滚轮调整」，表格行显示完整名
+        List<Text> tip = new ArrayList<>();
+        if (hoverGridSlot >= 0) {
+            ItemStack stack = this.handler.getSlot(hoverGridSlot).getStack();
+            if (!stack.isEmpty()) {
+                tip.add(stack.getName());
+                tip.add(Text.translatable("screen.redtale_economy.edit.weight",
+                        PackageEditClientState.weight(hoverGridSlot)).formatted(Formatting.GRAY));
+                tip.add(Text.translatable("screen.redtale_economy.edit.hint").formatted(Formatting.DARK_GRAY));
+            }
+        }
+        if (!tip.isEmpty()) {
+            context.drawTooltip(this.textRenderer, tip, mouseX, mouseY);
+        }
+        this.drawMouseoverTooltip(context, mouseX, mouseY);
+    }
+
+    // ————————————————————————— 命中 —————————————————————————
+
+    private static boolean inside(double mx, double my, int x, int y, int w, int h) {
+        return mx >= x && mx < x + w && my >= y && my < y + h;
+    }
+
+    private void updateHover(double mouseX, double mouseY) {
+        hoverGridSlot = gridSlotAt(mouseX, mouseY);
+        hoverTableRow = tableRowAt(mouseX, mouseY);
+    }
+
+    /**
+     * 鼠标 → 网格 slot index。★按 handler 常量算，不重复写坐标★：与服务端槽位同一份几何，
+     * 布局改动不会出现命中错位。
+     */
+    private int gridSlotAt(double mouseX, double mouseY) {
+        int gx = left() + PackageEditHandler.GRID_X;
+        int gy = top() + PackageEditHandler.GRID_Y;
+        int w = PackageEditHandler.GRID_COLS * 18;
+        int h = PackageEditHandler.GRID_ROWS * 18;
+        if (!inside(mouseX, mouseY, gx, gy, w, h)) return -1;
+        int col = (int) ((mouseX - gx) / 18);
+        int row = (int) ((mouseY - gy) / 18);
+        int idx = row * PackageEditHandler.GRID_COLS + col;
+        return idx >= 0 && idx < PackageEditHandler.EDITOR_SLOTS ? idx : -1;
+    }
+
+    /** 鼠标 → 权重表第几行（0..TABLE_ROWS-1），不在表格上返回 -1。 */
+    private int tableRowAt(double mouseX, double mouseY) {
+        int tx = left() + TABLE_X;
+        int gy = top() + PackageEditHandler.GRID_Y;
+        if (!inside(mouseX, mouseY, tx, gy, TABLE_W, TABLE_ROWS * TABLE_ROW_H)) return -1;
+        return (int) ((mouseY - gy) / TABLE_ROW_H);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int x = left();
+        int y = top();
+
+        // 模式 chip（只吃左键）
+        if (button == 0) {
+            PackageData.PackageMode[] modes = PackageData.PackageMode.values();
+            for (int i = 0; i < modes.length; i++) {
+                int cx = x + 8 + i * (MODE_CHIP_W + MODE_CHIP_GAP);
+                if (inside(mouseX, mouseY, cx, y + MODE_Y, MODE_CHIP_W, MODE_CHIP_H)) {
+                    final int ordinal = i;
+                    RENetworking.sendEditAction(RENetworking.ACT_SET_MODE, buf -> buf.writeVarInt(ordinal));
+                    return true;
+                }
+            }
+            // 档位 chip
+            List<PackageCatalog.Tier> tiers = editableTiers();
+            for (int i = 0; i < tiers.size(); i++) {
+                int cx = x + 8 + i * TIER_CHIP_W;
+                if (inside(mouseX, mouseY, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H)) {
+                    final String tierId = tiers.get(i).id();
+                    RENetworking.sendEditAction(RENetworking.ACT_SET_TIER, buf -> buf.writeString(tierId));
+                    return true;
+                }
+            }
+        }
+
+        // 权重表
+        int row = tableRowAt(mouseX, mouseY);
+        if (row >= 0) {
+            List<Integer> entries = occupiedSlots();
+            int entryIndex = tableScroll + row;
+            if (entryIndex < entries.size()) {
+                int slot = entries.get(entryIndex);
+                double relX = mouseX - (x + TABLE_X);
+                int weight = PackageEditClientState.weight(slot);
+                if (button == 0 && relX >= BTN_MINUS_X && relX < BTN_MINUS_X + BTN_W) {
+                    RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
+                            buf -> { buf.writeVarInt(slot); buf.writeVarInt(Math.max(0, weight - 1)); });
+                    return true;
+                }
+                if (button == 0 && relX >= BTN_PLUS_X && relX < BTN_PLUS_X + BTN_W) {
+                    RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
+                            buf -> { buf.writeVarInt(slot); buf.writeVarInt(Math.min(
+                                    PackageEditClientState.maxWeight(), weight + 1)); });
+                    return true;
+                }
+                if (button == 1) {
+                    // 右键删条目（拖回背包也可以，但右键更快）
+                    RENetworking.sendEditAction(RENetworking.ACT_CLEAR_SLOT, buf -> buf.writeVarInt(slot));
+                    return true;
+                }
+            }
+            // 点在表格空白处：交给 super，别把点击吞掉
+        }
+
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+        // 表格上滚动 = 翻页
+        if (tableRowAt(mouseX, mouseY) >= 0) {
+            int occupied = occupiedSlots().size();
+            int maxScroll = Math.max(0, occupied - TABLE_ROWS);
+            tableScroll = Math.max(0, Math.min(maxScroll, tableScroll - (int) Math.signum(amount)));
+            return true;
+        }
+        // 网格上滚动 = 调权重（★只对已有物品生效★：空格子滚轮会变成"给未来物品预设权重"，很反直觉）
+        int slot = gridSlotAt(mouseX, mouseY);
+        if (slot >= 0 && !this.handler.getSlot(slot).getStack().isEmpty()) {
+            int weight = PackageEditClientState.weight(slot);
+            int next = Math.max(0, Math.min(PackageEditClientState.maxWeight(),
+                    weight + (int) Math.signum(amount)));
+            if (next != weight) {
+                RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
+                        buf -> { buf.writeVarInt(slot); buf.writeVarInt(next); });
+            }
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, amount);
+    }
+
+    // ————————————————————————— 小工具 —————————————————————————
+
+    /** 参与换档的档位（跳过 special：surprise 是全局单件，不随系列展开）。 */
+    private static List<PackageCatalog.Tier> editableTiers() {
+        List<PackageCatalog.Tier> out = new ArrayList<>();
+        for (PackageCatalog.Tier t : PackageCatalog.tiers()) {
+            if (!t.special()) out.add(t);
+        }
+        return out;
+    }
+
+    /** 已占用格子（按 slot 升序），表格与汇总都用这一份口径。 */
+    private List<Integer> occupiedSlots() {
+        List<Integer> out = new ArrayList<>();
+        for (int i = 0; i < PackageEditHandler.EDITOR_SLOTS; i++) {
+            if (!this.handler.getSlot(i).getStack().isEmpty()) out.add(i);
+        }
+        return out;
+    }
+
+    private String trim(String s, int maxWidth) {
+        if (this.textRenderer.getWidth(s) <= maxWidth) return s;
+        StringBuilder sb = new StringBuilder();
+        for (char c : s.toCharArray()) {
+            if (this.textRenderer.getWidth(sb.toString() + c + "…") > maxWidth) break;
+            sb.append(c);
+        }
+        return sb + "…";
     }
 }

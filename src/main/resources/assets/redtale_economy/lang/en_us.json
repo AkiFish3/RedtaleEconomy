@@ -405,5 +405,11 @@
   "series.redtale_economy.package": "Package",
   "series.redtale_economy.chest": "Chest",
   "series.redtale_economy.crate": "Crate",
-  "tooltip.redtale_economy.tier": "Tier"
+  "tooltip.redtale_economy.tier": "Tier",
+  "screen.redtale_economy.edit.mode.all": "All",
+  "screen.redtale_economy.edit.mode.choose": "Choose",
+  "screen.redtale_economy.edit.mode.random": "Random",
+  "screen.redtale_economy.edit.weight": "Weight: %s",
+  "screen.redtale_economy.edit.hint": "Scroll to change weight",
+  "screen.redtale_economy.edit.total": "Total %s · %s entries"
 }

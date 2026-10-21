@@ -4,6 +4,7 @@ import com.akira.redtale.economy.legacy.LegacyInit;
 import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.entity.PackageEntity;
 import com.akira.redtale.economy.legacy.screen.PackageChooseHandler;
+import com.akira.redtale.economy.legacy.screen.PackageEditHandler;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -26,6 +27,31 @@ public class RENetworking {
     // 属于"客户端发了服务端也没人收"的静默丢包陷阱，已删（T38 清理）。
     public static final Identifier SELECT_ITEM = LegacyInit.id("select_item");
     public static final Identifier CLOSE_CHOOSE_PACKAGE = LegacyInit.id("close_choose_package");
+    /** T71：编辑器动作（C2S）。载荷 = varInt action + 动作参数。 */
+    public static final Identifier EDIT_ACTION = LegacyInit.id("package_edit_action");
+    /** T71：编辑器状态回发（S2C）。载荷 = 一个 NBT（mode / weights / maxWeight）。 */
+    public static final Identifier EDIT_STATE = LegacyInit.id("package_edit_state");
+
+    public static final int ACT_SET_MODE = 0;
+    public static final int ACT_SET_WEIGHT = 1;
+    public static final int ACT_CLEAR_SLOT = 2;
+    public static final int ACT_SET_TIER = 3;
+    public static final int ACT_REQ_STATE = 4;
+
+    /** 客户端：发一个编辑器动作。{@code body} 里写参数（不含 action 本身）。 */
+    public static void sendEditAction(int action, java.util.function.Consumer<PacketByteBuf> body) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeVarInt(action);
+        if (body != null) body.accept(buf);
+        ClientPlayNetworking.send(EDIT_ACTION, buf);
+    }
+
+    /** 服务端：回发编辑器状态。 */
+    public static void sendEditState(ServerPlayerEntity player, net.minecraft.nbt.NbtCompound state) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeNbt(state);
+        ServerPlayNetworking.send(player, EDIT_STATE, buf);
+    }
 
     public static void sendSelectItemPacket(int index, int entityId) {
         PacketByteBuf buf = PacketByteBufs.create();
@@ -109,6 +135,53 @@ public class RENetworking {
 
                 pkgEntity.setSelectedItem(new PackageData.PackageItem(choosable.get(index).copy(), 1));
                 player.closeHandledScreen();
+            });
+        });
+
+        // 3. 客户端 → 服务端：编辑器动作（T71 可视化编辑器）
+        // ★先读完载荷再 server.execute★：PacketByteBuf 只在当前回调里有效，跨线程读会读到已释放的缓冲。
+        // 身份闸门 = `player.currentScreenHandler` 必须就是编辑器本身 —— 这条天然挡住"改客户端驱动别人的界面"，
+        // 也不需要额外传 syncId（原版 openHandledScreen 已经把 handler 与玩家绑定）。
+        ServerPlayNetworking.registerGlobalReceiver(EDIT_ACTION, (server, player, handler, buf, responseSender) -> {
+            int action = buf.readVarInt();
+            int slot = -1;
+            int value = -1;
+            String tier = null;
+            try {
+                if (action == ACT_SET_WEIGHT) {
+                    slot = buf.readVarInt();
+                    value = buf.readVarInt();
+                } else if (action == ACT_CLEAR_SLOT) {
+                    slot = buf.readVarInt();
+                } else if (action == ACT_SET_MODE) {
+                    value = buf.readVarInt();
+                } else if (action == ACT_SET_TIER) {
+                    tier = buf.readString(64);
+                }
+            } catch (Throwable t) {
+                LegacyInit.LOGGER.warn("package_edit_action 载荷解析失败（action={}）：{}", action, t.toString());
+                return;
+            }
+            final int fSlot = slot;
+            final int fValue = value;
+            final String fTier = tier;
+            final int fAction = action;
+            server.execute(() -> {
+                if (!(player.currentScreenHandler instanceof PackageEditHandler edit)) {
+                    LegacyInit.LOGGER.warn("package_edit_action 丢弃：{} 当前界面不是包裹编辑器（action={}）",
+                            player.getGameProfile().getName(), fAction);
+                    return;
+                }
+                switch (fAction) {
+                    case ACT_REQ_STATE -> { /* 只是要一份状态，下面统一回发 */ }
+                    case ACT_SET_MODE -> edit.applySetMode(fValue);
+                    case ACT_SET_WEIGHT -> edit.applySetWeight(fSlot, fValue);
+                    case ACT_CLEAR_SLOT -> edit.applyClearSlot(fSlot);
+                    case ACT_SET_TIER -> edit.applySetTier(fTier);
+                    default -> LegacyInit.LOGGER.warn("package_edit_action 未知动作 {}（已忽略）", fAction);
+                }
+                // 无论成功与否都回发真值：客户端据此对齐，避免"界面显示改了、实际没改"
+                edit.sendState();
             });
         });
 

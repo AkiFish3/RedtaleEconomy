@@ -405,5 +405,11 @@
   "series.redtale_economy.package": "包裹",
   "series.redtale_economy.chest": "宝箱",
   "series.redtale_economy.crate": "货箱",
-  "tooltip.redtale_economy.tier": "档位"
+  "tooltip.redtale_economy.tier": "档位",
+  "screen.redtale_economy.edit.mode.all": "全部",
+  "screen.redtale_economy.edit.mode.choose": "选择",
+  "screen.redtale_economy.edit.mode.random": "随机",
+  "screen.redtale_economy.edit.weight": "权重：%s",
+  "screen.redtale_economy.edit.hint": "滚轮调整权重",
+  "screen.redtale_economy.edit.total": "总权重 %s · %s 条"
 }

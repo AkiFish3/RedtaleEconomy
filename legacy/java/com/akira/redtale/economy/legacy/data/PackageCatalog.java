@@ -95,6 +95,31 @@ public final class PackageCatalog {
         return s == null ? null : s.clone();
     }
 
+    /** itemPath → tier id；未知返回 null。T71 档位高亮用。 */
+    public static String tierOf(String itemPath) {
+        String[] s = SKIN.get(itemPath);
+        return s == null ? null : s[1];
+    }
+
+    /**
+     * 同系列换档：给定当前物品路径与目标 tier，返回目标物品 id（不含命名空间）；找不到返回 null。
+     *
+     * <p>★只走非 legacy 的正式 id★：旧别名（{@code normal_package} 等）只用来兼容老存档，
+     * 换档后应落到 {@code package_xxx}，否则会一直在别名之间横跳、创造栏里也找不到对应条目。
+     * special 档位（{@code surprise}）不随系列展开 ⇒ 从普通档换不进去（返回 null）。
+     */
+    public static String itemIdForTier(String currentPath, String targetTierId) {
+        String[] skin = SKIN.get(currentPath);
+        if (skin == null || targetTierId == null) return null;
+        String seriesId = skin[0];
+        for (ItemDef def : ITEMS) {
+            if (def.legacy()) continue;
+            if (def.series() == null || !def.series().id().equals(seriesId)) continue;
+            if (def.tier().id().equals(targetTierId)) return def.id();
+        }
+        return null;
+    }
+
     public static Series seriesById(String id) {
         for (Series s : SERIES) if (s.id().equals(id)) return s;
         return SERIES.isEmpty() ? null : SERIES.get(0);

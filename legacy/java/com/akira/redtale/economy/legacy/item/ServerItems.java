@@ -4,7 +4,9 @@ import com.akira.redtale.economy.legacy.LegacyInit;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.client.item.TooltipContext;
 import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroups;
+import net.minecraft.item.ItemGroup;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
@@ -45,6 +47,16 @@ import java.util.function.Consumer;
 public final class ServerItems {
 
     private static final Map<String, Item> REGISTERED = new LinkedHashMap<>();
+
+    /**
+     * 创造栏「原材料」标签页的注册键。
+     *
+     * <p>★不用 {@code ItemGroups.INGREDIENTS}★：该字段在 yarn 里 private，只有靠 Fabric API 的
+     * access widener 才可读 ⇒ 全量重编译（loom 缓存重建 / 换机器）时会报
+     * 「INGREDIENTS 在 ItemGroups 中是 private 访问控制」。手搓 RegistryKey 等价且无 AW 依赖。
+     */
+    private static final RegistryKey<ItemGroup> TAB_INGREDIENTS =
+            RegistryKey.of(RegistryKeys.ITEM_GROUP, new Identifier("minecraft", "ingredients"));
     private static boolean registered = false;
 
     private ServerItems() {
@@ -129,7 +141,7 @@ public final class ServerItems {
         Registry.register(Registries.ITEM, identifier, item);
         REGISTERED.put(id, item);
         if (spec.creativeTab) {
-            ItemGroupEvents.modifyEntriesEvent(ItemGroups.INGREDIENTS).register(entries -> entries.add(item));
+            ItemGroupEvents.modifyEntriesEvent(TAB_INGREDIENTS).register(entries -> entries.add(item));
         }
         return item;
     }
