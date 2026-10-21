@@ -108,6 +108,17 @@ java {
 	targetCompatibility = JavaVersion.VERSION_17
 }
 
+// legacy/ 是旧模 redtale 的移植代码（B 队列独占写权限，见 _QUEUE_SPLIT.md）。
+// 单独放源码根、不进 src/main/java，避免与 A 队列的 economy.* 混淆归属。
+// 包名 com.akira.redtale.economy.legacy.*，编译进同一个 jar。
+sourceSets {
+	main {
+		java {
+			srcDir 'legacy/java'
+		}
+	}
+}
+
 jar {
 	from("LICENSE") {
 		rename { "${it}_${project.base.archivesName.get()}" }
