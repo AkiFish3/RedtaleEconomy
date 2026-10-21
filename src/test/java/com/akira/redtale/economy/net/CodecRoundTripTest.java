@@ -110,6 +110,16 @@ class CodecRoundTripTest {
 				() -> new ShopProtocol.TaxInfo(true, 5, 3, false, "blacklist",
 						List.of("minecraft:stone", "coc:*"))));
 
+		// 页面用可见行数/条数上限的重载：headless 单测没有配置层，不能走 ShopConfig
+		all.add(of("shop/page",
+				Codec.of("shop/page",
+						(buf, p) -> ShopProtocol.writePage(buf, p, 10),
+						buf -> ShopProtocol.readPage(buf, 41)),
+				() -> new ShopProtocol.Page("shopA", "测试店", "橡木", 1, 5, 168,
+						List.of(new ShopProtocol.Entry("minecraft:oak_slab", 12, 5, 40, true, true),
+								new ShopProtocol.Entry("minecraft:stone", 3, 1, -1, true, false)),
+						List.of("minecraft", "coc"), List.of("建材", "建材/木材"))));
+
 		// 仓储没在这里做往返：ItemStack 的静态初始化要求完整 Bootstrap（headless 单测里
 		// 构造 ItemStack.EMPTY 就抛 ExceptionInInitializerError）⇒ 交给 runServer 阶段的
 		// 实机验收。它的列表读取同样已经换成 Codecs.readList，与上面的用例共用同一实现。
@@ -196,6 +206,20 @@ class CodecRoundTripTest {
 			assertEquals(512, back.items().size());
 			assertEquals("mod511:block", back.items().get(511));
 			assertTrue(!buf.isReadable(), "名单超限后不该剩字节");
+		} finally {
+			buf.release();
+		}
+	}
+
+	/** 商店页尾部那个 visibleRows 必须是「写什么读什么」（曾漏读导致协议不完整）。 */
+	@Test
+	void pageCarriesVisibleRowsToClient() {
+		PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+		try {
+			ShopProtocol.writePage(buf, ShopProtocol.Page.empty("s", ""), 10);
+			ShopProtocol.readPage(buf, 41);
+			assertEquals(10, ShopProtocol.lastVisibleRows());
+			assertTrue(!buf.isReadable(), "可见行数之后不该还有字节");
 		} finally {
 			buf.release();
 		}
