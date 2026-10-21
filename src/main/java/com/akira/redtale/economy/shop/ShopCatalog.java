@@ -618,6 +618,18 @@ public final class ShopCatalog implements ShopSource {
 				rejected.add(t + "（缺命名空间）");
 				continue;
 			}
+			// ★注册表校验★ 单件上架走 Brigadier 的 ItemIdArgument，天然只能是真物品；
+			// 批量走 greedyString ⇒ 不做这一层就会把 "devprobe:__none__" 这种 id 静默写进商店，
+			// 之后 GUI/图标解析全是空栈（2026-10-21 截图轮实测写入 testshop 并需手工还原）。
+			try {
+				if (!net.minecraft.registry.Registries.ITEM.containsId(new net.minecraft.util.Identifier(t))) {
+					rejected.add(t + "（不是已注册物品）");
+					continue;
+				}
+			} catch (Exception bad) {
+				rejected.add(t + "（非法 id）");
+				continue;
+			}
 			want.add(t);
 		}
 		if (want.isEmpty()) return new BatchAddReport(0, existing, rejected);
@@ -816,6 +828,14 @@ public final class ShopCatalog implements ShopSource {
 		ShopDef def = SHOPS.get(shopId);
 		if (def == null || def.file() == null) return "商店不存在";
 		if (itemId.indexOf(':') < 0) return "商品 id 缺命名空间：" + itemId;
+		// 与 addItems 同口径：命令行走 ItemIdArgument 时这里是冗余，但配置文件/脚本/旧数据回灌不经过解析器。
+		try {
+			if (!net.minecraft.registry.Registries.ITEM.containsId(new net.minecraft.util.Identifier(itemId))) {
+				return "不是已注册物品：" + itemId;
+			}
+		} catch (Exception e) {
+			return "非法 id：" + itemId;
+		}
 		String priceError = PricePolicy.check(buy, sell);
 		if (priceError != null) {
 			RedtaleEconomy.LOGGER.warn("[shop] 拒绝新增 {}/{}：{}", shopId, itemId, priceError);
