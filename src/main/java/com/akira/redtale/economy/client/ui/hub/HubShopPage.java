@@ -40,6 +40,14 @@ public final class HubShopPage {
 	/** 最大格子：高窗口下别把 24 格拉成一大片太空的方块。 */
 	private static final int CELL_MAX = 44;
 	private static final int GAP = 3;
+	/**
+	 * T69b：卡片列表模式的行高/行间距。
+	 *
+	 * <p>一行一件：左侧 16 px 图标 + 名字 + 右侧单价/库存。22 px 是「16 图标上下各 3 留白」，
+	 * 再矮图标会贴着行描边；一行 22+2=24 px，比图标格（≥18+3）装得多，适合「翻列表找东西」。
+	 */
+	private static final int LIST_ROW = 22;
+	private static final int LIST_GAP = 2;
 	/** 目录树列宽；没有分类时整列不画，卡片区自动占满。 */
 	private static final int TREE_W = 96;
 	private static final int TREE_HEAD = 17;
@@ -65,7 +73,9 @@ public final class HubShopPage {
 		/** U11：点目录树节点（下钻）/ 点面包屑回上一级 */
 		TREE_NODE, TREE_UP,
 		/** T69：切换网格密度档（自动 → 6×4 → 8×5 → 10×6 → 自动） */
-		DENSITY
+		DENSITY,
+		/** T69b：切换「图标网格 ↔ 卡片列表」视图 */
+		VIEW
 	}
 
 	/** 选中分类的路径（空 = 全部分类）—— 树的位置就是筛选条件，两处不会不同步。 */
@@ -88,7 +98,7 @@ public final class HubShopPage {
 		return tw == 0 ? w : w - tw - 6;
 	}
 
-	/** 四个筛选 chip 的布局（宽随文字变，但两处必须算得一样）。 */
+	/** 筛选栏 chip 的布局（宽随文字变，但两处必须算得一样）。 */
 	private static int[] chipWidths(TextRenderer tr, ShopProtocol.Page page) {
 		com.akira.redtale.economy.net.ShopFilter f = ShopClientState.filter();
 		return new int[]{
@@ -97,6 +107,7 @@ public final class HubShopPage {
 				tr.getWidth(priceLabel(f)) + 10,
 				tr.getWidth(stockLabel(f)) + 10,
 				tr.getWidth(densityLabel()) + 10,
+				tr.getWidth(viewLabel()) + 10,
 		};
 	}
 
@@ -107,11 +118,11 @@ public final class HubShopPage {
 	private static String catLabel(com.akira.redtale.economy.net.ShopFilter f) {
 		String path = f.categoryOrEmpty();
 		// 树里选的是路径（木材/台阶），chip 上只显示末段，否则宽度吃掉整条筛选栏
-		return "类型:" + (path.isEmpty() ? "全部" : ShopTree.label(path));
+		return "类:" + (path.isEmpty() ? "全部" : ShopTree.label(path));
 	}
 
 	private static String priceLabel(com.akira.redtale.economy.net.ShopFilter f) {
-		return f.maxPrice() <= 0 ? "价格:不限" : "价格:≤" + f.maxPrice();
+		return f.maxPrice() <= 0 ? "价:不限" : "价:≤" + f.maxPrice();
 	}
 
 	private static String stockLabel(com.akira.redtale.economy.net.ShopFilter f) {
@@ -138,40 +149,16 @@ public final class HubShopPage {
 			drawTree(dc, tr, x, y + 38, TREE_W, h - 38 - 26, page, mouseX, mouseY);
 		}
 
-		// 卡片：T54 改 6×4 图标网格（格子边长自适应，见 COLS_TARGET/ROWS_TARGET）
+		// 卡片区：T54 图标网格 / T69b 卡片列表（两套几何，渲染与命中同源）
+		List<ShopProtocol.Entry> entries = page.entries();
+		if (listMode()) {
+			renderList(dc, tr, x, y, w, h, entries, selected, mouseX, mouseY);
+		} else {
+			renderGrid(dc, tr, x, y, w, h, page, entries, selected, mouseX, mouseY);
+		}
 		int gx = gridX(x, page);
 		int gw = gridW(w, page);
 		int startY = gridStartY(y);
-		int limitY = gridLimitY(y, h);
-		int[] dims = dims(gw, limitY - startY);
-		int cols = dims[0];
-		int cell = dims[1];
-		int rowCap = dims[2];
-		int blockW = cols * cell + (cols - 1) * GAP;
-		int gx0 = gx + Math.max(0, (gw - blockW) / 2);
-		List<ShopProtocol.Entry> entries = page.entries();
-		int totalRows = (entries.size() + cols - 1) / cols;
-		scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, totalRows - rowCap)));
-		// 超出部分要被裁掉：以前靠 break 不画，现在有了滚动位移，半行会压在分页条上
-		dc.enableScissor(gx, startY, gx + gw, limitY);
-		for (int i = 0; i < entries.size(); i++) {
-			int col = i % cols;
-			int row = i / cols - scrollRow;
-			int cx = gx0 + col * (cell + GAP);
-			int cy = startY + row * (cell + GAP);
-			if (cy + cell > limitY) break;
-			if (cy < startY) continue;
-			drawCell(dc, tr, cx, cy, cell, entries.get(i), i == selected, mouseX, mouseY);
-		}
-		dc.disableScissor();
-		if (totalRows > rowCap) {
-			// 右侧细滚动条（与仓储页同款：1px 轨道 + 3px 滑块）
-			int trackH = limitY - startY;
-			int barH = Math.max(10, trackH * rowCap / totalRows);
-			int barY = startY + (trackH - barH) * scrollRow / Math.max(1, totalRows - rowCap);
-			dc.fill(gx + gw - 2, startY, gx + gw - 1, limitY, HubTheme.LINE);
-			dc.fill(gx + gw - 2, barY, gx + gw - 1, barY + barH, HubTheme.MUTED);
-		}
 		if (entries.isEmpty()) {
 			boolean filtered = !ShopClientState.filter().isEmpty();
 			dc.drawText(tr, Text.literal(filtered ? "没有符合筛选条件的商品" : "暂无商品"),
@@ -197,10 +184,117 @@ public final class HubShopPage {
 		drawMini(dc, tr, x + w - 20, barY + 4, 18, 14, "卖", hasSel, mouseX, mouseY);
 	}
 
+	private static void renderGrid(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
+			ShopProtocol.Page page, List<ShopProtocol.Entry> entries, int selected,
+			double mouseX, double mouseY) {
+		// 卡片：T54 改 6×4 图标网格（格子边长自适应，见 COLS_TARGET/ROWS_TARGET）
+		int gx = gridX(x, page);
+		int gw = gridW(w, page);
+		int startY = gridStartY(y);
+		int limitY = gridLimitY(y, h);
+		int[] dims = dims(gw, limitY - startY);
+		int cols = dims[0];
+		int cell = dims[1];
+		int rowCap = dims[2];
+		int blockW = cols * cell + (cols - 1) * GAP;
+		int gx0 = gx + Math.max(0, (gw - blockW) / 2);
+		int totalRows = (entries.size() + cols - 1) / cols;
+		scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, totalRows - rowCap)));
+		// 超出部分要被裁掉：以前靠 break 不画，现在有了滚动位移，半行会压在分页条上
+		dc.enableScissor(gx, startY, gx + gw, limitY);
+		for (int i = 0; i < entries.size(); i++) {
+			int col = i % cols;
+			int row = i / cols - scrollRow;
+			int cx = gx0 + col * (cell + GAP);
+			int cy = startY + row * (cell + GAP);
+			if (cy + cell > limitY) break;
+			if (cy < startY) continue;
+			drawCell(dc, tr, cx, cy, cell, entries.get(i), i == selected, mouseX, mouseY);
+		}
+		dc.disableScissor();
+		if (totalRows > rowCap) {
+			// 右侧细滚动条（与仓储页同款：1px 轨道 + 3px 滑块）
+			int trackH = limitY - startY;
+			int barH = Math.max(10, trackH * rowCap / totalRows);
+			int barY = startY + (trackH - barH) * scrollRow / Math.max(1, totalRows - rowCap);
+			dc.fill(gx + gw - 2, startY, gx + gw - 1, limitY, HubTheme.LINE);
+			dc.fill(gx + gw - 2, barY, gx + gw - 1, barY + barH, HubTheme.MUTED);
+		}
+	}
+
+	/**
+	 * T69b：卡片列表（一行一件）。
+	 *
+	 * <p>图标网格胜在「一眼扫整页、认图比认字快」，列表胜在「名字/单价/库存直接可读」。
+	 * 一行 {@link #LIST_ROW} 高，比 18 px 的图标格装得多（24 px 行距 vs 21 px 格距），
+	 * 但一列；滚动仍按行，命中判定与网格共用 {@link #scrollRow}。
+	 */
+	private static void renderList(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
+			List<ShopProtocol.Entry> entries, int selected, double mouseX, double mouseY) {
+		ShopProtocol.Page page = ShopClientState.page();
+		int gx = gridX(x, page);
+		int gw = gridW(w, page);
+		int startY = gridStartY(y);
+		int limitY = gridLimitY(y, h);
+		int rowCap = listRows(limitY - startY);
+		int totalRows = entries.size();
+		scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, totalRows - rowCap)));
+		int rowW = gw - 6;   // 右侧 6 px 留给滚动条，别让文字压在滑块下面
+		dc.enableScissor(gx, startY, gx + gw, limitY);
+		for (int i = 0; i < entries.size(); i++) {
+			int ry = startY + (i - scrollRow) * (LIST_ROW + LIST_GAP);
+			if (ry + LIST_ROW > limitY) break;
+			if (ry < startY) continue;
+			drawListRow(dc, tr, gx, ry, rowW, entries.get(i), i == selected, mouseX, mouseY);
+		}
+		dc.disableScissor();
+		if (totalRows > rowCap) {
+			int trackH = limitY - startY;
+			int barH = Math.max(10, trackH * rowCap / totalRows);
+			int barY = startY + (trackH - barH) * scrollRow / Math.max(1, totalRows - rowCap);
+			dc.fill(gx + gw - 2, startY, gx + gw - 1, limitY, HubTheme.LINE);
+			dc.fill(gx + gw - 2, barY, gx + gw - 1, barY + barH, HubTheme.MUTED);
+		}
+	}
+
+	/** 列表一行：图标 + 名字 + 右侧买价与库存（卖价/含税走 hover 浮层，行内塞不下）。 */
+	private static void drawListRow(DrawContext dc, TextRenderer tr, int x, int y, int w,
+			ShopProtocol.Entry e, boolean selected, double mouseX, double mouseY) {
+		boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + LIST_ROW;
+		dc.fill(x, y, x + w, y + LIST_ROW, selected ? HubTheme.SELECT : (hover ? HubTheme.INNER_HOVER : HubTheme.CARD));
+		int edge = selected ? HubTheme.GOLD : HubTheme.LINE;
+		dc.fill(x, y, x + w, y + 1, edge);
+		dc.fill(x, y + LIST_ROW - 1, x + w, y + LIST_ROW, edge);
+
+		ItemStack stack = stackOf(e.itemId());
+		if (!stack.isEmpty()) {
+			dc.drawItem(stack, x + 3, y + 3);
+		} else {
+			// 图标缺失（模组没装）：占位方块 + 首字母，别留空洞
+			dc.fill(x + 3, y + 4, x + 15, y + 16, HubTheme.SLOT);
+			String ch = shortId(e.itemId()).substring(0, 1).toUpperCase(Locale.ROOT);
+			dc.drawText(tr, Text.literal(ch), x + 9 - tr.getWidth(ch) / 2, y + 6, HubTheme.TEXT, false);
+		}
+
+		String name = stack.isEmpty() ? shortId(e.itemId()) : stack.getName().getString();
+		String st = e.stock() < 0 ? "" : (e.stock() == 0 ? "缺货" : String.valueOf(e.stock()));
+		int stW = st.isEmpty() ? 0 : tr.getWidth(st) + 5;
+		int priceW = HubMoney.width(tr, e.buyPrice());
+		int nameMax = w - 22 - priceW - stW - 10;
+		dc.drawText(tr, Text.literal(trim(tr, name, Math.max(24, nameMax))), x + 22, y + 7,
+				HubTheme.TEXT, false);
+		HubMoney.draw(dc, tr, x + w - 4 - stW - priceW, y + 7, e.buyPrice(), priceW + 2);
+		if (!st.isEmpty()) {
+			dc.drawText(tr, Text.literal(st), x + w - 4 - tr.getWidth(st), y + 7,
+					e.stock() == 0 ? HubTheme.DANGER : HubTheme.MUTED, false);
+		}
+	}
+
 	private static void drawFilterBar(DrawContext dc, TextRenderer tr, int x, int y, int w,
 			ShopProtocol.Page page, double mouseX, double mouseY) {
 		com.akira.redtale.economy.net.ShopFilter f = ShopClientState.filter();
-		String[] labels = {modLabel(page, f), catLabel(f), priceLabel(f), stockLabel(f), densityLabel()};
+		String[] labels = {modLabel(page, f), catLabel(f), priceLabel(f), stockLabel(f),
+				densityLabel(), viewLabel()};
 		int[] widths = chipWidths(tr, page);
 		int cx = x;
 		for (int i = 0; i < labels.length; i++) {
@@ -220,6 +314,24 @@ public final class HubShopPage {
 					active ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
 			cx += widths[i] + 4;
 		}
+	}
+
+	/**
+	 * 仅 dev 夹具用：第 {@code index} 个筛选 chip 的中心（喂给真实 mouseClicked）。
+	 *
+	 * <p>chip 宽度随文字变（`格:6×4` 比 `格:自动` 宽），夹具自己算坐标必然点歪；
+	 * 这里复用渲染同一份 {@link #chipWidths} 与「放不下就停」规则，越界返回 {@code null}。
+	 */
+	public static double[] chipCenter(TextRenderer tr, int x, int y, int w, int index) {
+		int[] widths = chipWidths(tr, ShopClientState.page());
+		if (index < 0 || index >= widths.length) return null;
+		int cx = x;
+		for (int i = 0; i < widths.length; i++) {
+			if (cx + widths[i] > x + w) return null;
+			if (i == index) return new double[]{cx + widths[i] / 2.0, y + 20 + 7};
+			cx += widths[i] + 4;
+		}
+		return null;
 	}
 
 	/** 目录树列：面包屑（可点回上级）+ 当前层的子分类。 */
@@ -294,7 +406,17 @@ public final class HubShopPage {
 	public static String densityLabel() {
 		int c = ClientUiConfig.shopCols;
 		int r = ClientUiConfig.shopRows;
-		return (c <= 0 || r <= 0) ? "密度:自动" : "密度:" + c + "×" + r;
+		return (c <= 0 || r <= 0) ? "格:自动" : "格:" + c + "×" + r;
+	}
+
+	/** T69b：当前视图模式（0 = 图标网格）。 */
+	public static boolean listMode() {
+		return ClientUiConfig.shopView == 1;
+	}
+
+	/** T69b：视图 chip 的显示名（渲染与点击共用）。 */
+	public static String viewLabel() {
+		return listMode() ? "视图:列表" : "视图:图标";
 	}
 
 	private static int[] dims(int gridW, int availH) {
@@ -334,7 +456,11 @@ public final class HubShopPage {
 	private static int maxScrollRow(int w, int y, int h) {
 		ShopProtocol.Page page = ShopClientState.page();
 		int entries = page == null || page.entries() == null ? 0 : page.entries().size();
-		int[] d = dims(gridW(w, page), gridLimitY(y, h) - gridStartY(y));
+		int availH = gridLimitY(y, h) - gridStartY(y);
+		if (listMode()) {
+			return Math.max(0, entries - listRows(availH));
+		}
+		int[] d = dims(gridW(w, page), availH);
 		int totalRows = (entries + d[0] - 1) / d[0];
 		return Math.max(0, totalRows - d[2]);
 	}
@@ -348,6 +474,7 @@ public final class HubShopPage {
 	private static int indexAt(ShopProtocol.Page page, double mx, double my, int gx, int gw,
 			int startY, int limitY, int[] pre) {
 		if (page == null || page.entries().isEmpty()) return -1;
+		if (listMode()) return listIndexAt(page, mx, my, gx, gw, startY, limitY);
 		int[] d = pre == null ? dims(gw, limitY - startY) : pre;
 		int cols = d[0];
 		int cell = d[1];
@@ -366,8 +493,30 @@ public final class HubShopPage {
 		return idx;
 	}
 
-	/** 滚 {@code rows} 行（正数向下），自动钳到 [0, max]。 */
-	public static void scrollByRows(int rows, int w, int y, int h) {
+	/** T69b：列表模式一屏能放几行（22+2 行距）。 */
+	private static int listRows(int availH) {
+		return Math.max(1, (availH + LIST_GAP) / (LIST_ROW + LIST_GAP));
+	}
+
+	/**
+	 * T69b：列表模式的光标命中（-1 = 没命中）。
+	 *
+	 * <p>与 {@link #renderList} 同一套 {@link #listRows}/{@link #scrollRow}：
+	 * 行间距 {@code LIST_ROW + LIST_GAP}，落在 2 px 空隙里算没命中（与网格口径一致）。
+	 */
+	private static int listIndexAt(ShopProtocol.Page page, double mx, double my, int gx, int gw,
+			int startY, int limitY) {
+		int rowW = gw - 6;
+		if (mx < gx || mx >= gx + rowW || my < startY || my >= limitY) return -1;
+		int row = (int) ((my - startY) / (LIST_ROW + LIST_GAP));
+		if (row < 0 || row >= listRows(limitY - startY)) return -1;
+		if (my - (startY + row * (LIST_ROW + LIST_GAP)) >= LIST_ROW) return -1;
+		int idx = row + scrollRow;
+		if (idx < 0 || idx >= page.entries().size()) return -1;
+		return idx;
+	}
+
+	/** 滚 {@code rows} 行（正数向下），自动钳到 [0, max]。 */	public static void scrollByRows(int rows, int w, int y, int h) {
 		scrollRow = Math.max(0, Math.min(maxScrollRow(w, y, h), scrollRow + rows));
 	}
 
@@ -548,7 +697,7 @@ public final class HubShopPage {
 		if (my >= y + 20 && my < y + 34) {
 			int[] widths = chipWidths(tr, page);
 			Action[] acts = {Action.FILTER_MOD, Action.FILTER_CAT, Action.FILTER_PRICE,
-					Action.FILTER_STOCK, Action.DENSITY};
+					Action.FILTER_STOCK, Action.DENSITY, Action.VIEW};
 			int cx = x;
 			for (int i = 0; i < acts.length; i++) {
 				// 与 drawFilterBar 同一条「放不下就停」规则，否则窄窗口下会点到画不出来的 chip

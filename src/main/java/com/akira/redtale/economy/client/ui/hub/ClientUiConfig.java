@@ -31,6 +31,8 @@ public final class ClientUiConfig {
 	/** T69：商店网格档位；**0 = 按窗口自动**（能放几格放几格）。 */
 	public static int shopCols = 0;
 	public static int shopRows = 0;
+	/** T69b：商店视图模式。0 = 图标网格（默认），1 = 卡片列表（一行一件，带名字/单价/库存）。 */
+	public static int shopView = 0;
 
 	private static Path file;
 
@@ -54,6 +56,7 @@ public final class ClientUiConfig {
 					? Math.max(0, o.get("rankSyncCooldownSeconds").getAsInt()) : rankSyncCooldownSeconds;
 			shopCols = o.has("shopCols") ? Math.max(0, Math.min(12, o.get("shopCols").getAsInt())) : shopCols;
 			shopRows = o.has("shopRows") ? Math.max(0, Math.min(8, o.get("shopRows").getAsInt())) : shopRows;
+			shopView = o.has("shopView") ? Math.max(0, Math.min(1, o.get("shopView").getAsInt())) : shopView;
 		} catch (Exception ignored) {
 			// 配置坏了就用默认值，不阻塞界面
 		}
@@ -74,6 +77,7 @@ public final class ClientUiConfig {
 			o.addProperty("rankSyncCooldownSeconds", rankSyncCooldownSeconds);
 			o.addProperty("shopCols", shopCols);
 			o.addProperty("shopRows", shopRows);
+			o.addProperty("shopView", shopView);
 			try (Writer w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
 				w.write(o.toString());
 			}

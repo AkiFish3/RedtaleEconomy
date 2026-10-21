@@ -75,6 +75,31 @@ public final class HubDev {
 		return host.mouseClicked(p[0], p[1], 0);
 	}
 
+	/**
+	 * T69b 夹具：点「视图」chip（走真实 mouseClicked）。{@code true} = 命中并已切换。
+	 * 密度 chip 同理走 {@link #clickShopDensityChip}。
+	 */
+	public static boolean clickShopViewChip(HubScreen host) {
+		return clickShopChip(host, 5);
+	}
+
+	public static boolean clickShopDensityChip(HubScreen host) {
+		return clickShopChip(host, 4);
+	}
+
+	private static boolean clickShopChip(HubScreen host, int index) {
+		if (host.page != HubPage.SHOP) return false;
+		double[] p = HubShopPage.chipCenter(host.text(), host.frame.contentX(),
+				host.frame.contentY(), host.frame.contentW(), index);
+		if (p == null) return false;
+		return host.mouseClicked(p[0], p[1], 0);
+	}
+
+	/** T69b 夹具：当前视图模式（0 = 图标网格，1 = 卡片列表）。 */
+	public static int shopViewVal(HubScreen host) {
+		return ClientUiConfig.shopView;
+	}
+
 	public static boolean clickRankToggle(HubScreen host) {
 		if (host.page != HubPage.RANK) return false;
 		int cx = host.frame.contentX();

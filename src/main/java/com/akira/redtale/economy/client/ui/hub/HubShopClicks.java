@@ -92,6 +92,14 @@ final class HubShopClicks {
 					host.shopSelected = -1;
 					host.setStatus("商店密度：" + (next[0] == 0 ? "自动" : next[0] + "×" + next[1]));
 				}
+				// T69b：视图模式循环（图标网格 ↔ 卡片列表），同样只改客户端偏好
+				case VIEW -> {
+					ClientUiConfig.shopView = ClientUiConfig.shopView == 1 ? 0 : 1;
+					ClientUiConfig.save();
+					HubShopPage.resetScroll();
+					host.shopSelected = -1;
+					host.setStatus("商店视图：" + (ClientUiConfig.shopView == 1 ? "卡片列表" : "图标网格"));
+				}
 				// U11：目录树下钻 / 回上一级 —— 树位置即筛选条件，一次点击同时完成两件事
 				case TREE_NODE, TREE_UP -> {
 					var f = ShopClientState.filter();
