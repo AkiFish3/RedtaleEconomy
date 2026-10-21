@@ -63,6 +63,11 @@ public final class ShopAdminCommands {
 				.then(CommandManager.literal("find")
 						.then(CommandManager.argument("query", StringArgumentType.greedyString())
 								.executes(ShopAdminCommands::find)))
+				// 命令面结算：与 GUI 共用 ShopNetworking.trade（同一套库存/限购/税），供无 GUI 场景验收
+				.then(CommandManager.literal("buy")
+						.then(tradeArgs(true)))
+				.then(CommandManager.literal("sell")
+						.then(tradeArgs(false)))
 				.then(CommandManager.literal("admin")
 						.requires(ShopAdminCommands::isAdmin)
 						.then(CommandManager.literal("price")
@@ -430,6 +435,38 @@ public final class ShopAdminCommands {
 	 * <p>输出走聊天（不是 actionbar）：结果是要被逐条读的信息，一行放不下；
 	 * 开界面那种「一次性提示」才走 actionbar。
 	 */
+	/** {@code /shop buy|sell <shopId> <itemId> [count]} 的参数链（两条命令只差结算方向）。 */
+	private static com.mojang.brigadier.builder.RequiredArgumentBuilder<ServerCommandSource, String> tradeArgs(
+			boolean buy) {
+		return CommandManager.argument("shopId", StringArgumentType.word())
+				.suggests(shops())
+				.then(CommandManager.argument("itemId", ItemIdArgument.itemId())
+						.then(CommandManager.argument("count", IntegerArgumentType.integer(1))
+								.executes(c -> trade(c, buy, IntegerArgumentType.getInteger(c, "count"))))
+						.executes(c -> trade(c, buy, 1)));
+	}
+
+	private static int trade(CommandContext<ServerCommandSource> ctx, boolean buy, int count) {
+		ServerPlayerEntity player = ctx.getSource().getPlayer();
+		if (player == null) {
+			ctx.getSource().sendError(Text.literal("§c该命令只能由玩家执行（控制台没有背包）"));
+			return 0;
+		}
+		String shopId = StringArgumentType.getString(ctx, "shopId");
+		String itemId = StringArgumentType.getString(ctx, "itemId");
+		com.akira.redtale.economy.net.ShopProtocol.ActionResult r =
+				ShopNetworking.trade(player, shopId, itemId, count, buy);
+		if (!r.ok()) {
+			ctx.getSource().sendError(Text.literal("§c" + (buy ? "购买" : "出售") + "失败§8：§7"
+					+ r.messageKey() + " §8(§7" + itemId + "§8) §7余额 §f" + r.balance()));
+			return 0;
+		}
+		ctx.getSource().sendFeedback(() -> Text.literal("§a" + (buy ? "购买" : "出售") + "成功§8：§f"
+				+ count + "× §7" + itemId + " §8| §7余额 §f" + r.balance()
+				+ (r.stockRemaining() >= 0 ? " §8| §7剩余库存 §f" + r.stockRemaining() : "")), false);
+		return count;
+	}
+
 	private static int find(CommandContext<ServerCommandSource> ctx) {
 		String q = StringArgumentType.getString(ctx, "query");
 		List<ShopCrossSearch.Hit> hits = ShopCatalog.searchAll(q, 8);

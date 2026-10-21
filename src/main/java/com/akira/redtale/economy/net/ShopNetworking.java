@@ -103,19 +103,26 @@ public final class ShopNetworking {
 				src.mods(shopId), src.categories(shopId)));
 	}
 
-	private static void handleTrade(ServerPlayerEntity player, String shopId, String itemId, int count, boolean buy) {
+	/**
+	 * 唯一结算入口：GUI（{@link #handleTrade}）与命令面（{@code /shop buy|sell}）都走这里，
+	 * 保证「命令能买」不是第二条绕过库存/限购/税的实现。
+	 */
+	public static ShopProtocol.ActionResult trade(ServerPlayerEntity player, String shopId, String itemId,
+			int count, boolean buy) {
 		int max = ShopConfig.maxCountPerTrade();
 		if (count < 1 || count > max || itemId.isBlank() || itemId.length() > 128) {
-			sendAction(player, new ShopProtocol.ActionResult(false, "shop.badRequest",
-					com.akira.redtale.economy.economy.BalanceService.get(player.getUuid()), 0));
-			return;
+			return new ShopProtocol.ActionResult(false, "shop.badRequest",
+					com.akira.redtale.economy.economy.BalanceService.get(player.getUuid()), 0);
 		}
 		TransactionHandler h = handler;
-		ShopProtocol.ActionResult r = h == null
+		return h == null
 				? new ShopProtocol.ActionResult(false, "shop.notReady",
 						com.akira.redtale.economy.economy.BalanceService.get(player.getUuid()), 0)
 				: (buy ? h.buy(player, shopId, itemId, count) : h.sell(player, shopId, itemId, count));
-		sendAction(player, r);
+	}
+
+	private static void handleTrade(ServerPlayerEntity player, String shopId, String itemId, int count, boolean buy) {
+		sendAction(player, trade(player, shopId, itemId, count, buy));
 	}
 
 	// ---------------------------------------------------------------- 发包
