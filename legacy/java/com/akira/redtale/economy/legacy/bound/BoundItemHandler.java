@@ -86,4 +86,34 @@ public class BoundItemHandler {
             tooltip.add(Text.translatable("bound.tooltip.owner", ownerName).formatted(Formatting.GRAY));
         }
     }
+
+    /**
+     * tooltip 追加的健壮版：返回「可能被替换」的列表。
+     *
+     * <p>原版 {@code ItemStack.getTooltip} 返回的 List 是 {@code ArrayList}，但装了别的模组后不保证：
+     * Obscure-API 在 {@code getTooltip} 的 {@code RETURN} 上 {@code cancellable=true} 注入，
+     * extraspellattributes 用 {@code ModifyReturnValue(TAIL)} 包返回值 —— 都可能换成不可变列表。
+     * 直接 {@code add} 会抛 {@link UnsupportedOperationException}（客户端物品提示直接崩）。
+     * 因此这里兜住：不可变时复制一份再追加，由调用方回写 return value。
+     */
+    public static List<Text> withOwnerTooltip(ItemStack stack, List<Text> tooltip) {
+        if (!hasOwner(stack)) return tooltip;
+        String ownerName = getOwnerName(stack);
+        if (ownerName == null) return tooltip;
+        Text line = Text.translatable("bound.tooltip.owner", ownerName).formatted(Formatting.GRAY);
+        if (tooltip == null) {
+            List<Text> fresh = new java.util.ArrayList<>();
+            fresh.add(line);
+            return fresh;
+        }
+        try {
+            tooltip.add(line);
+            return tooltip;
+        } catch (UnsupportedOperationException immutable) {
+            List<Text> copy = new java.util.ArrayList<>(tooltip.size() + 1);
+            copy.addAll(tooltip);
+            copy.add(line);
+            return copy;
+        }
+    }
 }
