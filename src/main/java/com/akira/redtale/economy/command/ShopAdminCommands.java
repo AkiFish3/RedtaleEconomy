@@ -6,6 +6,7 @@ import com.akira.redtale.economy.lang.Lang;
 import com.akira.redtale.economy.net.ShopNetworking;
 import com.akira.redtale.economy.shop.ShopBulk;
 import com.akira.redtale.economy.shop.ShopCatalog;
+import com.akira.redtale.economy.shop.ShopCrossSearch;
 import com.akira.redtale.economy.shop.ShopStock;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -58,6 +59,10 @@ public final class ShopAdminCommands {
 				.then(CommandManager.literal("reload")
 						.requires(ShopAdminCommands::isAdmin)
 						.executes(ShopAdminCommands::reload))
+				// T25：跨店搜索（玩家侧功能，不需要管理权限）。greedyString 才能带空格和冒号
+				.then(CommandManager.literal("find")
+						.then(CommandManager.argument("query", StringArgumentType.greedyString())
+								.executes(ShopAdminCommands::find)))
 				.then(CommandManager.literal("admin")
 						.requires(ShopAdminCommands::isAdmin)
 						.then(CommandManager.literal("price")
@@ -394,6 +399,37 @@ public final class ShopAdminCommands {
 				"§a商店已重载：" + ShopCatalog.shopIds().size() + " 个 / 库存覆盖 "
 						+ ShopStock.size() + " 条"), true);
 		return 1;
+	}
+
+	/**
+	 * T25 跨店搜索：{@code /shop find <关键词>}。
+	 *
+	 * <p>输出走聊天（不是 actionbar）：结果是要被逐条读的信息，一行放不下；
+	 * 开界面那种「一次性提示」才走 actionbar。
+	 */
+	private static int find(CommandContext<ServerCommandSource> ctx) {
+		String q = StringArgumentType.getString(ctx, "query");
+		List<ShopCrossSearch.Hit> hits = ShopCatalog.searchAll(q, 8);
+		if (hits.isEmpty()) {
+			ctx.getSource().sendFeedback(() -> Text.literal("§c没找到§7：" + q
+					+ " §8（试试更短的关键词，或 /shop list 看店）"), false);
+			return 0;
+		}
+		StringBuilder sb = new StringBuilder("§8[§f跨店搜索§8] §7" + q.trim() + " §8→ §7" + hits.size() + " 条\n");
+		for (ShopCrossSearch.Hit h : hits) {
+			sb.append("§8· §f").append(h.displayName()).append(" §8<§7").append(h.itemId()).append("§8>");
+			if (h.buy() > 0) {
+				sb.append(" §a买 §f").append(h.buy());
+				sb.append(h.stock() > 0 ? "§7（库存 " + h.stock() + "）" : " §c（缺货）");
+			} else {
+				sb.append(" §7仅收购");
+			}
+			if (h.sell() > 0) sb.append(" §8| §b卖 §f").append(h.sell());
+			sb.append(" §8@ §e").append(h.shopName()).append('\n');
+		}
+		Text text = Text.literal(sb.toString().stripTrailing());
+		ctx.getSource().sendFeedback(() -> text, false);
+		return hits.size();
 	}
 
 	// ---------------------------------------------------------------- 管理

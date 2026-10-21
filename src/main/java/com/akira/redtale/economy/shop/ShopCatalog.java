@@ -831,6 +831,35 @@ public final class ShopCatalog implements ShopSource {
 		return SHOPS.get(shopId);
 	}
 
+	/**
+	 * T25 跨店搜索：一次扫全部商店，返回排序后的命中。
+	 *
+	 * <p>只读、不写盘；命中条目带上商店显示名与可成交价，玩家不用先猜在哪家店。
+	 * 排序与去重口径在 {@link ShopCrossSearch#rank}（纯逻辑，有单测）。
+	 *
+	 * @param limit 返回条数上限（调用方给 8 之类的展示用值）
+	 */
+	public static List<ShopCrossSearch.Hit> searchAll(String query, int limit) {
+		String[] tokens = ShopCrossSearch.tokens(query);
+		if (tokens.length == 0 || limit <= 0) return List.of();
+		List<ShopCrossSearch.Hit> hits = new ArrayList<>();
+		for (String shopId : shopIds()) {
+			ShopDef def = SHOPS.get(shopId);
+			if (def == null) continue;
+			String name = shopName(shopId);
+			for (ItemDef it : def.items.values()) {
+				if (!it.enabled()) continue;
+				if (!ShopCrossSearch.matches(search(shopId, it), tokens)) continue;
+				long stock = ShopStock.get(shopId, it.id(), it.stockInit());
+				long buy = buyPriceOf(shopId, it);
+				long sell = sellPrice(it);
+				hits.add(new ShopCrossSearch.Hit(shopId, name, it.id(), ItemLang.displayName(it.id()),
+						buy, sell, stock));
+			}
+		}
+		return ShopCrossSearch.rank(hits, limit);
+	}
+
 	public static ItemDef item(String shopId, String itemId) {
 		ShopDef def = SHOPS.get(shopId);
 		return def == null ? null : def.item(itemId);
