@@ -197,10 +197,21 @@ public final class TaskCommands {
 			src.sendError(Text.literal(Lang.msg("tasks.wrongMode", "submit")));
 			return 0;
 		}
-		for (TaskModule.ItemCount ic : t.items) {
-			if (countOf(p, ic.id) < ic.count) {
-				src.sendError(Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)));
+		// T05：事件型任务只认服务端记账，不数背包
+		if (t.event != null && !t.event.isBlank()) {
+			int need = TaskModule.needOf(t);
+			int have = TaskModule.eventHave(p.getUuid(), TaskModule.load(p.getUuid()), t);
+			if (have < need) {
+				String lb = t.label == null || t.label.isBlank() ? t.event : t.label;
+				src.sendError(Text.literal(lb + " " + have + "/" + need));
 				return 0;
+			}
+		} else {
+			for (TaskModule.ItemCount ic : t.items) {
+				if (countOf(p, ic.id) < ic.count) {
+					src.sendError(Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)));
+					return 0;
+				}
 			}
 		}
 		long reward = TaskModule.claimAndSave(p.getUuid(), slot);

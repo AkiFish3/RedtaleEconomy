@@ -3,11 +3,20 @@ package com.akira.redtale.economy.module;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.util.Logs;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -50,6 +59,21 @@ public final class ModuleEvents {
 		ActionResult accept(PlayerEntity player, World world, Hand hand, BlockHitResult hit);
 	}
 
+	/** 生物死亡（含玩家）。killer 可能为空（环境伤害 / 无主击杀）。 */
+	public interface DeathHook {
+		void after(LivingEntity victim, DamageSource source, ServerPlayerEntity killer);
+	}
+
+	/** 方块被玩家破坏之后（掉落已生成）。 */
+	public interface BreakHook {
+		void after(ServerPlayerEntity player, World world, BlockPos pos, BlockState state);
+	}
+
+	/** 服务器每秒（每 20 tick）一次的心跳，用于累计位移这类「无事件」进度的结算。 */
+	public interface TickHook {
+		void tick(MinecraftServer server);
+	}
+
 	/** 订阅项：id 只用于限流键与日志。包内可见，单测直接用。 */
 	record Named<T>(String id, T hook) {
 	}
@@ -58,8 +82,12 @@ public final class ModuleEvents {
 	private static final List<Named<PlayerHook>> QUITS = new ArrayList<>();
 	private static final List<Named<WorldChangeHook>> WORLD_CHANGES = new ArrayList<>();
 	private static final List<Named<BlockUseHook>> BLOCK_USES = new ArrayList<>();
+	private static final List<Named<DeathHook>> DEATHS = new ArrayList<>();
+	private static final List<Named<BreakHook>> BREAKS = new ArrayList<>();
+	private static final List<Named<TickHook>> TICKS = new ArrayList<>();
 	private static boolean installed;
 	private static boolean manifestLogged;
+	private static int tickCounter;
 
 	private ModuleEvents() {
 	}
@@ -84,6 +112,22 @@ public final class ModuleEvents {
 		BLOCK_USES.add(new Named<>(id, hook));
 	}
 
+	public static synchronized void onDeath(String id, DeathHook hook) {
+		install();
+		DEATHS.add(new Named<>(id, hook));
+	}
+
+	public static synchronized void onBlockBreak(String id, BreakHook hook) {
+		install();
+		BREAKS.add(new Named<>(id, hook));
+	}
+
+	/** 每秒一次（20 tick），不要在这里做重活。 */
+	public static synchronized void onSecond(String id, TickHook hook) {
+		install();
+		TICKS.add(new Named<>(id, hook));
+	}
+
 	/**
 	 * 订阅者清单，格式 {@code join:guild,bounty;quit:...}。
 	 * 用于启动日志与 `/rt admin modules` 一类诊断，不改运行时行为。
@@ -92,7 +136,10 @@ public final class ModuleEvents {
 		return "join:" + ids(JOINS)
 				+ ";quit:" + ids(QUITS)
 				+ ";world:" + ids(WORLD_CHANGES)
-				+ ";block:" + ids(BLOCK_USES);
+				+ ";block:" + ids(BLOCK_USES)
+				+ ";death:" + ids(DEATHS)
+				+ ";break:" + ids(BREAKS)
+				+ ";tick:" + ids(TICKS);
 	}
 
 	/** 仅测试用：清空订阅表并允许重新安装（生产路径不会调用）。 */
@@ -101,6 +148,10 @@ public final class ModuleEvents {
 		QUITS.clear();
 		WORLD_CHANGES.clear();
 		BLOCK_USES.clear();
+		DEATHS.clear();
+		BREAKS.clear();
+		TICKS.clear();
+		tickCounter = 0;
 		installed = false;
 		manifestLogged = false;
 	}
@@ -144,6 +195,46 @@ public final class ModuleEvents {
 				}
 			}
 			return ActionResult.PASS;
+		});
+
+		ServerLivingEntityEvents.AFTER_DEATH.register((victim, source) -> {
+			ServerPlayerEntity killer = null;
+			try {
+				if (source != null && source.getAttacker() instanceof ServerPlayerEntity p) killer = p;
+			} catch (Exception ignored) {
+				// 拿不到击杀者就按「无主」处理，钩子自己决定要不要记账
+			}
+			for (Named<DeathHook> n : new ArrayList<>(DEATHS)) {
+				try {
+					n.hook().after(victim, source, killer);
+				} catch (Exception e) {
+					Logs.warnOnce("ev.death." + n.id(), "[events] {} 死亡处理失败：{}", n.id(), e.getMessage());
+				}
+			}
+		});
+
+		PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+			if (!(player instanceof ServerPlayerEntity sp)) return;
+			for (Named<BreakHook> n : new ArrayList<>(BREAKS)) {
+				try {
+					n.hook().after(sp, world, pos, state);
+				} catch (Exception e) {
+					Logs.warnOnce("ev.break." + n.id(), "[events] {} 破坏处理失败：{}", n.id(), e.getMessage());
+				}
+			}
+		});
+
+		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			// 20 tick 一次即可：位移进度按秒结算，逐 tick 轮询对 TPS 不友好
+			if (++tickCounter < 20) return;
+			tickCounter = 0;
+			for (Named<TickHook> n : new ArrayList<>(TICKS)) {
+				try {
+					n.hook().tick(server);
+				} catch (Exception e) {
+					Logs.warnOnce("ev.tick." + n.id(), "[events] {} 心跳处理失败：{}", n.id(), e.getMessage());
+				}
+			}
 		});
 	}
 

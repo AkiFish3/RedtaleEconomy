@@ -113,6 +113,13 @@ public final class TaskModule implements RedtaleModule {
 		public long budget;
 		public long appliedBudget;
 		public String completion = "submit";
+		/**
+		 * T05：事件型任务的触发源（{@code kill}/{@code mine}/{@code travel}），空串 = 缴纳型。
+		 * 事件型一律是 {@code completion=detect}：由服务端记账，领取时只校验不扣物。
+		 */
+		public String event = "";
+		/** 事件目标 id（实体 / 方块）；{@code travel} 为空串 = 任何位移都算。 */
+		public String eventTarget = "";
 		public long reward = 0;
 		public boolean claimed;
 		public String claimedAt = "";
@@ -123,6 +130,26 @@ public final class TaskModule implements RedtaleModule {
 		public List<Task> tasks = new ArrayList<>();
 		public int refreshesLeft;
 	}
+
+	/**
+	 * T05 事件型任务的当日进度：{@code key = "<slot>|<target>"}，value 是已累计数（封顶 need）。
+	 *
+	 * <p>和任务本身分文件存：任务是「今天该做什么」，进度是「做到哪了」，两者写入频率差两个数量级
+	 * （挖矿每秒几条 vs 任务一天生成一次），合并会让任务文件被高频重写。
+	 */
+	public static final class Progress {
+		public String date = "";
+		public Map<String, Integer> counts = new LinkedHashMap<>();
+	}
+
+	private static final Map<UUID, Progress> PROGRESS = new LinkedHashMap<>();
+	/** 当日任务驻留（高频事件路径不再读盘）；save/claim/刷新都写回同一对象。 */
+	private static final Map<UUID, Daily> CACHE = new LinkedHashMap<>();
+	private static final java.util.Set<UUID> DIRTY = new java.util.LinkedHashSet<>();
+	private static final Map<UUID, TravelMark> TRAVEL = new LinkedHashMap<>();
+	private static Path progressDir;
+	private static boolean hooksReady;
+	private static long lastFlushAt;
 
 	// ---------------------------------------------------------------- 模块
 
@@ -140,12 +167,15 @@ public final class TaskModule implements RedtaleModule {
 	public void onLoad(ConfigManager cfg) {
 		resolveDir();
 		loadCatalogs();
+		installHooks();
 	}
 
 	@Override
 	public void onReload(ConfigManager cfg) {
 		resolveDir();
 		loadCatalogs();
+		// 管理员可能手改了 definitions/pools：清驻留缓存，下次 load 重新读盘
+		CACHE.clear();
 	}
 
 	@Override
@@ -156,6 +186,217 @@ public final class TaskModule implements RedtaleModule {
 	/** 全局参数（tasks/settings.json）。 */
 	public static ConfigStore settings() {
 		return ConfigManager.get().store(SETTINGS_FILE);
+	}
+
+	// ---------------------------------------------------------------- T05 事件型任务
+
+	/** 位移记账用的锚点：换维度或重生都要重置，否则会被算成一次「超长旅行」。 */
+	private static final class TravelMark {
+		String world = "";
+		double x, y, z;
+		double rem;
+	}
+
+	/**
+	 * 登记事件订阅。只在模块首次加载时装一次（reload 不重复装，否则同一事件会记两遍）。
+	 *
+	 * <p>craft 类暂无订阅源：Fabric 没有「玩家合成完成」事件，需要 mixin（归 B 队列的
+	 * {@code mixin/**}），所以 {@code event=craft} 的定义会被跳过并在加载时告警。
+	 */
+	private static void installHooks() {
+		if (hooksReady) return;
+		hooksReady = true;
+
+		com.akira.redtale.economy.module.ModuleEvents.onDeath("tasks", (victim, source, killer) -> {
+			if (victim == null || killer == null || victim == killer) return;
+			String id = net.minecraft.registry.Registries.ENTITY_TYPE.getId(victim.getType()).toString();
+			addEvent(killer.getUuid(), "kill", id, 1);
+		});
+
+		com.akira.redtale.economy.module.ModuleEvents.onBlockBreak("tasks",
+				(player, world, pos, state) -> {
+					if (player == null || state == null) return;
+					String id = net.minecraft.registry.Registries.BLOCK.getId(state.getBlock()).toString();
+					addEvent(player.getUuid(), "mine", id, 1);
+				});
+
+		com.akira.redtale.economy.module.ModuleEvents.onSecond("tasks", TaskModule::tickTravel);
+
+		com.akira.redtale.economy.module.ModuleEvents.onQuit("tasks", player -> {
+			TRAVEL.remove(player.getUuid());
+			flushOne(player.getUuid());
+		});
+	}
+
+	/**
+	 * 每秒结算一次水平位移（单位：格）。单秒位移 > 128 视为传送/回城，不计入，
+	 * 否则一个 {@code /tp} 就能刷满旅行任务。
+	 */
+	private static void tickTravel(net.minecraft.server.MinecraftServer server) {
+		if (server == null) return;
+		try {
+			for (net.minecraft.server.network.ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+				if (p == null || p.isRemoved()) continue;
+				String world;
+				try {
+					world = p.getWorld().getRegistryKey().getValue().toString();
+				} catch (Exception e) {
+					continue;
+				}
+				double x = p.getX(), y = p.getY(), z = p.getZ();
+				TravelMark m = TRAVEL.get(p.getUuid());
+				if (m == null) {
+					m = new TravelMark();
+					m.world = world;
+					m.x = x;
+					m.y = y;
+					m.z = z;
+					TRAVEL.put(p.getUuid(), m);
+					continue;
+				}
+				if (!world.equals(m.world)) {
+					m.world = world;
+					m.x = x;
+					m.y = y;
+					m.z = z;
+					m.rem = 0;
+					continue;
+				}
+				double dx = x - m.x, dy = y - m.y, dz = z - m.z;
+				double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				m.x = x;
+				m.y = y;
+				m.z = z;
+				if (dist <= 0.05 || dist > 128) continue;
+				m.rem += dist;
+				int meters = (int) Math.floor(m.rem);
+				if (meters <= 0) continue;
+				m.rem -= meters;
+				addEvent(p.getUuid(), "travel", "", meters);
+			}
+			if (!DIRTY.isEmpty() && System.currentTimeMillis() - lastFlushAt > 5000) flushProgress();
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.error("[tasks] 位移结算失败：{}", e.getMessage());
+		}
+	}
+
+	/**
+	 * 给该玩家的所有未领取事件任务加进度。{@code target} 空串表示「任意目标」。
+	 *
+	 * <p>只写内存 + 标脏：挖矿是高频事件，每条都落盘会把磁盘打满；真正的 flush 在
+	 * {@link #tickTravel} 的 5 秒节流里，以及下线/领取时。
+	 */
+	public static synchronized void addEvent(UUID uuid, String type, String target, int amount) {
+		if (uuid == null || type == null || type.isBlank() || amount <= 0) return;
+		Daily d = load(uuid);
+		Progress p = progress(uuid, d.date);
+		String t = target == null ? "" : target;
+		boolean changed = false;
+		for (Task task : d.tasks) {
+			if (task == null || task.claimed) continue;
+			if (!type.equalsIgnoreCase(task.event)) continue;
+			if (task.eventTarget != null && !task.eventTarget.isBlank()
+					&& !task.eventTarget.equalsIgnoreCase(t)) continue;
+			int need = needOf(task);
+			if (need <= 0) continue;
+			String key = key(task.slot, task.eventTarget);
+			int cur = p.counts.getOrDefault(key, 0);
+			if (cur >= need) continue;
+			p.counts.put(key, Math.min(need, cur + amount));
+			changed = true;
+		}
+		if (changed) DIRTY.add(uuid);
+	}
+
+	/** 事件型任务的当前进度；非事件型返回 -1（调用方据此退回背包计数）。 */
+	public static int eventHave(UUID uuid, Daily d, Task task) {
+		if (uuid == null || d == null || task == null) return -1;
+		if (task.event == null || task.event.isBlank()) return -1;
+		Progress p = progress(uuid, d.date);
+		int v = p.counts.getOrDefault(key(task.slot, task.eventTarget), 0);
+		return Math.min(v, needOf(task));
+	}
+
+	/** 读进度（内存优先；文件里的日期不是今天就当空的，不继承昨天的进度）。 */
+	private static Progress progress(UUID uuid, String date) {
+		String d = date == null ? "" : date;
+		Progress p = PROGRESS.get(uuid);
+		if (p != null && d.equals(p.date)) return p;
+		p = new Progress();
+		p.date = d;
+		Path f = progressFile(uuid);
+		if (f != null && Files.isRegularFile(f)) {
+			try (Reader r = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
+				Progress onDisk = GSON.fromJson(r, Progress.class);
+				if (onDisk != null && d.equals(onDisk.date) && onDisk.counts != null) p = onDisk;
+			} catch (Exception e) {
+				RedtaleEconomy.LOGGER.error("[tasks] 读进度 {} 失败：{}", uuid, e.getMessage());
+			}
+		}
+		PROGRESS.put(uuid, p);
+		return p;
+	}
+
+	private static Path progressFile(UUID uuid) {
+		return progressDir == null || uuid == null ? null : progressDir.resolve(uuid + ".json");
+	}
+
+	/** 只落一个玩家的进度（下线 / 领取时调用）。 */
+	public static synchronized void flushOne(UUID uuid) {
+		if (uuid == null || !DIRTY.contains(uuid)) return;
+		Progress p = PROGRESS.get(uuid);
+		if (p != null) saveProgress(uuid, p);
+		DIRTY.remove(uuid);
+		lastFlushAt = System.currentTimeMillis();
+	}
+
+	/** 把脏进度批量落盘（5 秒节流一次）。 */
+	public static synchronized void flushProgress() {
+		if (DIRTY.isEmpty()) return;
+		for (UUID u : new ArrayList<>(DIRTY)) {
+			Progress p = PROGRESS.get(u);
+			if (p != null) saveProgress(u, p);
+		}
+		DIRTY.clear();
+		lastFlushAt = System.currentTimeMillis();
+	}
+
+	private static void saveProgress(UUID uuid, Progress p) {
+		Path f = progressFile(uuid);
+		if (f == null) return;
+		try {
+			Files.createDirectories(f.getParent());
+		} catch (IOException e) {
+			RedtaleEconomy.LOGGER.error("[tasks] 建进度目录失败：{}", e.getMessage());
+			return;
+		}
+		Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
+		try (Writer w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
+			w.write(GSON.toJson(p));
+		} catch (IOException e) {
+			RedtaleEconomy.LOGGER.error("[tasks] 写进度 {} 失败：{}", uuid, e.getMessage());
+			return;
+		}
+		try {
+			Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
+			try {
+				Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING);
+			} catch (IOException e2) {
+				RedtaleEconomy.LOGGER.error("[tasks] 落盘进度 {} 失败：{}", uuid, e2.getMessage());
+			}
+		}
+	}
+
+	/** 任务需求量 = 第一个条目（事件型只有一个目标）。 */
+	public static int needOf(Task task) {
+		if (task == null || task.items == null || task.items.isEmpty()) return 0;
+		ItemCount ic = task.items.get(0);
+		return ic == null ? 0 : Math.max(0, ic.count);
+	}
+
+	private static String key(int slot, String target) {
+		return slot + "|" + (target == null ? "" : target.toLowerCase(java.util.Locale.ROOT));
 	}
 
 	/** 容器检测策略（R26，默认 ignore 时完全跳过解析）。 */
@@ -315,8 +556,12 @@ public final class TaskModule implements RedtaleModule {
 			Path dir = r.path().resolve("tasks");
 			Files.createDirectories(dir);
 			dataDir = dir;
+			Path pd = dir.resolve("progress");
+			Files.createDirectories(pd);
+			progressDir = pd;
 		} catch (Exception e) {
 			dataDir = null;
+			progressDir = null;
 			RedtaleEconomy.LOGGER.error("[tasks] 数据目录不可用：{}", e.getMessage());
 		}
 	}
@@ -325,6 +570,9 @@ public final class TaskModule implements RedtaleModule {
 
 	public static Daily load(UUID uuid) {
 		String today = TimeUtil.today((int) settings().getLong("resetHour", 0));
+		// T05：挖矿/击杀是高频事件，每条都读盘会把磁盘打满 ⇒ 当日任务驻留内存
+		Daily cached = CACHE.get(uuid);
+		if (cached != null && today.equals(cached.date)) return cached;
 		Path f = file(uuid);
 		if (f != null && Files.isRegularFile(f)) {
 			try (Reader r = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
@@ -334,6 +582,7 @@ public final class TaskModule implements RedtaleModule {
 						// 旧存档没存 label：按池回填，界面才不会只剩 "#0"
 						if (t.label == null || t.label.isBlank()) t.label = labelOf(t.pool);
 					}
+					CACHE.put(uuid, d);
 					return d;
 				}
 			} catch (Exception e) {
@@ -346,6 +595,7 @@ public final class TaskModule implements RedtaleModule {
 	}
 
 	public static void save(UUID uuid, Daily d) {
+		if (d != null) CACHE.put(uuid, d);
 		Path f = file(uuid);
 		if (f == null) return;
 		Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
@@ -377,6 +627,12 @@ public final class TaskModule implements RedtaleModule {
 		d.date = date;
 		d.refreshesLeft = (int) settings().getLong("refreshPerDay", 3);
 
+		// T05：换批 / 换天 ⇒ 事件进度归零（进度按日期作废，绝不继承昨天的数字）
+		Progress fresh = new Progress();
+		fresh.date = date;
+		PROGRESS.put(uuid, fresh);
+		DIRTY.remove(uuid);
+
 		List<JsonObject> defs = definitions();
 		int perDay = (int) settings().getLong("tasksPerDay", 3);
 		long defaultReward = settings().getPathLong("defaultReward.money", 100);
@@ -384,7 +640,7 @@ public final class TaskModule implements RedtaleModule {
 
 		for (int slot = 0; slot < perDay && !defs.isEmpty(); slot++) {
 			JsonObject def = defs.get(rnd.nextInt(defs.size()));
-			Task t = build(def, slot, rnd);
+			Task t = def.has("event") ? buildEvent(def, slot) : build(def, slot, rnd);
 			if (t == null) continue;
 			t.reward = rewardOf(def, defaultReward);
 			d.tasks.add(t);
@@ -424,6 +680,54 @@ public final class TaskModule implements RedtaleModule {
 			return legacy.getAsLong();
 		}
 		return fallback;
+	}
+
+	/**
+	 * T05：事件型任务（不计物品，只记事件次数）。
+	 *
+	 * <p>定义格式：
+	 * <pre>{@code
+	 * { "label": "清剿僵尸", "event": { "type": "kill", "target": "minecraft:zombie", "amount": 10 },
+	 *   "reward": { "money": 200 } }
+	 * }</pre>
+	 * {@code type} 支持 {@code kill} / {@code mine} / {@code travel}；{@code travel} 不需要 target。
+	 */
+	private static Task buildEvent(JsonObject def, int slot) {
+		JsonElement raw = def.get("event");
+		if (raw == null || !raw.isJsonObject()) return null;
+		JsonObject ev = raw.getAsJsonObject();
+		String type = ev.has("type") ? ev.get("type").getAsString().trim().toLowerCase(java.util.Locale.ROOT) : "";
+		if (type.isBlank()) return null;
+		if ("craft".equals(type)) {
+			RedtaleEconomy.LOGGER.warn("[tasks] 事件定义用了 craft，但 Fabric 没有合成完成事件（需 mixin，归 B 队列），已跳过：{}",
+					def.has("label") ? def.get("label").getAsString() : def.toString());
+			return null;
+		}
+		if (!"kill".equals(type) && !"mine".equals(type) && !"travel".equals(type)) {
+			RedtaleEconomy.LOGGER.warn("[tasks] 未知事件类型 {}，已跳过", type);
+			return null;
+		}
+		String target = ev.has("target") ? ev.get("target").getAsString().trim() : "";
+		if (!"travel".equals(type) && target.isBlank()) {
+			RedtaleEconomy.LOGGER.warn("[tasks] {} 事件缺少 target，已跳过", type);
+			return null;
+		}
+		int amount = ev.has("amount") ? Math.max(1, ev.get("amount").getAsInt()) : 1;
+
+		Task t = new Task();
+		t.slot = slot;
+		t.pool = def.has("pool") ? def.get("pool").getAsString() : "";
+		String label = def.has("label") ? def.get("label").getAsString().trim() : "";
+		if (label.isBlank() && !t.pool.isBlank()) label = labelOf(t.pool);
+		t.label = label;
+		t.completion = "detect";
+		t.event = type;
+		t.eventTarget = target;
+		t.budget = amount;
+		t.appliedBudget = amount;
+		// 展示用：图标取目标本身（kill 的实体 id 不是物品 ⇒ 界面只画数字，这是预期的）
+		t.items.add(new ItemCount(target.isBlank() ? "minecraft:compass" : target, amount));
+		return t;
 	}
 
 	private static Task build(JsonObject def, int slot, Random rnd) {
@@ -549,6 +853,8 @@ public final class TaskModule implements RedtaleModule {
 		t.claimed = true;
 		t.claimedAt = TimeUtil.nowIso();
 		save(uuid, d);
+		// T05：领取时把进度落盘，避免刚领完就崩服导致「进度回退成未完成」
+		flushOne(uuid);
 		BalanceService.add(uuid, t.reward, com.akira.redtale.economy.storage.Ledger.TYPE_TASK,
 				"slot:" + slot + "/budget:" + t.appliedBudget);
 		return t.reward;

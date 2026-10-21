@@ -32,8 +32,11 @@ public final class TaskNetworking {
 			List<TaskProtocol.Task> tasks = new ArrayList<>();
 			for (TaskModule.Task t : d.tasks) {
 				List<TaskProtocol.Item> items = new ArrayList<>();
+				// T05：事件型任务（kill/mine/travel）的进度在服务端记账，不数背包
+				int evHave = TaskModule.eventHave(player.getUuid(), d, t);
 				for (TaskModule.ItemCount ic : t.items) {
-					items.add(new TaskProtocol.Item(ic.id, ic.count, countOf(player, ic.id)));
+					int have = evHave >= 0 ? evHave : countOf(player, ic.id);
+					items.add(new TaskProtocol.Item(ic.id, ic.count, have));
 				}
 				tasks.add(new TaskProtocol.Task(t.slot, t.reward,
 						t.completion == null ? "submit" : t.completion, t.claimed, items,
