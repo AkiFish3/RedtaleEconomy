@@ -28,6 +28,9 @@ public final class ClientUiConfig {
 	public static boolean useHub = true;         // 命令打开界面时走 Hub（而不是旧界面）
 	/** §43.6：排行页「同步」按钮的冷却秒数（0 = 不限）。客户端本地可改。 */
 	public static int rankSyncCooldownSeconds = 60;
+	/** T69：商店网格档位；**0 = 按窗口自动**（能放几格放几格）。 */
+	public static int shopCols = 0;
+	public static int shopRows = 0;
 
 	private static Path file;
 
@@ -49,6 +52,8 @@ public final class ClientUiConfig {
 			useHub = !o.has("useHub") || o.get("useHub").getAsBoolean();
 			rankSyncCooldownSeconds = o.has("rankSyncCooldownSeconds")
 					? Math.max(0, o.get("rankSyncCooldownSeconds").getAsInt()) : rankSyncCooldownSeconds;
+			shopCols = o.has("shopCols") ? Math.max(0, Math.min(12, o.get("shopCols").getAsInt())) : shopCols;
+			shopRows = o.has("shopRows") ? Math.max(0, Math.min(8, o.get("shopRows").getAsInt())) : shopRows;
 		} catch (Exception ignored) {
 			// 配置坏了就用默认值，不阻塞界面
 		}
@@ -67,6 +72,8 @@ public final class ClientUiConfig {
 			o.addProperty("tipsEnabled", tipsEnabled);
 			o.addProperty("useHub", useHub);
 			o.addProperty("rankSyncCooldownSeconds", rankSyncCooldownSeconds);
+			o.addProperty("shopCols", shopCols);
+			o.addProperty("shopRows", shopRows);
 			try (Writer w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
 				w.write(o.toString());
 			}

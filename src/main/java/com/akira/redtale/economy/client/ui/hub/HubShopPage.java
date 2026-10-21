@@ -32,6 +32,7 @@ public final class HubShopPage {
 	 * 所以窗口变化时只缩格子、不改行数；窄到放不下 6 列才减列（最小 18 px）。
 	 * 数量走右下角角标，价格/含税/库存走 hover 浮层（浮层最后画）。
 	 */
+	/** T69 的传统档（点循环时从这里起步）；实际值由 {@link #colsTarget}/{@link #rowsTarget} 决定。 */
 	private static final int COLS_TARGET = 6;
 	private static final int ROWS_TARGET = 4;
 	/** 最小可点格子：再小图标就糊在描边上，改为减列。 */
@@ -62,7 +63,9 @@ public final class HubShopPage {
 		/** U11b：四个筛选维度，点击循环取值（含"全部"） */
 		FILTER_MOD, FILTER_CAT, FILTER_PRICE, FILTER_STOCK,
 		/** U11：点目录树节点（下钻）/ 点面包屑回上一级 */
-		TREE_NODE, TREE_UP
+		TREE_NODE, TREE_UP,
+		/** T69：切换网格密度档（自动 → 6×4 → 8×5 → 10×6 → 自动） */
+		DENSITY
 	}
 
 	/** 选中分类的路径（空 = 全部分类）—— 树的位置就是筛选条件，两处不会不同步。 */
@@ -93,6 +96,7 @@ public final class HubShopPage {
 				tr.getWidth(catLabel(f)) + 10,
 				tr.getWidth(priceLabel(f)) + 10,
 				tr.getWidth(stockLabel(f)) + 10,
+				tr.getWidth(densityLabel()) + 10,
 		};
 	}
 
@@ -196,7 +200,7 @@ public final class HubShopPage {
 	private static void drawFilterBar(DrawContext dc, TextRenderer tr, int x, int y, int w,
 			ShopProtocol.Page page, double mouseX, double mouseY) {
 		com.akira.redtale.economy.net.ShopFilter f = ShopClientState.filter();
-		String[] labels = {modLabel(page, f), catLabel(f), priceLabel(f), stockLabel(f)};
+		String[] labels = {modLabel(page, f), catLabel(f), priceLabel(f), stockLabel(f), densityLabel()};
 		int[] widths = chipWidths(tr, page);
 		int cx = x;
 		for (int i = 0; i < labels.length; i++) {
@@ -205,7 +209,8 @@ public final class HubShopPage {
 				case 0 -> !f.modOrEmpty().isEmpty();
 				case 1 -> !f.categoryOrEmpty().isEmpty();
 				case 2 -> f.maxPrice() > 0;
-				default -> f.inStockOnly();
+				case 3 -> f.inStockOnly();
+				default -> false;   // T69 密度档不是筛选条件，不高亮
 			};
 			boolean hover = mouseX >= cx && mouseX < cx + widths[i] && mouseY >= y && mouseY < y + 14;
 			int bg = active ? HubTheme.PRIMARY_SOFT : (hover ? HubTheme.INNER_HOVER : HubTheme.BAR_SUB);
@@ -265,23 +270,53 @@ public final class HubShopPage {
 	 *
 	 * <p>★渲染与命中必须都调它★：格子边长随窗口变，抄成两套数字必然点错格。
 	 */
+	/** T69：自动档能放几列（按最小可点格子反推，封顶 12）。 */
+	private static int autoCols(int gridW) {
+		return Math.max(1, Math.min(12, (gridW + GAP) / (CELL_MIN + GAP)));
+	}
+
+	/** T69：自动档能放几行（同上，封顶 8）。 */
+	private static int autoRows(int availH) {
+		return Math.max(1, Math.min(8, (availH + GAP) / (CELL_MIN + GAP)));
+	}
+
+	private static int colsTarget(int gridW) {
+		int c = ClientUiConfig.shopCols;
+		return c > 0 ? Math.min(12, c) : autoCols(gridW);
+	}
+
+	private static int rowsTarget(int availH) {
+		int r = ClientUiConfig.shopRows;
+		return r > 0 ? Math.min(8, r) : autoRows(availH);
+	}
+
+	/** 当前档位的显示名（渲染与点击共用）。 */
+	public static String densityLabel() {
+		int c = ClientUiConfig.shopCols;
+		int r = ClientUiConfig.shopRows;
+		return (c <= 0 || r <= 0) ? "密度:自动" : "密度:" + c + "×" + r;
+	}
+
 	private static int[] dims(int gridW, int availH) {
-		int cols = COLS_TARGET;
-		int cell = cellSize(gridW, availH, cols);
-		// 窄成一列 12 px 时先减列，保证最小的格子还能点
+		int cols = colsTarget(gridW);
+		int rows = rowsTarget(availH);
+		int cell = cellSize(gridW, availH, cols, rows);
+		// 窄到格子不可点时先减列，保证最小格还能点
 		while (cols > 1 && cell < CELL_MIN) {
 			cols--;
-			cell = cellSize(gridW, availH, cols);
+			cell = cellSize(gridW, availH, cols, rows);
 		}
 		cell = Math.max(CELL_MIN, Math.min(CELL_MAX, cell));
-		int rows = Math.max(1, Math.min(ROWS_TARGET, (availH + GAP) / (cell + GAP)));
+		// 实际能塞下的行数（格子被 CELL_MIN 撑大时可能比档位少）
+		int fitRows = Math.max(1, (availH + GAP) / (cell + GAP));
+		rows = Math.max(1, Math.min(rows, fitRows));
 		return new int[]{cols, cell, rows};
 	}
 
-	/** 目标 6 列 4 行下能给出的最大正方形边长（宽/高取小）。 */
-	private static int cellSize(int gridW, int availH, int cols) {
-		int byW = (gridW - (cols - 1) * GAP) / cols;
-		int byH = (availH - (ROWS_TARGET - 1) * GAP) / ROWS_TARGET;
+	/** 给定行列能给出的最大正方形边长（宽/高取小）。 */
+	private static int cellSize(int gridW, int availH, int cols, int rows) {
+		int byW = (gridW - Math.max(0, cols - 1) * GAP) / Math.max(1, cols);
+		int byH = (availH - Math.max(0, rows - 1) * GAP) / Math.max(1, rows);
 		return Math.min(byW, byH);
 	}
 
@@ -512,12 +547,14 @@ public final class HubShopPage {
 		// 筛选栏优先（在卡片上方，命中区不重叠）
 		if (my >= y + 20 && my < y + 34) {
 			int[] widths = chipWidths(tr, page);
-			Action[] acts = {Action.FILTER_MOD, Action.FILTER_CAT, Action.FILTER_PRICE, Action.FILTER_STOCK};
+			Action[] acts = {Action.FILTER_MOD, Action.FILTER_CAT, Action.FILTER_PRICE,
+					Action.FILTER_STOCK, Action.DENSITY};
 			int cx = x;
-			for (int i = 0; i < 4; i++) {
+			for (int i = 0; i < acts.length; i++) {
+				// 与 drawFilterBar 同一条「放不下就停」规则，否则窄窗口下会点到画不出来的 chip
+				if (cx + widths[i] > x + w) break;
 				if (mx >= cx && mx < cx + widths[i]) return acts[i];
 				cx += widths[i] + 4;
-				if (cx > x + w) break;
 			}
 			return Action.NONE;
 		}

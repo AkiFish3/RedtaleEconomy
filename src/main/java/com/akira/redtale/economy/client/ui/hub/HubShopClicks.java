@@ -74,6 +74,24 @@ final class HubShopClicks {
 					cycleFilter(host, 3);
 					host.requestShopPage();
 				}
+				// T69：密度档循环（只改客户端偏好，立刻 save，不重新请求）
+				case DENSITY -> {
+					int[][] presets = {{0, 0}, {6, 4}, {8, 5}, {10, 6}};
+					int cur = 0;
+					for (int i = 0; i < presets.length; i++) {
+						if (presets[i][0] == ClientUiConfig.shopCols
+								&& presets[i][1] == ClientUiConfig.shopRows) {
+							cur = i;
+							break;
+						}
+					}
+					int[] next = presets[(cur + 1) % presets.length];
+					ClientUiConfig.shopCols = next[0];
+					ClientUiConfig.shopRows = next[1];
+					ClientUiConfig.save();
+					host.shopSelected = -1;
+					host.setStatus("商店密度：" + (next[0] == 0 ? "自动" : next[0] + "×" + next[1]));
+				}
 				// U11：目录树下钻 / 回上一级 —— 树位置即筛选条件，一次点击同时完成两件事
 				case TREE_NODE, TREE_UP -> {
 					var f = ShopClientState.filter();
