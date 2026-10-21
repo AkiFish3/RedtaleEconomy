@@ -34,6 +34,10 @@ public final class ShopEvents {
 
 	private static final List<Consumer<Transaction>> LISTENERS = new CopyOnWriteArrayList<>();
 
+	/** 发布计数与最近一笔（给 {@code /shop admin events} 用：证明事件真的发出去了，而不是只有单测绿）。 */
+	private static final java.util.concurrent.atomic.AtomicLong FIRED = new java.util.concurrent.atomic.AtomicLong();
+	private static volatile Transaction LAST;
+
 	private ShopEvents() {
 	}
 
@@ -48,6 +52,8 @@ public final class ShopEvents {
 	/** 通知所有监听器；单个监听器异常只记日志。 */
 	public static void fire(Transaction tx) {
 		if (tx == null) return;
+		LAST = tx;
+		FIRED.incrementAndGet();
 		for (Consumer<Transaction> l : LISTENERS) {
 			try {
 				l.accept(tx);
@@ -65,8 +71,20 @@ public final class ShopEvents {
 		return LISTENERS.size();
 	}
 
-	/** 测试/重载用：清空监听器（生产环境不该调用）。 */
+	/** 进程内已发布笔数（只增不清，重启归零）。 */
+	public static long firedCount() {
+		return FIRED.get();
+	}
+
+	/** 最近一笔成交（没有则 null）。 */
+	public static Transaction last() {
+		return LAST;
+	}
+
+	/** 测试/重载用：清空监听器与计数（生产环境不该调用）。 */
 	public static void clearAll() {
 		LISTENERS.clear();
+		LAST = null;
+		FIRED.set(0);
 	}
 }

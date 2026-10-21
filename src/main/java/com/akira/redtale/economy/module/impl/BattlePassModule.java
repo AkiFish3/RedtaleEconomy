@@ -338,10 +338,15 @@ public final class BattlePassModule implements RedtaleModule {
 	}
 
 	/**
-	 * T04 手动结算：归档当前赛季 → 写配置 {@code battlepass.json → seasonId} → 清缓存。
+	 * T04 手动结算：归档当前赛季 → 写配置 {@code battlepass.json → season.id} → 清缓存。
 	 *
 	 * <p>顺序不能反：先归档再换指针，否则换完指针就找不到"要归档的是谁"了。
 	 * 配置写失败时**不切换**（只归档），返回 {@code switched=false} 让服主看到并重试。
+	 *
+	 * <p><b>★写的是 {@code season.id} 不是根 {@code seasonId}★</b>：读侧
+	 * {@link BattlePassConfig#seasonId()} 走 {@code season.id}。早期版本写成根键
+	 * {@code seasonId}，导致"命令报切换成功、实际仍在旧赛季"（归档也跟着 NO_DATA）——
+	 * 这种静默失败不能靠日志判断，所以这里改完必须**回读校验**，读不回就报失败。
 	 */
 	public static synchronized Rollover rolloverTo(String next) {
 		String from = season();
@@ -354,8 +359,16 @@ public final class BattlePassModule implements RedtaleModule {
 		try {
 			com.akira.redtale.economy.config.ConfigStore store =
 					com.akira.redtale.economy.config.ConfigManager.get().store(BattlePassConfig.FILE);
-			store.setPath("seasonId", next);
+			store.setPath("season.id", next);
 			wrote = store.save(true);
+			if (wrote) {
+				CACHE.clear();
+				String readBack = season();          // 回读：证明指针真的变了，而不是"写了个没人读的键"
+				if (!next.equals(readBack)) {
+					RedtaleEconomy.LOGGER.error("[pass] 赛季指针写后回读不一致：期望 {} 实际 {}", next, readBack);
+					wrote = false;
+				}
+			}
 		} catch (Exception e) {
 			RedtaleEconomy.LOGGER.error("[pass] 写赛季指针失败：{}", e.getMessage());
 			wrote = false;

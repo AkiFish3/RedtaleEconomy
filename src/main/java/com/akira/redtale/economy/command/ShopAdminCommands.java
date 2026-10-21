@@ -167,6 +167,9 @@ public final class ShopAdminCommands {
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
 										.executes(ctx -> rotationInfo(ctx, StringArgumentType.getString(ctx, "shopId")))))
+						// T13：成交事件投递诊断（监听器数 + 已发布笔数 + 最近一笔）
+						.then(CommandManager.literal("events")
+								.executes(ShopAdminCommands::eventsInfo))
 						.then(CommandManager.literal("edit")
 								.executes(ctx -> edit(ctx, null))
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
@@ -221,6 +224,26 @@ public final class ShopAdminCommands {
 			if (!com.akira.redtale.economy.shop.ShopRotation.coversShop(shopId)) continue;
 			int n = rotationItems(shopId).size();
 			src.sendFeedback(() -> Text.literal("§7- §f" + shopId + " §7今日特价 §f" + n + " §7件"), false);
+		}
+		return 1;
+	}
+
+	/** T13：成交事件投递诊断 —— 监听器数 / 已发布笔数 / 最近一笔。 */
+	private static int eventsInfo(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		src.sendFeedback(() -> Text.literal("§6[shop.events] §7监听器 §f"
+				+ com.akira.redtale.economy.shop.ShopEvents.listenerCount()
+				+ " §7| 本次启动已发布 §f" + com.akira.redtale.economy.shop.ShopEvents.firedCount() + " §7笔"), false);
+		com.akira.redtale.economy.shop.ShopEvents.Transaction last =
+				com.akira.redtale.economy.shop.ShopEvents.last();
+		if (last == null) {
+			src.sendFeedback(() -> Text.literal("§7最近一笔：§8（无）"), false);
+		} else {
+			src.sendFeedback(() -> Text.literal("§7最近一笔：§f" + (last.buy() ? "买入" : "卖出")
+					+ " §f" + last.itemId() + " §7x§f" + last.count()
+					+ " §7@ §f" + last.shopId()
+					+ " §7单价 §f" + last.unitPrice() + " §7合计 §f" + last.total()
+					+ " §7余额 §f" + last.balanceAfter()), false);
 		}
 		return 1;
 	}

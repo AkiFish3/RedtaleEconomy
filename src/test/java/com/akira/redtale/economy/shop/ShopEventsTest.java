@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** T13：成交事件的投递与隔离。 */
@@ -64,5 +65,15 @@ class ShopEventsTest {
 		ShopEvents.listen(t -> order.add("x"));
 		ShopEvents.fire(null);
 		assertFalse(order.size() > 0);
+		assertEquals(0L, ShopEvents.firedCount(), "null 不该计入发布数（否则诊断命令会虚报）");
+		assertNull(ShopEvents.last());
+	}
+
+	@Test
+	void firedCounterTracksDeliveriesEvenWithoutListeners() {
+		ShopEvents.Transaction t = tx(false);
+		ShopEvents.fire(t);
+		assertEquals(1L, ShopEvents.firedCount(), "没有监听器也要计数：这是 /shop admin events 的唯一运行时证据");
+		assertEquals(t, ShopEvents.last());
 	}
 }
