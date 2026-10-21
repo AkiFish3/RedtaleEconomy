@@ -75,6 +75,15 @@ public final class TitleCommands {
 								.then(CommandManager.argument("count",
 										com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 3))
 										.executes(TitleCommands::slots))))
+				// T60：装备到指定槽（不带 slot = 追加一个空槽）。★不能用 set★：
+				// setTitle 是「单槽语义」，会清空所有槽 ⇒ 解锁到 3 槽也只剩一个称号。
+				.then(CommandManager.literal("equip")
+						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
+						.then(CommandManager.argument("player", EntityArgumentType.player())
+								// ★必须 greedy★：string()/word() 的字符集不含中文，`titles equip QaBot 铁匠`
+								// 会报 "Expected whitespace to end one argument"。槽位顺序 = 追加顺序。
+								.then(CommandManager.argument("title", StringArgumentType.greedyString())
+										.executes(TitleCommands::equip))))
 				// T60：卸下某一槽
 				.then(CommandManager.literal("unequip")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
@@ -251,6 +260,27 @@ public final class TitleCommands {
 			src.sendFeedback(() -> Text.literal(target.getName().getString() + " 的称号槽位：" + now
 					+ (want == 0 ? "（配置默认）" : "")), false);
 			com.akira.redtale.economy.net.TitleNetworking.send(target);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal(String.valueOf(e.getMessage())));
+			return 0;
+		}
+	}
+
+	/** T60：装备到某个槽（{@code slot} 缺省 = 追加到末尾；1 起，内部转 0 起）。 */
+	private static int equip(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+			String title = StringArgumentType.getString(ctx, "title");
+			boolean chat = TitleModule.equip(target, title, -1);   // -1 = 追加到末尾
+			var d = TitleModule.data(target.getUuid());
+			int slots = TitleModule.slotsOf(d);
+			int used = Math.min(TitleModule.equipped(target.getUuid()).size(), slots);
+			com.akira.redtale.economy.net.TitleNetworking.send(target);
+			src.sendFeedback(() -> Text.literal(target.getName().getString() + " 已装备称号「" + title
+					+ "」（槽位 " + used + "/" + slots + "）"
+					+ (chat ? "" : " · 未改聊天名")), false);
 			return 1;
 		} catch (Exception e) {
 			src.sendError(Text.literal(String.valueOf(e.getMessage())));
