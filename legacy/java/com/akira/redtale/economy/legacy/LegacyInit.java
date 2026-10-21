@@ -1,7 +1,9 @@
 package com.akira.redtale.economy.legacy;
 
 import com.akira.redtale.economy.legacy.bound.BoundItemsConfig;
+import com.akira.redtale.economy.legacy.bound.LegacyExchange;
 import com.akira.redtale.economy.legacy.init.*;
+import com.akira.redtale.economy.legacy.item.ServerItems;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.util.Identifier;
@@ -16,10 +18,12 @@ public class LegacyInit implements ModInitializer {
 	public void onInitialize() {
 		LOGGER.info("[legacy] 旧模桥接初始化…");
 		REItems.register();
+		ServerItems.register();
 		REEntities.register();
 		REHandlers.register();
 		RENetworking.register();
 		BoundItemsConfig.load();
+		LegacyExchange.register();
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				RECommands.register(dispatcher));

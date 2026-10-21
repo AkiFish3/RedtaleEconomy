@@ -21,16 +21,11 @@ import org.jetbrains.annotations.Nullable;
 
 public class RENetworking {
 
-    public static final Identifier OPEN_EDIT_PACKAGE = LegacyInit.id("open_edit_package");
-    public static final Identifier OPEN_CHOOSE_PACKAGE = LegacyInit.id("open_choose_package");
+    // 只保留真正在用的两个通道：选择物品（C2S）与关闭选择界面（C2S）。
+    // 旧的 OPEN_EDIT_PACKAGE / OPEN_CHOOSE_PACKAGE 全仓零引用、服务端也从未 registerGlobalReceiver，
+    // 属于"客户端发了服务端也没人收"的静默丢包陷阱，已删（T38 清理）。
     public static final Identifier SELECT_ITEM = LegacyInit.id("select_item");
     public static final Identifier CLOSE_CHOOSE_PACKAGE = LegacyInit.id("close_choose_package");
-
-    public static void sendOpenChoosePackagePacket(ServerPlayerEntity player, ItemStack packageStack) {
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeItemStack(packageStack);
-        ServerPlayNetworking.send(player, OPEN_CHOOSE_PACKAGE, buf);
-    }
 
     public static void sendSelectItemPacket(int index, int entityId) {
         PacketByteBuf buf = PacketByteBufs.create();

@@ -42,6 +42,29 @@ dependencies {
 		logger.warn("[redtale] 缺少 libs/geckolib-fabric-1.20.1-${project.geckolib_version}.jar —— 回落 maven 坐标 ${project.geckolib_version}")
 		modImplementation "software.bernie.geckolib:geckolib-fabric-1.20.1:${project.geckolib_version}"
 	}
+	// mclib（Molang 表达式解析）是 geckolib 的 jar-in-jar 依赖（META-INF/jars/mclib-20.jar）。
+	// ★生产环境由 Loader 自动展开，dev 环境不会★：`files()` 是裸 jar 依赖，loom 只 remap 不拆嵌套
+	// ⇒ 运行到 geckolib 的资源重载就 `NoClassDefFoundError: com/eliotlash/mclib/math/IValue`
+	// ⇒ 表现是 geckolib 的 anim/geo 全部加载失败、实体/物品渲染整批消失，且只有一行 "Could not initialize class"。
+	// 这里把嵌套 jar 单独挂到 dev 类路径（libs/mclib-20.jar 就是从 geckolib jar 里原样抽出来的）。
+	def mclibJar = file("libs/mclib-20.jar")
+	if (!mclibJar.exists() && geckolibJar.exists()) {
+		// 换机器 / 清过 libs 时自动从 geckolib 的 jar-in-jar 里抽出来（libs/*.jar 不入库）
+		new java.util.zip.ZipFile(geckolibJar).withCloseable { zf ->
+			def entry = zf.getEntry("META-INF/jars/mclib-20.jar")
+			if (entry != null) {
+				mclibJar.parentFile.mkdirs()
+				mclibJar.withOutputStream { os -> zf.getInputStream(entry).withCloseable { is -> os << is } }
+				logger.lifecycle("[redtale] mclib: 已从 ${geckolibJar.name} 抽出 ${mclibJar.name}")
+			}
+		}
+	}
+	if (mclibJar.exists()) {
+		logger.lifecycle("[redtale] mclib: local ${mclibJar.name}（geckolib 的嵌套依赖，dev 专用）")
+		modImplementation files(mclibJar)
+	} else {
+		logger.warn("[redtale] 缺少 libs/mclib-20.jar —— dev 客户端里 geckolib 的 anim/geo 会加载失败（生产环境由 geckolib 的 JiJ 提供）")
+	}
 
 	// 软依赖编译期依赖（不打包）：FTB Quests / FTB Library，仅用于 R9 的 reward 类型
 	// 运行时由 FTBQ 提供；未安装时本 mod 相关类通过 isModLoaded 守卫不会被加载
