@@ -38,7 +38,8 @@ public final class BoardCommands {
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
 		d.register(CommandManager.literal("board")
 				.requires(src -> Permissions.has(src, Permissions.NODE_USE))
-				.executes(BoardCommands::list)
+				.executes(BoardCommands::open)
+				.then(CommandManager.literal("list").executes(BoardCommands::list))
 				.then(CommandManager.literal("post")
 						.then(CommandManager.argument("item", ItemIdArgument.itemId())
 								.then(CommandManager.argument("count", IntegerArgumentType.integer(1, 2304))
@@ -50,6 +51,20 @@ public final class BoardCommands {
 						.then(CommandManager.argument("id", StringArgumentType.word()).executes(BoardCommands::deliver)))
 				.then(CommandManager.literal("cancel")
 						.then(CommandManager.argument("id", StringArgumentType.word()).executes(BoardCommands::cancel))));
+	}
+
+	/** 无参 = 开可视化委托板（T12）；控制台/无客户端回落到聊天列表。 */
+	private static int open(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity p = src.getPlayer();
+		if (p == null) return list(ctx);
+		if (!BoardModule.enabled()) {
+			src.sendError(Text.literal(Lang.msg("board.disabled")));
+			return 0;
+		}
+		PageCommands.hintLegacy(p, "board", null);
+		com.akira.redtale.economy.net.BoardNetworking.send(p);
+		return 1;
 	}
 
 	private static int list(CommandContext<ServerCommandSource> ctx) {

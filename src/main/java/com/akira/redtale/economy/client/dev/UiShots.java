@@ -226,7 +226,7 @@ public final class UiShots {
 					() -> open(mc, HubPage.CHECKIN, "rt checkin"));
 			case 17 -> act(mc, () -> clickEntry(mc, "市场", 2));
 			case 18 -> shotKeep(mc, "u6-13-hub-click-market.png", () -> { });
-			case 19 -> act(mc, () -> clickEntry(mc, "排行", 8));
+			case 19 -> act(mc, () -> clickEntry(mc, "排行", 9));
 			case 20 -> shotKeep(mc, "u6-14-hub-click-rank.png", () -> { });
 			// showLabels=false ⇒ 侧边栏收成 40px 纯图标（tooltip 要鼠标悬停，截图验不到）
 			case 21 -> act(mc, () -> {
@@ -361,13 +361,13 @@ public final class UiShots {
 			case 71 -> shotKeep(mc, "u6-41-vanilla-storage.png", () -> { });
 			case 72 -> act(mc, () -> clickEntry(mc, "悬赏", 4));
 			case 73 -> shotKeep(mc, "u6-42-vanilla-bounty.png", () -> { });
-			case 74 -> act(mc, () -> clickEntry(mc, "战令", 5));
+			case 74 -> act(mc, () -> clickEntry(mc, "战令", 6));
 			case 75 -> shotKeep(mc, "u6-43-vanilla-pass.png", () -> { });
-			case 76 -> act(mc, () -> clickEntry(mc, "协会", 6));
+			case 76 -> act(mc, () -> clickEntry(mc, "协会", 7));
 			case 77 -> shotKeep(mc, "u6-44-vanilla-guild.png", () -> { });
-			case 78 -> act(mc, () -> clickEntry(mc, "邮件", 7));
+			case 78 -> act(mc, () -> clickEntry(mc, "邮件", 8));
 			case 79 -> shotKeep(mc, "u6-45-vanilla-mail.png", () -> { });
-			case 80 -> act(mc, () -> clickEntry(mc, "排行", 8));
+			case 80 -> act(mc, () -> clickEntry(mc, "排行", 9));
 			case 81 -> shotKeep(mc, "u6-46-vanilla-rank.png", () -> { });
 			// ★U10 最后一条：非 OP 少 4 行★ —— 单机主机恒 OP4，所以先拍一张 OP 基线，
 			// 再 /deop @s 把权限降下来，同一个界面下一帧就会少掉整组管理员行。
@@ -444,6 +444,10 @@ public final class UiShots {
 						+ " adminOpen " + before + " -> " + HubSettingsPage.devAdminOpen());
 				HubSettingsPage.setAdminOpen(true);
 			});
+			case 90 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("redtale grant money @s 400"));
+			case 91 -> act(mc, () -> mc.player.networkHandler.sendChatCommand("board post minecraft:oak_planks 4 20"));
+			case 92 -> shotKeep(mc, "u6-53-board.png", () -> open(mc, HubPage.BOARD, "board"));
+			case 93 -> act(mc, () -> mc.setScreen(null));
 			default -> finish(mc);
 		}
 	}

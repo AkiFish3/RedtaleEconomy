@@ -12,6 +12,7 @@ public enum HubPage {
 	MARKET("market", "市场", false, "minecraft:emerald_block"),
 	STORAGE("storage", "仓储", false, "minecraft:barrel"),
 	BOUNTY("bounty", "悬赏", false, "minecraft:iron_sword"),
+	BOARD("board", "委托", false, "minecraft:oak_sign"),
 	PASS("pass", "战令", false, "minecraft:nether_star"),
 	GUILD("guild", "协会", false, "minecraft:emerald"),
 	MAIL("mail", "邮件", false, "minecraft:paper"),

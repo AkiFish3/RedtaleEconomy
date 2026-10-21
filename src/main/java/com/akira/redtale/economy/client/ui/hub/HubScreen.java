@@ -159,6 +159,7 @@ public class HubScreen extends Screen {
 			}
 			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking.request(rankActiveOnly);
 			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
+			case BOARD -> com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
 			case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
 			default -> {
 			}
@@ -252,6 +253,8 @@ public class HubScreen extends Screen {
 		} else if (page == HubPage.BOUNTY) {
 			int[] hovered = {-1};
 			HubBountyPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY, hovered);
+		} else if (page == HubPage.BOARD) {
+			HubBoardPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.GUILD) {
 			HubGuildPage.render(dc, textRenderer, cx, cy, cw, ch, mouseX, mouseY);
 		} else if (page == HubPage.MAIL) {
@@ -536,6 +539,11 @@ public class HubScreen extends Screen {
 				if (page == HubPage.SHOP) requestShopPage();
 				if (page == HubPage.MARKET) com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 				if (page == HubPage.BOUNTY) requestBounty();
+				if (page == HubPage.BOARD) {
+					HubBoardPage.resetScroll();
+					com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
+					setStatus("正在读取委托板…");
+				}
 				if (page == HubPage.PASS) requestPass();
 				if (page == HubPage.GUILD) requestGuild();
 				if (page == HubPage.STORAGE) {
@@ -850,6 +858,41 @@ public class HubScreen extends Screen {
 				}
 				return true;
 			}
+		}
+		if (button == 0 && page == HubPage.BOARD) {
+			int cx = frame.contentX();
+			int cy = frame.contentY();
+			int cw = frame.contentW();
+			int ch = frame.contentH();
+			int[] idx = {-1};
+			HubBoardPage.Action a = HubBoardPage.click(textRenderer, mouseX, mouseY, cx, cy, cw, ch, idx);
+			var list = com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.LAST.entries();
+			var mc = MinecraftClient.getInstance();
+			if (a == HubBoardPage.Action.REFRESH) {
+				com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
+				setStatus("正在刷新委托板…");
+				return true;
+			}
+			if (a != HubBoardPage.Action.NONE && idx[0] >= 0 && idx[0] < list.size() && mc.player != null) {
+				String id = list.get(idx[0]).id();
+				String cmd = switch (a) {
+					case ACCEPT -> "board accept " + id;
+					case DELIVER -> "board deliver " + id;
+					case CANCEL -> "board cancel " + id;
+					default -> "";
+				};
+				if (!cmd.isEmpty()) {
+					mc.player.networkHandler.sendChatCommand(cmd);
+					setStatus(switch (a) {
+						case ACCEPT -> "正在接单：" + id;
+						case DELIVER -> "正在交付：" + id;
+						default -> "正在撤销：" + id;
+					});
+					// 动作回包后由服务端快照覆盖列表；这里不本地改状态，避免与服务端不一致
+					return true;
+				}
+			}
+			if (idx[0] >= 0) return true;
 		}
 		if (button == 0 && page == HubPage.SETTINGS) {
 			int cx = frame.contentX();
@@ -1252,6 +1295,11 @@ public class HubScreen extends Screen {
 			int ch = frame.contentH();
 			int cy = frame.contentY();
 			HubShopPage.scrollByRows(-(int) Math.signum(amount), cw, cy, ch);
+			return true;
+		}
+		if (page == HubPage.BOARD && mouseX > panelX + sidebarW()) {
+			// T12：低分辨率下一页只放得下 2~3 张卡，必须能滚
+			HubBoardPage.scrollByRows(-(int) Math.signum(amount), frame.contentH());
 			return true;
 		}
 		if (page == HubPage.STORAGE && mouseX > panelX + sidebarW()) {
