@@ -20,7 +20,9 @@ public enum HubPage {
 	PAY("pay", "转账", false, "minecraft:emerald"),
 	TITLES("titles", "称号", false, "minecraft:name_tag"),
 	SETTINGS("settings", "设置", false, "minecraft:comparator"),
-	LEDGER("ledger", "流水", false, "minecraft:book");
+	LEDGER("ledger", "流水", false, "minecraft:book"),
+	/** T28：管理员控制台（只读概览）。★永远加在末尾★：侧栏下标被夹具与点击共用。 */
+	ADMIN("admin", "控制台", true, "minecraft:command_block");
 
 	public final String id;
 	public final String label;
@@ -32,6 +34,32 @@ public enum HubPage {
 		this.label = label;
 		this.adminOnly = adminOnly;
 		this.icon = icon;
+	}
+
+	/** 本机玩家是否能看管理员页（服务端仍会独立判权限，这里只决定「侧栏显示不显示」）。 */
+	public static boolean canAdmin() {
+		var mc = net.minecraft.client.MinecraftClient.getInstance();
+		return mc != null && mc.player != null && mc.player.hasPermissionLevel(4);
+	}
+
+	/**
+	 * 实际可见的页面（顺序 = 侧栏顺序 = 点击下标）。
+	 *
+	 * <p>★侧栏渲染、行命中、滚动上限、点击映射必须都用它★：任何一处改回 {@code values()}
+	 * 都会在「非管理员少一行」时错位（点第 3 行打开第 4 页）——这正是 {@code adminOnly}
+	 * 之前形同虚设的原因（声明了但没人读）。
+	 */
+	public static HubPage[] visible() {
+		HubPage[] all = values();
+		if (canAdmin()) return all;
+		HubPage[] out = new HubPage[all.length];
+		int n = 0;
+		for (HubPage p : all) {
+			if (!p.adminOnly) out[n++] = p;
+		}
+		HubPage[] trimmed = new HubPage[n];
+		System.arraycopy(out, 0, trimmed, 0, n);
+		return trimmed;
 	}
 
 	public static HubPage byId(String id) {

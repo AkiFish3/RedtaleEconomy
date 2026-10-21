@@ -41,7 +41,7 @@ final class HubClicks {
 		// 永远走不到，删掉免得以后改布局只改一处。
 		if (button == 0 && mouseX >= host.panelX && mouseX < host.panelX + host.sidebarW()) {
 			int idx = host.sidebarRowAt(mouseY);
-			HubPage[] all = HubPage.values();
+			HubPage[] all = HubPage.visible();
 			if (idx >= 0 && idx < all.length) {
 				if (host.page != all[idx]) ClientUiConfig.click();
 				host.searchFocused = false;
@@ -64,13 +64,23 @@ final class HubClicks {
 					host.setStatus("正在读取流水…");
 				}
 				if (host.page == HubPage.PASS) host.requestPass();
-				if (host.page == HubPage.GUILD) host.requestGuild();
+				if (host.page == HubPage.ADMIN) {
+					HubAdminPage.reset();
+					AdminClientNetworking.request();
+					host.setStatus("正在读取控制台数据…");
+				}				if (host.page == HubPage.GUILD) host.requestGuild();
 				if (host.page == HubPage.STORAGE) {
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
 			com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
 				}
 				return true;
 			}
+		}
+		// T28：控制台只有「刷新」一个可点区（其余是只读指标，点了应当落到 super）
+		if (host.page == HubPage.ADMIN && button == 0
+				&& HubAdminPage.click(mouseX, mouseY, host.frame.contentW())) {
+			host.setStatus("正在刷新控制台…");
+			return true;
 		}
 		R r;
 		r = HubMarketClicks.handle(host, mouseX, mouseY, button);

@@ -128,6 +128,9 @@ public final class ShopCatalog implements ShopSource {
 	/** E1：加载时被钳制的商品数 + 首个样例（只读，供 /shop admin priceguard 展示）。 */
 	private static volatile int priceViolations;
 	private static volatile String priceViolationSample = "";
+	/** T28：上次 reload 的规模（控制台要显示「N 店 / M 件」，别再遍历一遍 map）。 */
+	private static volatile int shopCount;
+	private static volatile int itemCount;
 
 	private ShopCatalog() {
 	}
@@ -168,6 +171,9 @@ public final class ShopCatalog implements ShopSource {
 				RedtaleEconomy.LOGGER.error("[shop] 无法创建 {}：{}", base, e.getMessage());
 			}
 			ready = true;
+			// 空目录也是「加载完成」：规模归零，别留着上一次的数字（控制台会当真）
+			shopCount = 0;
+			itemCount = 0;
 			loadedAt = System.currentTimeMillis();
 			return;
 		}
@@ -191,6 +197,8 @@ public final class ShopCatalog implements ShopSource {
 		}
 		int items = 0;
 		for (ShopDef s : SHOPS.values()) items += s.items.size();
+		shopCount = SHOPS.size();
+		itemCount = items;
 		ready = true;
 		loadedAt = System.currentTimeMillis();
 		RedtaleEconomy.LOGGER.info("[shop] 已加载 {} 个商店 / {} 件商品（{} 个文件，策略 {}）",
@@ -306,6 +314,16 @@ public final class ShopCatalog implements ShopSource {
 	/** E1：本次加载被钳制的商品数（文件里 sell ≥ 允许上限）。0 = 干净。 */
 	public static int priceViolations() {
 		return priceViolations;
+	}
+
+	/** T28：上次 reload 加载到的商店数（控制台概览用，O(1)）。 */
+	public static int shopCount() {
+		return shopCount;
+	}
+
+	/** T28：上次 reload 加载到的商品总数（含被钳制/隐藏的，与日志里的数字同一口径）。 */
+	public static int itemCount() {
+		return itemCount;
 	}
 
 	/** E1：首个违规样例 {@code shopId/itemId(buy=..,sell=..)}；无违规时为空串。 */

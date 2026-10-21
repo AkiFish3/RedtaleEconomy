@@ -12,7 +12,7 @@ public final class HubDev {
 	}
 
 	public static boolean clickSidebar(HubScreen host, int index) {
-		HubPage[] all = HubPage.values();
+		HubPage[] all = HubPage.visible();
 		if (index < 0 || index >= all.length) return false;
 		double y = host.sidebar.rowCenterY(host.frame, index);
 		return host.mouseClicked(host.panelX + host.sidebarW() / 2.0, y, 0);

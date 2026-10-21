@@ -120,6 +120,18 @@ class CodecRoundTripTest {
 								new ShopProtocol.Entry("minecraft:stone", 3, 1, -1, true, false)),
 						List.of("minecraft", "coc"), List.of("建材", "建材/木材"))));
 
+		all.add(of("admin/snapshot",
+				Codec.of("admin/snapshot", AdminProtocol::write, AdminProtocol::read),
+				() -> new AdminProtocol.Snapshot(1761000000000L, true, List.of(
+						new AdminProtocol.Metric("在线玩家", "3", "当前服务器在线人数"),
+						new AdminProtocol.Metric("商店 / 商品", "219 店 / 2803 件", ""),
+						new AdminProtocol.Metric("数据根", "C:/server/world/redtale-data",
+								"redtale-data 的实际落点")))));
+
+		all.add(of("admin/request",
+				Codec.of("admin/request", AdminProtocol::writeQuery, AdminProtocol::readQuery),
+				AdminProtocol.Query::current));
+
 		// 仓储没在这里做往返：ItemStack 的静态初始化要求完整 Bootstrap（headless 单测里
 		// 构造 ItemStack.EMPTY 就抛 ExceptionInInitializerError）⇒ 交给 runServer 阶段的
 		// 实机验收。它的列表读取同样已经换成 Codecs.readList，与上面的用例共用同一实现。

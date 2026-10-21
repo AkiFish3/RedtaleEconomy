@@ -179,6 +179,11 @@ final class HubInput {
 			HubLedgerPage.scrollByRows(dir, host.frame.contentH());
 			return true;
 		}
+		if (inContent && host.page == HubPage.ADMIN) {
+			// T28：指标卡两列，427×240 下装得下 6 行（12 项），超出的要靠滚
+			HubAdminPage.scrollByRows(dir, host.frame.contentH());
+			return true;
+		}
 		if (inContent && host.page == HubPage.STORAGE) {
 			host.storageScroll = Math.max(0, Math.min(
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.SLOT_COUNT,

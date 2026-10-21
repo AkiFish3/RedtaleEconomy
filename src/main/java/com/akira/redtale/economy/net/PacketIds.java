@@ -59,6 +59,10 @@ public final class PacketIds {
 	/** U9：「只看活跃」开关随请求一起发（服务端按开关选缓存榜，不在请求里算）。 */
 	public static final Identifier C2S_RANK_REQ = RedtaleEconomy.id("rank/request");
 
+	/** T28：管理员控制台（请求概览 / 下发概览）。 */
+	public static final Identifier C2S_ADMIN_REQ = RedtaleEconomy.id("admin/request");
+	public static final Identifier S2C_ADMIN = RedtaleEconomy.id("admin/snapshot");
+
 	// R40 玩家市场
 	public static final Identifier C2S_MARKET_REQ = RedtaleEconomy.id("market/request");
 	public static final Identifier C2S_MARKET_BUY = RedtaleEconomy.id("market/buy");

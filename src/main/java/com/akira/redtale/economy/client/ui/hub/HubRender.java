@@ -118,6 +118,7 @@ final class HubRender {
 			case BOUNTY -> HubBountyPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY, new int[]{-1});
 			case BOARD -> HubBoardPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY);
 			case LEDGER -> HubLedgerPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY);
+			case ADMIN -> HubAdminPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY);
 			case GUILD -> HubGuildPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY);
 			case MAIL -> HubMailPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY);
 			case PAY -> HubPayPage.render(dc, tr, cx, cy, cw, ch, host.payName.toString(),

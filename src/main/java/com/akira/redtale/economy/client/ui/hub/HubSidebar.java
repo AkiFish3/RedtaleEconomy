@@ -55,7 +55,7 @@ public final class HubSidebar {
 	/** 鼠标 Y 落在第几行（不考虑是否在栏内）；越界返回 -1。 */
 	public int rowAt(HubFrame f, double mouseY) {
 		int idx = ((int) mouseY - f.entryTop() + scroll) / HubFrame.ROW_H;
-		HubPage[] all = HubPage.values();
+		HubPage[] all = HubPage.visible();
 		return (idx >= 0 && idx < all.length) ? idx : -1;
 	}
 
@@ -228,7 +228,7 @@ public final class HubSidebar {
 		// ★裁剪★：不让滚动时条目画到顶栏/底栏上
 		if (clip) dc.enableScissor(f.x, top, f.x + sidebarW, bottom);
 		int y = top - scroll;
-		for (HubPage p : HubPage.values()) {
+		for (HubPage p : HubPage.visible()) {
 			if (y + HubFrame.ROW_H > top && y < bottom) {
 				boolean sel = p == page;
 				boolean hovered = mouseX >= f.x && mouseX < f.x + sidebarW
@@ -259,7 +259,7 @@ public final class HubSidebar {
 		int ms = f.maxScroll();
 		if (ms > 0) {
 			int barH = Math.max(12, (bottom - top) * (bottom - top)
-					/ (HubPage.values().length * HubFrame.ROW_H));
+					/ (HubPage.visible().length * HubFrame.ROW_H));
 			int barY = top + (bottom - top - barH) * scroll / ms;
 			dc.fill(f.x + sidebarW - 3, top, f.x + sidebarW - 1, bottom, HubTheme.ROW_HOVER);
 			dc.fill(f.x + sidebarW - 3, barY, f.x + sidebarW - 1, barY + barH, HubTheme.MUTED);

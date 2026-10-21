@@ -46,7 +46,7 @@ public final class HubFrame {
 
 	public int maxScroll() {
 		int visible = entryBottom() - entryTop();
-		int total = HubPage.values().length * ROW_H;
+		int total = HubPage.visible().length * ROW_H;
 		return Math.max(0, total - visible);
 	}
 

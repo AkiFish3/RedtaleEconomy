@@ -170,6 +170,7 @@ public class HubScreen extends Screen {
 			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 			case BOARD -> com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
 			case LEDGER -> com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
+			case ADMIN -> com.akira.redtale.economy.client.ui.hub.AdminClientNetworking.request();
 			case CHECKIN -> mc.player.networkHandler.sendChatCommand("checkin status");
 			default -> {
 			}

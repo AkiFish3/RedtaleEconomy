@@ -24,6 +24,7 @@ public class RedtaleEconomyClient implements ClientModInitializer {
 		com.akira.redtale.economy.client.bounty.BountyClientNetworking.register();
 		com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.register();
 		com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.register();
+		com.akira.redtale.economy.client.ui.hub.AdminClientNetworking.register();
 		com.akira.redtale.economy.client.pass.PassClientNetworking.register();
 		com.akira.redtale.economy.client.guild.GuildClientNetworking.register();
 		com.akira.redtale.economy.client.balance.BalanceClientNetworking.register();
