@@ -177,6 +177,13 @@ public final class HubSidebar {
 			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.TEXT, false);
 			return;
 		}
+		// ★三段放不下时退化成紧凑文字★：drawFull 放不下会静默少画一段，
+		// 余额少画一个币种比「字挤一点」严重得多（玩家会误判自己有多少钱）。
+		if (HubMoney.fullWidth(tr, raw) > w) {
+			dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.text(raw), w)), x, y,
+					HubTheme.TEXT, false);
+			return;
+		}
 		HubMoney.drawFull(dc, tr, x, y, raw, w);
 	}
 

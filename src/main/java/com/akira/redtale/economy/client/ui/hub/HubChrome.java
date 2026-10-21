@@ -45,7 +45,13 @@ public final class HubChrome {
 				int bx = f.x + f.w - 24 - bw;
 				int titleEnd = f.x + 12 + tr.getWidth(head);
 				if (bx > titleEnd + 8) {
-					HubMoney.drawFull(dc, tr, bx, f.y + 8, bal, f.x + f.w - 24 - bx);
+					int maxW = f.x + f.w - 24 - bx;
+					if (HubMoney.fullWidth(tr, bal) <= maxW) {
+						HubMoney.drawFull(dc, tr, bx, f.y + 8, bal, maxW);
+					} else {
+						dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.text(bal), maxW)),
+								bx, f.y + 8, HubTheme.GOLD, false);
+					}
 				}
 			}
 		}
