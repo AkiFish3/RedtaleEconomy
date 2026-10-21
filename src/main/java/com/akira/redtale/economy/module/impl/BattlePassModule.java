@@ -382,22 +382,87 @@ public final class BattlePassModule implements RedtaleModule {
 		if (premiumTrack && !d.premium) return ClaimResult.LOCKED;
 		Set<Integer> claimed = premiumTrack ? d.claimedPremium : d.claimedFree;
 		if (!claimed.add(level)) return ClaimResult.ALREADY;
-		BattlePassConfig.Reward reward = null;
-		for (BattlePassConfig.Reward r : BattlePassConfig.track(premiumTrack ? "premium" : "free")) {
-			if (r.level() == level) {
-				reward = r;
-				break;
-			}
-		}
+		BattlePassConfig.Reward reward = rewardOf(premiumTrack, level);
 		d.dirty = true;
 		save(uuid, d);
-		if (reward != null) grant(uuid, reward);
+		if (reward != null) grant(uuid, reward, "pass:level:" + level);
 		return ClaimResult.OK;
 	}
 
-	private static void grant(UUID uuid, BattlePassConfig.Reward reward) {
+	// ---------------------------------------------------------------- 历史赛季补领（T03）
+
+	/** 补领视图：冻结 xp、当季是否付费、两条轨各自还能领哪些等级。 */
+	public record Legacy(String season, long xp, boolean premium, boolean archived,
+			PassArchive.Access access, List<Integer> free, List<Integer> premiumLevels) {
+	}
+
+	/** 当前配置的补领档位（off 时所有补领请求一律拒绝）。 */
+	public static PassArchive.Access legacyAccess() {
+		return PassArchive.Access.parse(BattlePassConfig.archiveAccessMode());
+	}
+
+	/** 查某历史赛季对某玩家的可补领项；赛季不存在/未归档时返回空视图。 */
+	public static Legacy legacy(String season, UUID uuid) {
+		Path dir = legacyDir(season);
+		boolean arch = dir != null && PassArchive.archived(dir);
+		PassArchive.Entry e = arch ? PassArchive.entryOf(dir, uuid) : null;
+		PassArchive.Access access = legacyAccess();
+		List<Integer> free = arch
+				? PassArchive.claimable(dir, uuid, access, BattlePassModule::levelFor, BattlePassConfig.maxLevel())
+				: List.of();
+		List<Integer> premiumLevels = new ArrayList<>();
+		if (arch && e != null && e.premium()) {
+			Set<Integer> got = PassArchive.claimed(dir, uuid, "premium");
+			int reached = Math.min(BattlePassConfig.maxLevel(), Math.max(1, levelFor(e.xp())));
+			for (int lv = 1; lv <= reached; lv++) {
+				if (!got.contains(lv)) premiumLevels.add(lv);
+			}
+		}
+		return new Legacy(season, e == null ? 0L : e.xp(), e != null && e.premium(), arch, access,
+				free, premiumLevels);
+	}
+
+	/**
+	 * 补领一个历史赛季等级。
+	 *
+	 * <p>顺序：写 {@code _claims.json} → 发奖 → 记流水。写状态失败时不发奖（返回 ERROR），
+	 * 因此最坏情况是「该领的没领到」，不会重复发钱。
+	 */
+	public static synchronized PassArchive.Result claimLegacy(UUID uuid, String season, String track, int level) {
+		if (!enabled()) return PassArchive.Result.OFF;
+		if (season != null && season.equals(currentSeasonId())) return PassArchive.Result.CURRENT;
+		Path dir = legacyDir(season);
+		if (dir == null) return PassArchive.Result.NOT_FOUND;
+		boolean premium = "premium".equalsIgnoreCase(track);
+		PassArchive.Result r = PassArchive.claim(dir, uuid, track, level, legacyAccess(),
+				BattlePassModule::levelFor, BattlePassConfig.maxLevel(), System.currentTimeMillis());
+		if (r == PassArchive.Result.OK) {
+			BattlePassConfig.Reward reward = rewardOf(premium, level);
+			if (reward != null) grant(uuid, reward, "pass:legacy:" + season + ":" + track + ":" + level);
+		}
+		return r;
+	}
+
+	/** 赛季目录；season 来自命令输入，拒绝路径分隔符与 {@code ..}（防目录穿越）。 */
+	private static Path legacyDir(String season) {
+		if (season == null || season.isBlank() || season.contains("/") || season.contains("\\")
+				|| season.contains("..")) {
+			return null;
+		}
+		Path root = PassSeasons.root();
+		return root == null ? null : root.resolve(season);
+	}
+
+	/** 奖励表查询（当季领取与 T03 补领共用，避免两套口径）。 */
+	private static BattlePassConfig.Reward rewardOf(boolean premiumTrack, int level) {		for (BattlePassConfig.Reward r : BattlePassConfig.track(premiumTrack ? "premium" : "free")) {
+			if (r.level() == level) return r;
+		}
+		return null;
+	}
+
+	private static void grant(UUID uuid, BattlePassConfig.Reward reward, String detail) {
 		if (reward.money() > 0) {
-			BalanceService.add(uuid, reward.money(), Ledger.TYPE_PASS, "pass:level:" + reward.level());
+			BalanceService.add(uuid, reward.money(), Ledger.TYPE_PASS, detail);
 		}
 		ServerPlayerEntity p = RedtaleEconomy.server() == null ? null
 				: RedtaleEconomy.server().getPlayerManager().getPlayer(uuid);

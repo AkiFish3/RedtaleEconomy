@@ -55,7 +55,20 @@ public final class CoreConfig {
 							"是否要求 /shop admin remove|removeshop 先出票据再确认；关闭=保持旧行为直接执行"))
 					.field("ttlSeconds", ConfigSchema.integer(300, 10, 3600, "票据有效期（秒）")))
 			.field("backup", ConfigSchema.obj("配置备份")
-					.field("maxBackups", ConfigSchema.integer(20, 1, 200, "config/redtale/backup 下最多保留几个时间戳目录")));
+					.field("maxBackups", ConfigSchema.integer(20, 1, 200, "config/redtale/backup 下最多保留几个时间戳目录")))
+			.field("alerts", ConfigSchema.obj("外部告警 Webhook（T15，默认关闭）")
+					.field("enabled", ConfigSchema.bool(false, "总开关；关闭时不发任何请求"))
+					.field("url", ConfigSchema.string("", "http/https 端点；QQ 机器人填其上报地址（可含 access_token）"))
+					.field("format", ConfigSchema.choice("onebot", List.of("onebot", "qq", "json", "plain"),
+							"onebot={\"message\":…}；qq={\"content\":…,\"msg_type\":0}；json={event,text}；plain=纯文本"))
+					.field("timeoutMs", ConfigSchema.integer(3000, 500, 30000, "单次请求超时（毫秒）"))
+					.field("perMinute", ConfigSchema.integer(20, 1, 600, "每分钟最多发几条（超出直接丢，不排队）"))
+					.field("largeShopAmount", ConfigSchema.integer(10000, 0, 1_000_000_000L,
+							"商店单笔合计 ≥ 该金额才告警（0=不按金额告警）"))
+					.field("events", ConfigSchema.obj("事件开关")
+							.field("largeShop", ConfigSchema.bool(true, "大额商店成交"))
+							.field("altGuard", ConfigSchema.bool(true, "防小号拦截"))
+							.field("configError", ConfigSchema.bool(false, "配置加载失败"))));
 
 	private CoreConfig() {
 	}

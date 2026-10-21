@@ -102,6 +102,18 @@ public final class RedtaleCommands {
 																		.getString(ctx, "season")))))))
 						// R36：数据根目录只读诊断（确认数据确实落在存档里，不用翻文件系统）
 						.then(CommandManager.literal("data").executes(RedtaleCommands::adminData))
+						// T15：外部告警（status 看设置；test 真发一条）
+						.then(CommandManager.literal("alert")
+								.executes(ctx -> adminAlert(ctx, false))
+								.then(CommandManager.literal("test").executes(ctx -> adminAlert(ctx, true))))
+						// T07：经济指标（默认今天；可指定最近 N 天）
+						.then(CommandManager.literal("metrics")
+								.executes(ctx -> adminMetrics(ctx, 1))
+								.then(CommandManager.argument("days",
+												com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 365))
+										.executes(ctx -> adminMetrics(ctx,
+												com.mojang.brigadier.arguments.IntegerArgumentType
+														.getInteger(ctx, "days")))))
 						// T14：CSV 导出（流水 / 商品 / 玩家资产）
 						.then(ExportCommands.build()))
 				.then(CommandManager.literal("lang")
@@ -221,6 +233,90 @@ public final class RedtaleCommands {
 		}
 		src.sendFeedback(() -> Text.literal("§8改 config/redtale/modules.json 后 /redtale reload 生效"), false);
 		return 1;
+	}
+
+	/** T15：外部告警诊断 —— 先看设置，test 时真发一条（不计入每分钟限流）。 */
+	private static int adminAlert(CommandContext<ServerCommandSource> ctx, boolean test) {
+		ServerCommandSource src = ctx.getSource();
+		var s = com.akira.redtale.economy.storage.Webhook.load();
+		src.sendFeedback(() -> Text.literal("§6[alert] §f"
+				+ com.akira.redtale.economy.storage.Webhook.describe()), false);
+		src.sendFeedback(() -> Text.literal("§7事件：大额成交 §f" + s.onLargeShop()
+				+ "§7 / 防小号 §f" + s.onAltGuard()
+				+ "§7 / 配置错误 §f" + s.onConfigError()
+				+ " §8| §7阈值 §f" + s.largeShopAmount()), false);
+		if (!test) return 1;
+		if (!s.usable()) {
+			src.sendError(Text.literal("§c未启用或 URL 非法（core.json → alerts），未发送"));
+			return 0;
+		}
+		boolean ok = com.akira.redtale.economy.storage.Webhook.sendNow("test", "Redtale 告警连通性测试");
+		src.sendFeedback(() -> Text.literal(ok ? "§a测试消息已发送" : "§c发送失败，见日志"), true);
+		return ok ? 1 : 0;
+	}
+
+	/**
+	 * T07：经济指标 —— 流通总量 / 产出 / 消耗 / 净增 / 通胀率 + Top 类型。
+	 *
+	 * <p>读的是**已落盘**流水（异步写队列可能有几笔没刷），所以输出的数字是趋势值；
+	 * 外部账本（Numismatic）拿不到总量时通胀率显示「—」，而不是假装 0。
+	 */
+	private static int adminMetrics(CommandContext<ServerCommandSource> ctx, int days) {
+		ServerCommandSource src = ctx.getSource();
+		java.nio.file.Path root;
+		try {
+			root = com.akira.redtale.economy.util.DataRoot.path();
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c数据根未就绪（等世界加载完成）"));
+			return 0;
+		}
+		String granularity = com.akira.redtale.economy.config.StorageConfig.granularity();		java.nio.file.Path ledgerRoot = root.resolve(
+				com.akira.redtale.economy.config.StorageConfig.ledgerDir().replace("/", java.io.File.separator));
+		java.nio.file.Path accountDir = root.resolve(
+				com.akira.redtale.economy.config.StorageConfig.accountsDir().replace("/", java.io.File.separator));
+
+		boolean internal = "internal".equalsIgnoreCase(
+				com.akira.redtale.economy.economy.BalanceService.provider().id());
+		long total = internal ? com.akira.redtale.economy.storage.EconomyMetrics.totalBalance(accountDir) : -1L;
+		var today = java.time.LocalDate.now();
+		var t1 = com.akira.redtale.economy.storage.EconomyMetrics.window(ledgerRoot, granularity, today, 1);
+		var tn = com.akira.redtale.economy.storage.EconomyMetrics.window(ledgerRoot, granularity, today, days);
+
+		src.sendFeedback(() -> Text.literal("§6[metrics] §7流通 §f"
+				+ (total < 0 ? "外部账本（未知）" : String.valueOf(total))
+				+ " §8| §7粒度 §f" + granularity), false);
+		src.sendFeedback(() -> Text.literal("§7今日 §f"
+				+ com.akira.redtale.economy.storage.EconomyMetrics.line("", t1, total).replace("：产出", "产出")
+				+ " §8(" + t1.tx() + " 笔)"), false);
+		if (days > 1) {
+			src.sendFeedback(() -> Text.literal("§7近 §f" + days + "§7 天 §f"
+					+ com.akira.redtale.economy.storage.EconomyMetrics.line("", tn, total)
+							.replace("：产出", "产出")
+					+ " §8(" + tn.tx() + " 笔)"), false);
+		}
+		String in = topLine("产出 Top", com.akira.redtale.economy.storage.EconomyMetrics
+				.top(tn.mintedByType(), 5));
+		String out = topLine("消耗 Top", com.akira.redtale.economy.storage.EconomyMetrics
+				.top(tn.burnedByType(), 5));
+		if (!in.isEmpty()) src.sendFeedback(() -> Text.literal("§8" + in), false);
+		if (!out.isEmpty()) src.sendFeedback(() -> Text.literal("§8" + out), false);
+		if (tn.skipped() > 0) {
+			src.sendFeedback(() -> Text.literal("§7跳过坏行 §f" + tn.skipped()
+					+ " §8（进程中断留下的半行，属正常）"), false);
+		}
+		return 1;
+	}
+
+	private static String topLine(String label, List<java.util.Map.Entry<String, Long>> top) {
+		if (top.isEmpty()) return "";
+		StringBuilder sb = new StringBuilder(label).append("：");
+		boolean first = true;
+		for (var e : top) {
+			if (!first) sb.append(" §8| §7");
+			sb.append(e.getKey()).append(" §f").append(e.getValue());
+			first = false;
+		}
+		return sb.toString();
 	}
 
 	private static int lang(CommandContext<ServerCommandSource> ctx) {

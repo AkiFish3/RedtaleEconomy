@@ -32,6 +32,9 @@ public final class ShopModule implements RedtaleModule {
 		ShopNetworking.setSource(ShopCatalog.create());
 		ShopTransactions.init();
 		ShopNetworking.setHandler(new ShopTransactions());
+		// T15：大额成交外部告警（默认关闭，配置见 core.json → alerts）
+		com.akira.redtale.economy.storage.Webhook.load();
+		com.akira.redtale.economy.storage.Webhook.installShopAlerts();
 	}
 
 	@Override
@@ -39,6 +42,7 @@ public final class ShopModule implements RedtaleModule {
 		// pageSize / 限流参数每次请求现读；商品表与库存需要显式重读
 		ShopCatalog.reload();
 		ShopTransactions.reloadState();
+		com.akira.redtale.economy.storage.Webhook.load();
 	}
 
 	@Override

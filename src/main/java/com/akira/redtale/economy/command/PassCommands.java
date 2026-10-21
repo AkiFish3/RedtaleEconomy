@@ -44,6 +44,16 @@ public final class PassCommands {
 						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
 						.then(CommandManager.argument("season", StringArgumentType.word())
 								.executes(ctx -> archive(ctx, StringArgumentType.getString(ctx, "season")))))
+				// T03：历史赛季补领（accessMode=off 时一律拒绝）
+				.then(CommandManager.literal("legacy")
+						.then(CommandManager.argument("season", StringArgumentType.word())
+								.executes(ctx -> legacyInfo(ctx, StringArgumentType.getString(ctx, "season")))
+								.then(CommandManager.literal("claim")
+										.then(CommandManager.argument("level", IntegerArgumentType.integer(1, 500))
+												.executes(ctx -> legacyClaim(ctx, "free"))
+												.then(CommandManager.literal("premium")
+														.executes(ctx -> legacyClaim(ctx, "premium")))))
+								.then(CommandManager.literal("all").executes(PassCommands::legacyAll))))
 				.then(CommandManager.literal("addxp")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("player", EntityArgumentType.player())
@@ -120,8 +130,141 @@ public final class PassCommands {
 		return 1;
 	}
 
-	private static int claim(CommandContext<ServerCommandSource> ctx, String track) {
+	/** T03：看某历史赛季能补领什么（xp / 档位 / 两条轨剩余等级）。 */
+	private static int legacyInfo(CommandContext<ServerCommandSource> ctx, String season) {
 		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity p = src.getPlayer();
+		if (p == null) return onlyPlayer(src);
+		var v = BattlePassModule.legacy(season, p.getUuid());
+		if (!v.archived()) {
+			src.sendError(Text.literal("§c赛季 §f" + season + " §c未归档或不存在（没有 _snapshot.json）"));
+			return 0;
+		}
+		src.sendFeedback(() -> Text.literal("§6[pass] 历史赛季 §f" + season
+				+ " §7档位 §f" + v.access()
+				+ " §7| 冻结 xp §f" + v.xp() + " §7| 当季付费 §f" + (v.premium() ? "是" : "否")), false);
+		src.sendFeedback(() -> Text.literal("§7剩余可补领：免费轨 §f" + v.free().size()
+				+ " §7项 " + head(v.free()) + " §8| §7付费轨 §f" + v.premiumLevels().size()
+				+ " §7项 " + head(v.premiumLevels())), false);
+		if (v.access() == com.akira.redtale.economy.module.impl.PassArchive.Access.OFF) {
+			src.sendFeedback(() -> Text.literal(
+					"§e补领未开启：battlepass.json → archive.accessMode = purchased | all"), false);
+		}
+		return 1;
+	}
+
+	/** T03：补领单个等级（track = free / premium）。 */
+	private static int legacyClaim(CommandContext<ServerCommandSource> ctx, String track) {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity p = src.getPlayer();
+		if (p == null) return onlyPlayer(src);
+		String season = StringArgumentType.getString(ctx, "season");
+		int level = IntegerArgumentType.getInteger(ctx, "level");
+		var r = BattlePassModule.claimLegacy(p.getUuid(), season, track, level);
+		switch (r) {
+			case OK -> {
+				p.sendMessage(Text.literal("§a[pass] 已补领 §f" + season + " §7" + track + " §fLv." + level), true);
+				return 1;
+			}
+			case ALREADY -> {
+				p.sendMessage(Text.literal("§e这一档已经领过了"), true);
+				return 0;
+			}
+			case OFF -> {
+				src.sendError(Text.literal("§c补领未开启（battlepass.json → archive.accessMode）"));
+				return 0;
+			}
+			case CURRENT -> {
+				src.sendError(Text.literal("§e这是当前赛季，用 §f/pass claim " + level));
+				return 0;
+			}
+			case NO_SNAPSHOT -> {
+				src.sendError(Text.literal("§c该赛季未归档（先用 §f/pass archive " + season + "§c）"));
+				return 0;
+			}
+			case NOT_ENTITLED -> {
+				src.sendError(Text.literal("§c补领条件不满足（accessMode=purchased 需要当季购买过付费轨）"));
+				return 0;
+			}
+			case LOCKED -> {
+				src.sendError(Text.literal("§c该赛季没有购买付费轨"));
+				return 0;
+			}
+			case NOT_REACHED -> {
+				src.sendError(Text.literal("§c当季等级不够 Lv." + level));
+				return 0;
+			}
+			case NOT_FOUND -> {
+				src.sendError(Text.literal("§c快照里没有你的记录（当季没参加）"));
+				return 0;
+			}
+			case BAD_LEVEL -> {
+				src.sendError(Text.literal("§c等级超出配置上限"));
+				return 0;
+			}
+			default -> {
+				src.sendError(Text.literal("§c补领失败，见日志"));
+				return 0;
+			}
+		}
+	}
+
+	/** T03：一次补领该赛季所有剩余等级（升序，失败即停并报告进度）。 */
+	private static int legacyAll(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		ServerPlayerEntity p = src.getPlayer();
+		if (p == null) return onlyPlayer(src);
+		String season = StringArgumentType.getString(ctx, "season");
+		var v = BattlePassModule.legacy(season, p.getUuid());
+		if (!v.archived()) {
+			src.sendError(Text.literal("§c赛季 §f" + season + " §c未归档或不存在"));
+			return 0;
+		}
+		int ok = 0;
+		String stop = null;
+		for (int lv : v.free()) {
+			var r = BattlePassModule.claimLegacy(p.getUuid(), season, "free", lv);
+			if (r == com.akira.redtale.economy.module.impl.PassArchive.Result.OK) {
+				ok++;
+			} else {
+				stop = "free Lv." + lv + " → " + r;
+				break;
+			}
+		}
+		if (stop == null) {
+			for (int lv : v.premiumLevels()) {
+				var r = BattlePassModule.claimLegacy(p.getUuid(), season, "premium", lv);
+				if (r == com.akira.redtale.economy.module.impl.PassArchive.Result.OK) {
+					ok++;
+				} else {
+					stop = "premium Lv." + lv + " → " + r;
+					break;
+				}
+			}
+		}
+		int done = ok;
+		if (stop == null) {
+			p.sendMessage(Text.literal("§a[pass] 已补领 §f" + season + " §a共 §f" + done + " §a项"), true);
+			return 1;
+		}
+		final String reason = stop;
+		src.sendError(Text.literal("§c补领中断（已领 §f" + done + "§c 项）：§f" + reason));
+		return 0;
+	}
+
+	/** 等级列表只显示前 10 个，避免刷屏。 */
+	private static String head(java.util.List<Integer> levels) {
+		if (levels.isEmpty()) return "";
+		StringBuilder sb = new StringBuilder("§8[");
+		for (int i = 0; i < levels.size() && i < 10; i++) {
+			if (i > 0) sb.append(',');
+			sb.append(levels.get(i));
+		}
+		if (levels.size() > 10) sb.append(",…");
+		return sb.append(']').toString();
+	}
+
+	private static int claim(CommandContext<ServerCommandSource> ctx, String track) {		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
 		int level = IntegerArgumentType.getInteger(ctx, "level");

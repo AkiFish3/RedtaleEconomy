@@ -80,6 +80,10 @@ public final class AltGuard {
 					RedtaleEconomy.LOGGER.info("[anti-alt] 拒绝 {} 的 {}：{}", uuid, scope, d.reason());
 				}
 			}
+			// T15：真拦截（非 logOnly）才推外部告警；logOnly 只在本机日志留痕
+			if (!d.allowed()) {
+				Webhook.notify("alt.block", "玩家 " + uuid + " 的 " + scope + " 被拒：" + d.reason());
+			}
 		}
 		observe(uuid, ip, null);
 		return d;

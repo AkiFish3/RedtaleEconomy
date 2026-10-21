@@ -144,6 +144,34 @@ public final class ConfigManager {
 		return new ArrayList<>(schemas.keySet());
 	}
 
+	/**
+	 * 只读区块读取（给**没有 schema** 的文件用，例如 legacy 的 {@code bound_items.json}）。
+	 *
+	 * <p>不要求 {@code define}，文件缺失/坏档一律返回空对象 —— 调用方按「没配」处理即可。
+	 * 只读：不回写、不参与 reload、不进 README。
+	 */
+	public static com.google.gson.JsonObject section(String relativePath, String dottedPath) {
+		com.google.gson.JsonObject empty = new com.google.gson.JsonObject();
+		try {
+			Path f = get().baseDir().resolve(relativePath);
+			if (!Files.isRegularFile(f)) return empty;
+			com.google.gson.JsonElement el =
+					com.google.gson.JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8));
+			com.google.gson.JsonElement cur = el;
+			if (cur == null || !cur.isJsonObject()) return empty;
+			if (dottedPath != null && !dottedPath.isBlank()) {
+				for (String part : dottedPath.split("\\.")) {
+					if (!cur.isJsonObject()) return empty;
+					cur = cur.getAsJsonObject().get(part);
+					if (cur == null) return empty;
+				}
+			}
+			return cur.isJsonObject() ? cur.getAsJsonObject() : empty;
+		} catch (Exception e) {
+			return empty;
+		}
+	}
+
 	/** 把各 schema 的字段说明汇总成 {@code config/redtale/README.md}（内容不变则不重写）。 */
 	private void writeReadme() {
 		StringBuilder sb = new StringBuilder();

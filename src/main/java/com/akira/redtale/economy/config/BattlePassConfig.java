@@ -92,6 +92,10 @@ public final class BattlePassConfig {
 							"premium=赞助点；money=铜币"))
 					.field("amount", ConfigSchema.integer(10, 0, 1_000_000_000L, "解锁价格"))
 					.field("perSeason", ConfigSchema.bool(true, "每赛季都要重新解锁")))
+			.field("archive", ConfigSchema.obj("历史赛季补领（T03）")
+					.field("accessMode", ConfigSchema.choice("off", List.of("off", "purchased", "all"),
+							"off=不可补领（默认）；purchased=当季买过付费轨的人才可补领；"
+									+ "all=当季有存档的人都能补领（付费轨仍要求当季是付费玩家）")))
 			.field("tracks", ConfigSchema.obj("奖励轨")
 					.field("free", ConfigSchema.rawList(freeTrack(),
 							"免费轨：[{level, reward:{money|items:[{id,count}]}}]"))
@@ -192,6 +196,11 @@ public final class BattlePassConfig {
 
 	public static boolean perSeason() {
 		return store().getPathBool("unlock.perSeason", true);
+	}
+
+	/** T03：历史赛季补领档位（off / purchased / all），未知值由 {@code PassArchive} 归一到 off。 */
+	public static String archiveAccessMode() {
+		return store().getPathString("archive.accessMode", "off");
 	}
 
 	/** 一条轨道奖励。 */
