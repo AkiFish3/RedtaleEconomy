@@ -32,6 +32,13 @@ public final class PassCommands {
 								.executes(ctx -> claim(ctx, "free"))
 								.then(CommandManager.literal("premium").executes(ctx -> claim(ctx, "premium")))))
 				.then(CommandManager.literal("unlock").executes(PassCommands::unlock))
+				// T02：赛季清单（含归档状态与快照摘要）
+				.then(CommandManager.literal("seasons").executes(PassCommands::seasons))
+				// T02：归档某赛季（写快照 + 冻结进度）
+				.then(CommandManager.literal("archive")
+						.requires(src -> Permissions.has(src, Permissions.NODE_OWNER))
+						.then(CommandManager.argument("season", StringArgumentType.word())
+								.executes(ctx -> archive(ctx, StringArgumentType.getString(ctx, "season")))))
 				.then(CommandManager.literal("addxp")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("player", EntityArgumentType.player())
@@ -50,6 +57,47 @@ public final class PassCommands {
 		}
 		// 只下发快照，界面自己渲染；聊天框保持干净
 		com.akira.redtale.economy.net.PassNetworking.send(p);
+		return 1;
+	}
+
+	/** T02：列出赛季（哪个是当前、哪个已归档、归档时多少人多少经验）。 */
+	private static int seasons(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		var list = com.akira.redtale.economy.module.impl.PassSeasons.list();
+		if (list.isEmpty()) {
+			src.sendFeedback(() -> Text.literal("§e[pass] 还没有赛季记录（开服或 /redtale reload 后自动登记当前赛季）"),
+					false);
+			return 1;
+		}
+		String cur = BattlePassConfig.seasonId();
+		src.sendFeedback(() -> Text.literal("§6[pass] 当前赛季 §f" + cur + " §7（" + list.size() + " 条记录）"), false);
+		for (var e : list) {
+			var snap = com.akira.redtale.economy.module.impl.PassSeasons.snapshotOf(e.id());
+			String tail = e.archived()
+					? " §7| 已归档 §f" + e.archivedAt()
+					: (e.id().equals(cur) ? " §a| 进行中" : " §7| 未归档");
+			String stat = snap == null ? "" : " §7| §f" + snap.players() + "§7人 §f" + snap.totalXp() + "§7xp";
+			src.sendFeedback(() -> Text.literal("§8- §f" + e.id() + " §7" + e.name()
+					+ " §8[" + (e.startAt().isBlank() ? "?" : e.startAt()) + " ~ "
+					+ (e.endAt().isBlank() ? "?" : e.endAt()) + "]" + tail + stat), false);
+		}
+		return 1;
+	}
+
+	/** T02：归档赛季（写 _snapshot.json + 标记 archivedAt；之后该赛季只读）。 */
+	private static int archive(CommandContext<ServerCommandSource> ctx, String season) {
+		ServerCommandSource src = ctx.getSource();
+		var res = com.akira.redtale.economy.module.impl.PassSeasons.archive(season, System.currentTimeMillis());
+		switch (res) {
+			case OK -> {
+				var snap = com.akira.redtale.economy.module.impl.PassSeasons.snapshotOf(season);
+				src.sendFeedback(() -> Text.literal("§a[pass] 已归档 §f" + season
+						+ (snap == null ? "" : " §7：§f" + snap.players() + " §7人 §f" + snap.totalXp() + "§7 经验")), true);
+			}
+			case ALREADY -> src.sendError(Text.literal("§e该赛季已归档（快照已存在，不覆盖）"));
+			case NO_DATA -> src.sendError(Text.literal("§c找不到赛季或数据目录：" + season));
+			default -> src.sendError(Text.literal("§c归档失败，见日志"));
+		}
 		return 1;
 	}
 

@@ -131,6 +131,8 @@ public final class BattlePassModule implements RedtaleModule {
 	public void onLoad(ConfigManager cfg) {
 		resolveDir();
 		installHooks();
+		// T02：把当前赛季登记进 seasons.json（服主第一次开服就有一份清单）
+		PassSeasons.ensureCurrent(BattlePassConfig.seasonId(), BattlePassConfig.seasonName());
 	}
 
 	@Override
@@ -138,6 +140,7 @@ public final class BattlePassModule implements RedtaleModule {
 		flushAll();
 		CACHE.clear();
 		resolveDir();
+		PassSeasons.ensureCurrent(BattlePassConfig.seasonId(), BattlePassConfig.seasonName());
 	}
 
 	@Override
@@ -149,6 +152,8 @@ public final class BattlePassModule implements RedtaleModule {
 	@Override
 	public void rebindDataDir() {
 		resolveDir();
+		// T02：%world% 就绪后清单落在真正的数据根里，这里补登记一次
+		PassSeasons.ensureCurrent(BattlePassConfig.seasonId(), BattlePassConfig.seasonName());
 	}
 
 	private static void resolveDir() {
@@ -273,6 +278,7 @@ public final class BattlePassModule implements RedtaleModule {
 
 	public static synchronized void addXp(UUID uuid, String source, long amount) {
 		if (uuid == null || amount <= 0 || !enabled()) return;
+		if (!PassSeasons.writable(season())) return;   // T02：已归档赛季进度冻结
 		PassData d = data(uuid);
 		double bonus = d.premium ? 1.0 + Math.max(0, BattlePassConfig.premiumBonus()) : 1.0;
 		long gain = Math.max(1, Math.round(amount * bonus));
@@ -327,6 +333,7 @@ public final class BattlePassModule implements RedtaleModule {
 	/** 领取某等级奖励；track = free / premium。 */
 	public static synchronized ClaimResult claim(UUID uuid, String track, int level) {
 		if (!enabled()) return ClaimResult.DISABLED;
+		if (!PassSeasons.writable(season())) return ClaimResult.DISABLED;   // T02
 		PassData d = data(uuid);
 		if (level < 1 || level > BattlePassConfig.maxLevel()) return ClaimResult.NOT_REACHED;
 		if (level > levelFor(d.xp)) return ClaimResult.NOT_REACHED;
