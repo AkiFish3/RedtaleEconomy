@@ -242,42 +242,6 @@ public class HubScreen extends Screen {
 		return handled;
 	}
 
-	/**
-	 * 仅 dev 截图夹具（{@code client.dev.UiShots}）使用：点侧边栏第 {@code index} 项。
-	 *
-	 * <p>故意走 {@link #mouseClicked} 而不是直接改 {@code page} —— 这样命中判定的坐标换算
-	 * （{@code sidebarScroll}、{@code HubFrame.ROW_H}、裁剪区）才是真被验证的那条代码路径。
-	 *
-	 * @return 是否命中
-	 */
-	/** 仅 dev 夹具使用：当前页 id（写截图日志用）。 */
-	/**
-	 * 仅 dev 夹具（U10）：点设置页的某一行。
-	 *
-	 * <p>坐标来自 {@link HubSettingsPage#rowCenter}，与 {@code handleClick} 里的命中判定同一套布局，
-	 * 而且走 {@link #mouseClicked} ⇒ 验的是「真实点击能不能点到」，不是直接改静态开关。
-	 *
-	 * @return 是否命中（行被裁剪/不存在时返回 false）
-	 */
-	/** 仅 dev 夹具：设置页内容区高度（用于算滚动上限）。 */
-	/** 仅 dev 夹具：设置页滚动上限（0 = 装得下，不需要滚）。 */
-	/** 仅 dev 夹具：设置页滚到指定偏移（越界由 render 夹回）。 */
-	/**
-	 * 仅 dev 夹具（T44）：把商店网格滚到底，返回最终滚动行数。
-	 *
-	 * <p>不用 {@code mouseScrolled} 而是直接调 {@code scrollByRows}：滚轮事件的
-	 * 坐标/增量在夹具里没法逐格复现，而这里要验的是「被裁掉的卡片能不能到达」。
-	 */
-	/** 仅 dev 夹具：点商店左侧目录树第 {@code row} 行（走真实 mouseClicked 命中路径）。 */
-	/**
-	 * 仅 dev 夹具（U9）：点排行页的「只看活跃」复选框。
-	 *
-	 * <p>坐标与 {@code handleClick} 里 {@code HubRankPage.click(...)} 判定的矩形同源，
-	 * 而且走 {@link #mouseClicked} ⇒ 验的是真命中路径（含 {@code inSearchBox} 让位）。
-	 */
-	/** 仅 dev 夹具（U9/§48.6）：点排行页顶部的榜单下拉（验「其余榜为二级」的下拉是活的）。 */
-	/** 仅 dev 夹具：当前「只看活跃」开关值（写日志用，不做判定的第二来源）。 */
-	/** 仅 dev 夹具：走真实 charTyped 通道写字，再请求一页（验搜索真的过服务端）。 */
 	private boolean handleClick(double mouseX, double mouseY, int button) {
 		return HubClicks.handle(this, mouseX, mouseY, button);
 	}
@@ -326,10 +290,6 @@ public class HubScreen extends Screen {
 		return (int) Math.ceil(left / 1000.0);
 	}
 
-	/** 仅 dev 夹具：点榜单下拉里的第 {@code idx} 项（走 hitDropdown 同一套坐标）。 */
-	/** 仅 dev 夹具：当前选中的榜（0=财富）。 */
-	/** 仅 dev 夹具：点排行页的「同步」按钮（验 60 秒冷却与置灰）。 */
-	/** 仅 dev 夹具：当前同步冷却剩余秒数（写日志用）。 */
 	void requestGuild() {
 		var mc = MinecraftClient.getInstance();
 		if (mc.player != null) mc.player.networkHandler.sendChatCommand("guild");
