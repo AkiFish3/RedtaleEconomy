@@ -169,6 +169,11 @@ final class HubInput {
 			HubShopPage.scrollByRows(dir, host.frame.contentW(), host.frame.contentY(), host.frame.contentH());
 			return true;
 		}
+		if (inContent && host.page == HubPage.TASKS) {
+			// T56：任务数可配到 20，低分辨率下一页只放得下 5~6 行
+			HubTasksPage.scrollByRows(dir);
+			return true;
+		}
 		if (inContent && host.page == HubPage.BOARD) {
 			// T12：低分辨率下一页只放得下 2~3 张卡
 			HubBoardPage.scrollByRows(dir, host.frame.contentH());

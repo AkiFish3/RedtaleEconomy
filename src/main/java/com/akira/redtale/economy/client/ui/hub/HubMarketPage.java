@@ -150,8 +150,8 @@ public final class HubMarketPage {
 		String name = st.isEmpty() ? o.itemId() : st.getName().getString();
 		dc.drawText(tr, Text.literal(trim(tr, name + " ×" + o.count(), w - 190)), x + 23, ry + 2, HubTheme.TEXT, false);
 		dc.drawText(tr, Text.literal(trim(tr, o.sellerName(), 60)), x + 23, ry + 12, HubTheme.MUTED, false);
-		String price = o.price() + " 铜";
-		dc.drawText(tr, Text.literal(price), x + w - 92, ry + 2, HubTheme.GOLD, false);
+		// T55：图标 + 数字（不再写「N 铜」）
+		HubMoney.draw(dc, tr, x + w - 92, ry + 2, o.price(), 64);
 		String remain = o.remainingMs() < 0 ? "永久" : MarketRules.remainingText(o.remainingMs()) + "后下架";
 		dc.drawText(tr, Text.literal(trim(tr, remain, 84)), x + w - 92, ry + 12, HubTheme.HINT, false);
 		if (o.mine()) {

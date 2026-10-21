@@ -172,8 +172,14 @@ public final class HubCheckinPage {
 			}
 		}
 		dc.drawText(tr, Text.literal("今日奖励"), x + 6, infoY + 2, HubTheme.MUTED, false);
-		dc.drawText(tr, Text.literal(todayMoney > 0 ? "+" + todayMoney + " 铜" : "—"),
-				x + 6 + tr.getWidth("今日奖励") + 8, infoY + 2, HubTheme.GOLD, false);
+		int moneyX = x + 6 + tr.getWidth("今日奖励") + 8;
+		if (todayMoney > 0) {
+			// T55：图标 + 数字
+			dc.drawText(tr, Text.literal("+"), moneyX, infoY + 2, HubTheme.OK, false);
+			HubMoney.draw(dc, tr, moneyX + 5, infoY + 2, todayMoney, 80);
+		} else {
+			dc.drawText(tr, Text.literal("—"), moneyX, infoY + 2, HubTheme.MUTED, false);
+		}
 		drawButton(dc, tr, x, btnY, 96, btnH, "签到", true, mouseX, mouseY,
 				HubWidgets.Variant.PRIMARY);
 		int makeupLeft = snap == null ? 0 : snap.makeupLeft();

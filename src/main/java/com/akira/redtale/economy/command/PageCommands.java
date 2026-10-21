@@ -100,9 +100,10 @@ public final class PageCommands {
 					+ mod + "=false）"), true);
 			return 0;
 		}
-		// 任务面板是独立 Screen（U2），不是 Hub 内页；直达后就不再发 HUB_OPEN
+		// T56：任务有 Hub 页了 ⇒ /rt tasks 直接开 Hub 任务页，不再弹独立面板
 		if ("tasks".equals(page)) {
-			com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
+			com.akira.redtale.economy.net.HubNetworking.open(p, "tasks");
+			com.akira.redtale.economy.net.TaskNetworking.sendHub(p);
 			return 1;
 		}
 		switch (page) {

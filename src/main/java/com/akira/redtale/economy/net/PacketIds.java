@@ -24,6 +24,14 @@ public final class PacketIds {
 	public static final Identifier S2C_BOUNTY = RedtaleEconomy.id("bounty/snapshot");
 
 	public static final Identifier S2C_TASKS = RedtaleEconomy.id("tasks/snapshot");
+	/**
+	 * T56：Hub 任务页专用（请求 / 下发）。
+	 *
+	 * <p>为什么另起一条而不是复用 {@code S2C_TASKS}：那条的老语义是「打开独立的任务面板」
+	 * （{@code TaskScreen}），复用会让 Hub 里每领一次奖励就弹一个全屏面板盖住 Hub。
+	 */
+	public static final Identifier C2S_TASKS_HUB_REQ = RedtaleEconomy.id("tasks/hub_request");
+	public static final Identifier S2C_TASKS_HUB = RedtaleEconomy.id("tasks/hub");
 	public static final Identifier S2C_CHECKIN = RedtaleEconomy.id("checkin/snapshot");
 	public static final Identifier S2C_PASS = RedtaleEconomy.id("pass/snapshot");
 	public static final Identifier S2C_GUILD = RedtaleEconomy.id("guild/snapshot");

@@ -116,7 +116,9 @@ public final class HubStoragePage {
 		if (confirmUpgrade) {
 			long price = WarehouseClientNetworking.NEXT_PRICE;
 			long prem = WarehouseClientNetworking.NEXT_PREMIUM;
-			String cost = price > 0 ? ("花 " + price + " 铜") : (prem > 0 ? ("花 " + prem + " 赞助点") : "免费");
+			// T55：金额统一走 HubMoney（图标 + 三段），只有赞助点仍是纯文字
+			String cost = price > 0 ? ("花 " + HubMoney.text(price))
+					: (prem > 0 ? ("花 " + prem + " 赞助点") : "免费");
 			String q = "确认扩容到 " + WarehouseClientNetworking.NEXT_SLOTS + " 格 · " + cost + "？";
 			final int cw2 = Math.min(w, 300);
 			dc.fill(x, y + 16, x + cw2, y + 34, HubTheme.CARD);

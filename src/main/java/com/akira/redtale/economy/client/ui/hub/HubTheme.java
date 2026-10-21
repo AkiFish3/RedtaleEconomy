@@ -82,6 +82,13 @@ public final class HubTheme {
 	public static int DANGER_HOVER = 0xFFD05050;
 	/** 描边 */
 	public static int OUTLINE = 0xFF3A3A3A;
+	/** T55：硬币图标面/描边（金）。几何绘制，不走字形也不依赖 Numismatic 贴图。 */
+	public static int COIN_GOLD = 0xFFFFCC33;
+	public static int COIN_GOLD_EDGE = 0xFF8A6410;
+	public static int COIN_SILVER = 0xFFDCE3EC;
+	public static int COIN_SILVER_EDGE = 0xFF7C8794;
+	public static int COIN_COPPER = 0xFFD07A3C;
+	public static int COIN_COPPER_EDGE = 0xFF7A3F1C;
 
 	public static boolean vanilla;
 
@@ -128,6 +135,12 @@ public final class HubTheme {
 			DANGER = 0xFFC05A5A;
 			DANGER_HOVER = 0xFFD97A7A;
 			OUTLINE = 0x66FFFFFF;
+			COIN_GOLD = 0xFFFFD54A;
+			COIN_GOLD_EDGE = 0xFF8A6410;
+			COIN_SILVER = 0xFFE8EFF8;
+			COIN_SILVER_EDGE = 0xFF7C8794;
+			COIN_COPPER = 0xFFCE7A3E;
+			COIN_COPPER_EDGE = 0xFF7A3F1C;
 		} else if ("vanilla".equals(name)) {
 			// 经典 GUI：灰底 + 亮边
 			PANEL = 0xFFC6C6C6;
@@ -166,6 +179,13 @@ public final class HubTheme {
 			DANGER = 0xFF8B2F2F;
 			DANGER_HOVER = 0xFFA63C3C;
 			OUTLINE = 0xFF7A7A7A;
+			// 原版灰底上要更暗一档，否则金色发白
+			COIN_GOLD = 0xFFE0A81E;
+			COIN_GOLD_EDGE = 0xFF7A5A00;
+			COIN_SILVER = 0xFFC8D0DA;
+			COIN_SILVER_EDGE = 0xFF6E7884;
+			COIN_COPPER = 0xFFB86A32;
+			COIN_COPPER_EDGE = 0xFF66300F;
 		} else {
 			PANEL = 0xFF202020;
 			BAR = 0xFF1B1B1B;
@@ -203,6 +223,12 @@ public final class HubTheme {
 			DANGER = 0xFFB84242;
 			DANGER_HOVER = 0xFFD05050;
 			OUTLINE = 0xFF3A3A3A;
+			COIN_GOLD = 0xFFFFCC33;
+			COIN_GOLD_EDGE = 0xFF8A6410;
+			COIN_SILVER = 0xFFDCE3EC;
+			COIN_SILVER_EDGE = 0xFF7C8794;
+			COIN_COPPER = 0xFFD07A3C;
+			COIN_COPPER_EDGE = 0xFF7A3F1C;
 		}
 	}
 

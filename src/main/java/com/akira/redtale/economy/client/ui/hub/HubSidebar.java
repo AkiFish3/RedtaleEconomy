@@ -34,6 +34,10 @@ public final class HubSidebar {
 	private long rawAnimAt;
 
 	private List<Text> pendingTooltip;
+	/** 紧凑模式悬停头像时的自绘余额浮层（T55：浮层里也要有硬币图标）。 */
+	private boolean moneyTooltip;
+	private String moneyName = "";
+	private long moneyRaw = -1;
 
 	/** 侧边栏滚动偏移（dev 夹具要读）。 */
 	public int scrollOffset() {
@@ -74,12 +78,38 @@ public final class HubSidebar {
 	public void render(DrawContext dc, TextRenderer tr, HubFrame f, HubPage page,
 					   int mouseX, int mouseY) {
 		pendingTooltip = null;
+		moneyTooltip = false;
 		renderProfile(dc, tr, f, mouseX, mouseY);
 		renderEntries(dc, tr, f, page, mouseX, mouseY);
 	}
 
-	/** 浮层统一在最后画（顶栏/内容/底栏都可能覆盖侧边栏）。 */
+	/**
+	 * 浮层统一在最后画（顶栏/内容/底栏都可能覆盖侧边栏）。
+	 *
+	 * <p>T55：头像悬停的余额浮层是<b>自绘</b>的 —— 原版 tooltip 只吃 Text，
+	 * 塞不进几何硬币；这里给「名字 + 三段余额」画一个小面板。
+	 */
 	public void drawPendingTooltip(DrawContext dc, TextRenderer tr, int mouseX, int mouseY) {
+		if (moneyTooltip) {
+			moneyTooltip = false;
+			String line = moneyRaw < 0 ? "…" : HubMoney.fullText(moneyRaw);
+			int w = Math.max(tr.getWidth(moneyName), HubMoney.fullWidth(tr, Math.max(0, moneyRaw))) + 10;
+			w = Math.max(w, tr.getWidth(line) + 10);
+			int h = 24;
+			int bx = mouseX + 8;
+			int by = mouseY + 8;
+			dc.fill(bx, by, bx + w, by + h, HubTheme.PANEL);
+			dc.fill(bx, by, bx + w, by + 1, HubTheme.OUTLINE);
+			dc.fill(bx, by + h - 1, bx + w, by + h, HubTheme.OUTLINE);
+			dc.fill(bx, by, bx + 1, by + h, HubTheme.OUTLINE);
+			dc.fill(bx + w - 1, by, bx + w, by + h, HubTheme.OUTLINE);
+			dc.drawText(tr, Text.literal(moneyName), bx + 5, by + 4, HubTheme.TEXT, false);
+			if (moneyRaw < 0) {
+				dc.drawText(tr, Text.literal("…"), bx + 5, by + 14, HubTheme.MUTED, false);
+			} else {
+				HubMoney.drawFull(dc, tr, bx + 5, by + 14, moneyRaw, w - 10);
+			}
+		}
 		if (pendingTooltip == null) return;
 		dc.drawTooltip(tr, pendingTooltip, mouseX, mouseY);
 		pendingTooltip = null;
@@ -125,10 +155,9 @@ public final class HubSidebar {
 				&& mouseY >= headY && mouseY < headY + headSize;
 		if (hoverHead) {
 			MinecraftClient mc2 = MinecraftClient.getInstance();
-			String nm = mc2.player == null ? "—" : mc2.player.getGameProfile().getName();
-			long raw2 = BalanceClientNetworking.RAW;
-			String money2 = raw2 < 0 ? "…" : com.akira.redtale.economy.economy.Currency.format(raw2);
-			pendingTooltip = List.of(Text.literal(nm), Text.literal(money2));
+			moneyName = mc2.player == null ? "—" : mc2.player.getGameProfile().getName();
+			moneyRaw = BalanceClientNetworking.RAW;
+			moneyTooltip = true;
 		}
 		dc.fill(x, y, x + sidebarW, y + 1, HubTheme.LINE);                        // 顶边
 		dc.fill(x, y, x + 1, y + HubFrame.PROFILE_H, HubTheme.LINE);              // 左边
@@ -137,55 +166,18 @@ public final class HubSidebar {
 	}
 
 	/**
-	 * 余额显示（§47.7）：装了 Numismatic 就画硬币图标 + 数量（金→银→铜，0 跳过）；
-	 * 没装则用紧凑文字「12银30铜」。宽度不够时自动跳过后面币种。
+	 * 余额（T55）：图标 + 金/银/铜三段，<b>零值段不隐藏</b>（Aki 口径：余额要能看出「我有多少铜」，
+	 * 而不是「1金」剩下的部分让人猜）。
+	 *
+	 * <p>图标是几何绘制（{@link HubMoney}），不再依赖 Numismatic 的物品贴图 ——
+	 * 以前没装那个模组就退化成一串「12银30铜」，两套观感割裂。
 	 */
 	private void drawCoins(DrawContext dc, TextRenderer tr, int x, int y, int w, long raw) {
 		if (raw < 0) {
 			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.TEXT, false);
 			return;
 		}
-		long gc = Math.max(1, com.akira.redtale.economy.economy.Currency.goldInCopper());
-		long sc = Math.max(1, com.akira.redtale.economy.economy.Currency.silverInCopper());
-		long gold = raw / gc;
-		long rest = raw % gc;
-		long silver = rest / sc;
-		long copper = rest % sc;
-
-		boolean numis = FabricLoader.getInstance().isModLoaded("numismatic-overhaul");
-		if (!numis) {
-			String txt = (gold > 0 ? gold + "金" : "") + (silver > 0 ? silver + "银" : "")
-					+ (copper > 0 || (gold == 0 && silver == 0) ? copper + "铜" : "");
-			dc.drawText(tr, Text.literal(HubText.trim(tr, txt, w)), x, y, HubTheme.TEXT, false);
-			return;
-		}
-		if (gold == 0 && silver == 0 && copper == 0) {
-			coin(dc, tr, x, y, "numismatic-overhaul:bronze_coin", 0, x + w, true);
-			return;
-		}
-		int right = x + w;
-		int cx = coin(dc, tr, x, y, "numismatic-overhaul:gold_coin", gold, right, false);
-		cx = coin(dc, tr, cx, y, "numismatic-overhaul:silver_coin", silver, right, false);
-		coin(dc, tr, cx, y, "numismatic-overhaul:bronze_coin", copper, right, false);
-	}
-
-	private int coin(DrawContext dc, TextRenderer tr, int x, int y, String itemId, long value,
-					int right, boolean force) {
-		if (value <= 0 && !force) return x;
-		String n = value >= 10000 ? (value / 1000) + "k" : String.valueOf(value);
-		int needW = 17 + tr.getWidth(n);
-		// right 是**绝对坐标**的右边界（之前误把它当宽度，导致永远画不出来）
-		if (x + needW > right) return x;
-		try {
-			var item = Registries.ITEM.get(new Identifier(itemId));
-			if (item != null && item != net.minecraft.item.Items.AIR) {
-				dc.drawItem(new ItemStack(item), x, y - 4);
-			}
-		} catch (Exception ignored) {
-			// 图标缺失只影响观感
-		}
-		dc.drawText(tr, Text.literal(n), x + 17, y, HubTheme.TEXT, false);
-		return x + needW + 2;
+		HubMoney.drawFull(dc, tr, x, y, raw, w);
 	}
 
 	/** 玩家头像（用皮肤贴图的 8×8 脸部放大）。 */

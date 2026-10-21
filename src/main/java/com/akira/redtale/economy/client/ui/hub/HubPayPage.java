@@ -29,9 +29,18 @@ public final class HubPayPage {
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			String name, String amount, int focus, double mouseX, double mouseY) {
 		dc.drawText(tr, Text.literal("转账"), x, y, HubTheme.TITLE, false);
+		// T55：余额走图标 + 三段（右对齐；放不下就紧贴标题右侧，绝不与标题压字）
 		long bal = com.akira.redtale.economy.client.balance.BalanceClientNetworking.RAW;
-		String b = "余额：" + (bal < 0 ? "…" : com.akira.redtale.economy.economy.Currency.format(bal));
-		dc.drawText(tr, Text.literal(b), x + w - tr.getWidth(b), y, HubTheme.MUTED, false);
+		String lbl = "余额";
+		int bw = bal < 0 ? tr.getWidth("…") : HubMoney.fullWidth(tr, bal);
+		int bx = Math.max(x + 80, x + w - bw);
+		int lx = Math.max(x + 44, bx - tr.getWidth(lbl) - 4);
+		dc.drawText(tr, Text.literal(lbl), lx, y, HubTheme.MUTED, false);
+		if (bal < 0) {
+			dc.drawText(tr, Text.literal("…"), bx, y, HubTheme.MUTED, false);
+		} else {
+			HubMoney.drawFull(dc, tr, bx, y, bal, x + w - bx);
+		}
 		dc.fill(x, y + 12, x + w, y + 13, HubTheme.OUTLINE);
 
 		dc.drawText(tr, Text.literal("玩家名"), x, y + FIELD_Y - 10, HubTheme.MUTED, false);

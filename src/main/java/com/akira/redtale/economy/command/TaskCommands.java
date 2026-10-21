@@ -51,6 +51,23 @@ public final class TaskCommands {
 		return (int) com.akira.redtale.economy.module.impl.TaskModule.settings().getLong("tasksPerDay", 3);
 	}
 
+	/**
+	 * T56：统一回显出口。
+	 *
+	 * <p>玩家在 Hub 任务页里点「领取/刷新」时，界面是全屏的，聊天栏看不见 ——
+	 * 按硬规则「Hub 内命令走 actionbar」，改走 {@code sendMessage(text, true)}；
+	 * 从聊天栏直接敲命令的玩家仍是原来的聊天/错误输出（不改变老习惯）。
+	 */
+	private static void say(CommandContext<ServerCommandSource> ctx, ServerPlayerEntity p,
+			Text text, boolean error) {
+		if (com.akira.redtale.economy.net.TaskNetworking.hubMode(p.getUuid())) {
+			p.sendMessage(text, true);
+			return;
+		}
+		if (error) ctx.getSource().sendError(text);
+		else ctx.getSource().sendFeedback(() -> text, false);
+	}
+
 	private static int list(CommandContext<ServerCommandSource> ctx) {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
@@ -58,7 +75,7 @@ public final class TaskCommands {
 		PageCommands.hintLegacy(p, "tasks", "tasks");
 
 		TaskModule.Daily d = TaskModule.load(p.getUuid());
-		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.header", d.date, d.refreshesLeft)), false);
+		say(ctx, p, Text.literal(Lang.msg("tasks.header", d.date, d.refreshesLeft)), false);
 		for (TaskModule.Task t : d.tasks) {
 			StringBuilder sb = new StringBuilder();
 			sb.append(t.claimed ? "§8✔ " : "§f").append("§e#").append(t.slot).append(" §7[")
@@ -68,10 +85,10 @@ public final class TaskCommands {
 			}
 			sb.append("§7→ §a").append(BalanceService.format(t.reward));
 			sb.append("§8 (").append(t.completion).append(")");
-			src.sendFeedback(() -> Text.literal(sb.toString()), false);
+			say(ctx, p, Text.literal(sb.toString()), false);
 		}
 		if (d.tasks.isEmpty()) {
-			src.sendFeedback(() -> Text.literal(Lang.t("tasks.empty")), false);
+			say(ctx, p, Text.literal(Lang.t("tasks.empty")), false);
 		}
 		// U2：同时下发可视化面板（客户端没装本模组时会忽略这个包，聊天栏输出照常）
 		com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
@@ -87,14 +104,14 @@ public final class TaskCommands {
 			// R29：次数用完 → 尝试消耗刷新券（背包优先，其次仓库）
 			String ticket = TaskModule.refreshTicketItem();
 			if (ticket.isEmpty() || !consumeTicket(p, ticket)) {
-				src.sendError(Text.literal(Lang.msg("tasks.noRefresh")));
+				say(ctx, p, Text.literal(Lang.msg("tasks.noRefresh")), true);
 				return 0;
 			}
 			TaskModule.refreshByTicket(p.getUuid());
-			src.sendFeedback(() -> Text.literal(Lang.msg("tasks.refreshedByTicket", displayName(ticket))), false);
+			say(ctx, p, Text.literal(Lang.msg("tasks.refreshedByTicket", displayName(ticket))), false);
 			return list(ctx);
 		}
-		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.refreshed")), false);
+		say(ctx, p, Text.literal(Lang.msg("tasks.refreshed")), false);
 		return list(ctx);
 	}
 
@@ -107,22 +124,22 @@ public final class TaskCommands {
 		int slot = IntegerArgumentType.getInteger(ctx, "slot");
 		TaskModule.Task t = TaskModule.task(p.getUuid(), slot);
 		if (t == null) {
-			src.sendError(Text.literal(Lang.msg("tasks.noTask", slot)));
+			say(ctx, p, Text.literal(Lang.msg("tasks.noTask", slot)), true);
 			return 0;
 		}
 		if (t.claimed) {
-			src.sendError(Text.literal(Lang.msg("tasks.already")));
+			say(ctx, p, Text.literal(Lang.msg("tasks.already")), true);
 			return 0;
 		}
 		if (!"submit".equals(t.completion)) {
-			src.sendError(Text.literal(Lang.msg("tasks.wrongMode", "claim")));
+			say(ctx, p, Text.literal(Lang.msg("tasks.wrongMode", "claim")), true);
 			return 0;
 		}
 
 		// 先全量校验再扣，避免扣了一半发现不够（R27：仓库也算可用量）
 		for (TaskModule.ItemCount ic : t.items) {
 			if (countAvailable(p, ic.id) < ic.count) {
-				src.sendError(Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)));
+				say(ctx, p, Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)), true);
 				return 0;
 			}
 		}
@@ -160,7 +177,7 @@ public final class TaskCommands {
 			// 进度没写成：把刚扣的物品原样还回去（物品已离开背包，直接 insert）
 			for (TaskModule.ItemCount ic : t.items) giveBack(p, ic);
 			txn.dismiss();
-			src.sendError(Text.literal(Lang.msg("tasks.already")));
+			say(ctx, p, Text.literal(Lang.msg("tasks.already")), true);
 			return 0;
 		}
 		txn.state("claimed");
@@ -174,7 +191,9 @@ public final class TaskCommands {
 		// R32：缴纳涨协会声望
 		GuildModule.addRep(p.getUuid(), "submit");
 		final long r = reward;
-		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.claimed", slot, BalanceService.format(r))), false);
+		say(ctx, p, Text.literal(Lang.msg("tasks.claimed", slot, BalanceService.format(r))), false);
+		// T56：领完必须立刻重发快照 —— 否则 Hub 页还显示「领取」，再点一次才刷新（服务端会拒）
+		com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
 		return 1;
 	}
 
@@ -186,15 +205,15 @@ public final class TaskCommands {
 		int slot = IntegerArgumentType.getInteger(ctx, "slot");
 		TaskModule.Task t = TaskModule.task(p.getUuid(), slot);
 		if (t == null) {
-			src.sendError(Text.literal(Lang.msg("tasks.noTask", slot)));
+			say(ctx, p, Text.literal(Lang.msg("tasks.noTask", slot)), true);
 			return 0;
 		}
 		if (t.claimed) {
-			src.sendError(Text.literal(Lang.msg("tasks.already")));
+			say(ctx, p, Text.literal(Lang.msg("tasks.already")), true);
 			return 0;
 		}
 		if (!"detect".equals(t.completion)) {
-			src.sendError(Text.literal(Lang.msg("tasks.wrongMode", "submit")));
+			say(ctx, p, Text.literal(Lang.msg("tasks.wrongMode", "submit")), true);
 			return 0;
 		}
 		// T05：事件型任务只认服务端记账，不数背包
@@ -203,26 +222,28 @@ public final class TaskCommands {
 			int have = TaskModule.eventHave(p.getUuid(), TaskModule.load(p.getUuid()), t);
 			if (have < need) {
 				String lb = t.label == null || t.label.isBlank() ? t.event : t.label;
-				src.sendError(Text.literal(lb + " " + have + "/" + need));
+				say(ctx, p, Text.literal(lb + " " + have + "/" + need), true);
 				return 0;
 			}
 		} else {
 			for (TaskModule.ItemCount ic : t.items) {
 				if (countOf(p, ic.id) < ic.count) {
-					src.sendError(Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)));
+					say(ctx, p, Text.literal(Lang.msg("tasks.missing", displayName(ic.id), ic.count)), true);
 					return 0;
 				}
 			}
 		}
 		long reward = TaskModule.claimAndSave(p.getUuid(), slot);
 		if (reward < 0) {
-			src.sendError(Text.literal(Lang.msg("tasks.already")));
+			say(ctx, p, Text.literal(Lang.msg("tasks.already")), true);
 			return 0;
 		}
 		// R20：领任务给战令经验
 		BattlePassModule.addXp(p.getUuid(), "taskClaim");
 		final long r = reward;
-		src.sendFeedback(() -> Text.literal(Lang.msg("tasks.claimed", slot, BalanceService.format(r))), false);
+		say(ctx, p, Text.literal(Lang.msg("tasks.claimed", slot, BalanceService.format(r))), false);
+		// T56：领完必须立刻重发快照 —— 否则 Hub 页还显示「领取」，再点一次才刷新（服务端会拒）
+		com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
 		return 1;
 	}
 

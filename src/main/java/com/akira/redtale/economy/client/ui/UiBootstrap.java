@@ -24,6 +24,9 @@ public final class UiBootstrap {
 	}
 
 	public static void register() {
+		// T56：Hub 任务页收包（独立于老的任务面板通道，收包只更新状态不弹界面）
+		com.akira.redtale.economy.client.ui.hub.TasksHubClientNetworking.register();
+
 		UiDataRegistry.register("menu.entries", source -> {
 			List<String> rows = new ArrayList<>();
 			for (MenuEntries.Entry e : MenuEntries.all()) {

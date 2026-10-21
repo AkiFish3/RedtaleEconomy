@@ -8,6 +8,8 @@ package com.akira.redtale.economy.client.ui.hub;
 public enum HubPage {
 
 	CHECKIN("checkin", "签到", false, "minecraft:clock", "checkin"),
+	/** T56：每日任务（原来只有独立面板，Hub 里没有入口）。 */
+	TASKS("tasks", "任务", false, "minecraft:writable_book", "tasks"),
 	SHOP("shop", "商店", false, "minecraft:chest", "shop"),
 	MARKET("market", "市场", false, "minecraft:emerald_block", "market"),
 	STORAGE("storage", "仓储", false, "minecraft:barrel", "warehouse"),

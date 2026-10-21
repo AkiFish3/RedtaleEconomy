@@ -144,8 +144,8 @@ public final class HubBoardPage {
 				+ (e.accepted() && !e.accepterName().isEmpty() ? " · " + e.accepterName() : "");
 		dc.drawText(tr, Text.literal(trim(tr, meta, textW)), x + 23, ry + 13, HubTheme.MUTED, false);
 
-		String bounty = e.bounty() + " 铜";
-		dc.drawText(tr, Text.literal(trim(tr, bounty, textW)), x + 23, ry + 22, HubTheme.GOLD, false);
+		// T55：赏金走图标 + 数字
+		HubMoney.draw(dc, tr, x + 23, ry + 22, e.bounty(), textW);
 	}
 
 	private static String btnLabel(BoardProtocol.Entry e) {

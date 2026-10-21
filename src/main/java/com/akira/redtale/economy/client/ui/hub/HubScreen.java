@@ -233,6 +233,8 @@ public class HubScreen extends Screen {
 
 	@Override
 	public void removed() {
+		// T56：退出界面要清掉 Hub 模式，否则下次从聊天栏用 /tasks 会「只发页面数据、不弹面板」
+		TasksHubClientNetworking.request(false);
 		// 关闭界面时把光标里的东西退回背包，避免物品卡在服务端
 		if (page == HubPage.STORAGE) {
 			HubStoragePage.confirmUpgrade = false;

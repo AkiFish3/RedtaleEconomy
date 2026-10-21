@@ -54,6 +54,11 @@ final class HubRender {
 		// 底部：状态优先，空闲出 tip
 		host.statusLine.render(dc, host.text(), host.frame);
 
+		// T54：商店 hover 价格浮层（★浮层最后画★，画在格子里会被相邻格/分页条盖住）
+		if (host.page == HubPage.SHOP) {
+			HubShopPage.renderHoverOverlay(dc, host.text(), mouseX, mouseY, cx, cy, cw, ch);
+		}
+
 		// ★下拉最后画★，否则会被底栏/后面的元素盖住
 		if (host.page == HubPage.RANK && HubRankPage.needsDropdownOverlay()) {
 			HubRankPage.drawDropdown(dc, host.text(), cx, cy, host.rankBoard,
@@ -138,6 +143,7 @@ final class HubRender {
 			case CHECKIN -> HubCheckinPage.render(dc, tr, cx, cy, cw, ch,
 					com.akira.redtale.economy.client.checkin.CheckinClientNetworking.LAST,
 					host.monthOffset, mouseX, mouseY);
+			case TASKS -> HubTasksPage.render(dc, tr, cx, cy, cw, ch, mouseX, mouseY);
 			default -> {
 				dc.fill(cx, cy, cx + cw, cy + 64, HubTheme.CARD);
 				dc.drawText(tr, Text.literal("这一页正在迁移到新界面"), cx + 8, cy + 10, HubTheme.TEXT, false);

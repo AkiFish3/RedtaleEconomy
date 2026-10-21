@@ -168,6 +168,8 @@ public final class TaskModule implements RedtaleModule {
 		resolveDir();
 		loadCatalogs();
 		installHooks();
+		// T56：Hub 任务页的收包注册（幂等；放在模块里而不是根类，模块关闭时页面本来也看不到）
+		com.akira.redtale.economy.net.TaskNetworking.register();
 	}
 
 	@Override

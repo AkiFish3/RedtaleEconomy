@@ -1,5 +1,7 @@
 package com.akira.redtale.economy.client.ui.hub;
 
+import net.minecraft.client.MinecraftClient;
+
 /**
  * T32 批次2：Hub 点击路由（原 HubScreen.handleClick）。
  *
@@ -50,6 +52,8 @@ final class HubClicks {
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
 				}
 				host.page = all[idx];
+				// T56：任务页要通知服务端切换快照通道（进页拉一次，离页清标记）
+				TasksHubClientNetworking.sync(host.page);
 				if (host.page == HubPage.SHOP) host.requestShopPage();
 				if (host.page == HubPage.MARKET) com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 				if (host.page == HubPage.BOUNTY) HubRequests.requestBounty();
@@ -81,6 +85,30 @@ final class HubClicks {
 				&& HubAdminPage.click(mouseX, mouseY, host.frame.contentW())) {
 			host.setStatus("正在刷新控制台…");
 			return true;
+		}
+		// T56：任务页的「领取 / 刷新」（命令由服务端校验，回显走 actionbar）
+		if (host.page == HubPage.TASKS && button == 0) {
+			int[] slot = {-1};
+			HubTasksPage.Action a = HubTasksPage.click(mouseX, mouseY,
+					host.frame.contentX(), host.frame.contentY(),
+					host.frame.contentW(), host.frame.contentH(), slot);
+			if ((a == HubTasksPage.Action.CLAIM || a == HubTasksPage.Action.SUBMIT) && slot[0] >= 0) {
+				if (MinecraftClient.getInstance().player != null) {
+					// 缴纳型走 submit（扣物品），事件型走 claim；二者校验都只在服务端
+					String sub = a == HubTasksPage.Action.SUBMIT ? "submit" : "claim";
+					MinecraftClient.getInstance().player.networkHandler
+							.sendChatCommand("tasks " + sub + " " + slot[0]);
+				}
+				host.setStatus("正在处理 #" + slot[0] + "…");
+				return true;
+			}
+			if (a == HubTasksPage.Action.REFRESH) {
+				if (MinecraftClient.getInstance().player != null) {
+					MinecraftClient.getInstance().player.networkHandler.sendChatCommand("tasks refresh");
+				}
+				host.setStatus("正在刷新任务…");
+				return true;
+			}
 		}
 		R r;
 		r = HubMarketClicks.handle(host, mouseX, mouseY, button);

@@ -23,9 +23,22 @@ import java.util.Locale;
  */
 public final class HubShopPage {
 
-	private static final int CARD_W = 96;
-	private static final int CARD_H = 58;
-	private static final int GAP = 4;
+	/**
+	 * T54：商店改成「容器式图标格」6×4 网格。
+	 *
+	 * <p>旧布局是 96×58 的卡片（名字/单价/含税/库存四行字），427×240 下一屏只放得下
+	 * 2×2 = 4 张，翻页也翻不到中间那些。现在一格就是一个物品图标：
+	 * 目标是 6 列 × 4 行 = 24 格；格子边长取「按宽度分 6 列」和「按高度分 4 行」的较小值，
+	 * 所以窗口变化时只缩格子、不改行数；窄到放不下 6 列才减列（最小 18 px）。
+	 * 数量走右下角角标，价格/含税/库存走 hover 浮层（浮层最后画）。
+	 */
+	private static final int COLS_TARGET = 6;
+	private static final int ROWS_TARGET = 4;
+	/** 最小可点格子：再小图标就糊在描边上，改为减列。 */
+	private static final int CELL_MIN = 18;
+	/** 最大格子：高窗口下别把 24 格拉成一大片太空的方块。 */
+	private static final int CELL_MAX = 44;
+	private static final int GAP = 3;
 	/** 目录树列宽；没有分类时整列不画，卡片区自动占满。 */
 	private static final int TREE_W = 96;
 	private static final int TREE_HEAD = 17;
@@ -121,34 +134,37 @@ public final class HubShopPage {
 			drawTree(dc, tr, x, y + 38, TREE_W, h - 38 - 26, page, mouseX, mouseY);
 		}
 
-		// 卡片：列数按最小宽算，再把每张卡等比拉宽铺满整行（§37.2 对齐网格）
+		// 卡片：T54 改 6×4 图标网格（格子边长自适应，见 COLS_TARGET/ROWS_TARGET）
 		int gx = gridX(x, page);
 		int gw = gridW(w, page);
-		int cols = Math.max(1, (gw + GAP) / (CARD_W + GAP));
-		int cw = cardW(gw);
 		int startY = gridStartY(y);
 		int limitY = gridLimitY(y, h);
+		int[] dims = dims(gw, limitY - startY);
+		int cols = dims[0];
+		int cell = dims[1];
+		int rowCap = dims[2];
+		int blockW = cols * cell + (cols - 1) * GAP;
+		int gx0 = gx + Math.max(0, (gw - blockW) / 2);
 		List<ShopProtocol.Entry> entries = page.entries();
 		int totalRows = (entries.size() + cols - 1) / cols;
-		int fitRows = rowsFit(y, h);
-		scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, totalRows - fitRows)));
+		scrollRow = Math.max(0, Math.min(scrollRow, Math.max(0, totalRows - rowCap)));
 		// 超出部分要被裁掉：以前靠 break 不画，现在有了滚动位移，半行会压在分页条上
 		dc.enableScissor(gx, startY, gx + gw, limitY);
 		for (int i = 0; i < entries.size(); i++) {
 			int col = i % cols;
 			int row = i / cols - scrollRow;
-			int cx = gx + col * (cw + GAP);
-			int cy = startY + row * (CARD_H + GAP);
-			if (cy + CARD_H > limitY) break;
+			int cx = gx0 + col * (cell + GAP);
+			int cy = startY + row * (cell + GAP);
+			if (cy + cell > limitY) break;
 			if (cy < startY) continue;
-			drawCard(dc, tr, cx, cy, cw, entries.get(i), i == selected, mouseX, mouseY);
+			drawCell(dc, tr, cx, cy, cell, entries.get(i), i == selected, mouseX, mouseY);
 		}
 		dc.disableScissor();
-		if (totalRows > fitRows) {
+		if (totalRows > rowCap) {
 			// 右侧细滚动条（与仓储页同款：1px 轨道 + 3px 滑块）
 			int trackH = limitY - startY;
-			int barH = Math.max(10, trackH * fitRows / totalRows);
-			int barY = startY + (trackH - barH) * scrollRow / Math.max(1, totalRows - fitRows);
+			int barH = Math.max(10, trackH * rowCap / totalRows);
+			int barY = startY + (trackH - barH) * scrollRow / Math.max(1, totalRows - rowCap);
 			dc.fill(gx + gw - 2, startY, gx + gw - 1, limitY, HubTheme.LINE);
 			dc.fill(gx + gw - 2, barY, gx + gw - 1, barY + barH, HubTheme.MUTED);
 		}
@@ -244,10 +260,29 @@ public final class HubShopPage {
 	private static String breadcrumbText(String path) {
 		return String.join(" › ", ShopTree.crumbs(path));
 	}
-	/** 卡片实际宽度：列数固定后平均分配，保证最右一张顶到内容区右边界。 */
-	private static int cardW(int w) {
-		int cols = Math.max(1, (w + GAP) / (CARD_W + GAP));
-		return (w - (cols - 1) * GAP) / cols;
+	/**
+	 * 网格几何（T54）：返回 {@code {列数, 格子边长, 可见行数}}。
+	 *
+	 * <p>★渲染与命中必须都调它★：格子边长随窗口变，抄成两套数字必然点错格。
+	 */
+	private static int[] dims(int gridW, int availH) {
+		int cols = COLS_TARGET;
+		int cell = cellSize(gridW, availH, cols);
+		// 窄成一列 12 px 时先减列，保证最小的格子还能点
+		while (cols > 1 && cell < CELL_MIN) {
+			cols--;
+			cell = cellSize(gridW, availH, cols);
+		}
+		cell = Math.max(CELL_MIN, Math.min(CELL_MAX, cell));
+		int rows = Math.max(1, Math.min(ROWS_TARGET, (availH + GAP) / (cell + GAP)));
+		return new int[]{cols, cell, rows};
+	}
+
+	/** 目标 6 列 4 行下能给出的最大正方形边长（宽/高取小）。 */
+	private static int cellSize(int gridW, int availH, int cols) {
+		int byW = (gridW - (cols - 1) * GAP) / cols;
+		int byH = (availH - (ROWS_TARGET - 1) * GAP) / ROWS_TARGET;
+		return Math.min(byW, byH);
 	}
 
 	/** 网格起点 y（搜索行 18 + 筛选栏 18 + 卡片区顶部 2）。 */
@@ -260,23 +295,40 @@ public final class HubShopPage {
 		return y + h - 34;
 	}
 
-	/** 一屏能完整放下几行卡（至少 1 行，否则小窗口全空更糟）。 */
-	private static int rowsFit(int y, int h) {
-		int avail = gridLimitY(y, h) - gridStartY(y);
-		return Math.max(1, (avail + GAP) / (CARD_H + GAP));
-	}
-
-	/** 网格列数（与渲染同一口径，不能被别处复制成第二套）。 */
-	private static int colsOf(int w, ShopProtocol.Page page) {
-		return Math.max(1, (gridW(w, page) + GAP) / (CARD_W + GAP));
-	}
-
 	/** 当前允许的最大滚动行数（0 = 不用滚）。 */
 	private static int maxScrollRow(int w, int y, int h) {
 		ShopProtocol.Page page = ShopClientState.page();
 		int entries = page == null || page.entries() == null ? 0 : page.entries().size();
-		int totalRows = (entries + colsOf(w, page) - 1) / colsOf(w, page);
-		return Math.max(0, totalRows - rowsFit(y, h));
+		int[] d = dims(gridW(w, page), gridLimitY(y, h) - gridStartY(y));
+		int totalRows = (entries + d[0] - 1) / d[0];
+		return Math.max(0, totalRows - d[2]);
+	}
+
+	/**
+	 * 光标落在第几格（-1 = 没命中）。
+	 *
+	 * <p>渲染、hover 浮层、点击三处共用同一份几何 —— 以前渲染和命中各抄一套，
+	 * 改卡片宽度就点错格。落在列/行的空隙里也算没命中，避免「点缝也选中」。
+	 */
+	private static int indexAt(ShopProtocol.Page page, double mx, double my, int gx, int gw,
+			int startY, int limitY, int[] pre) {
+		if (page == null || page.entries().isEmpty()) return -1;
+		int[] d = pre == null ? dims(gw, limitY - startY) : pre;
+		int cols = d[0];
+		int cell = d[1];
+		int rowCap = d[2];
+		int blockW = cols * cell + (cols - 1) * GAP;
+		int gx0 = gx + Math.max(0, (gw - blockW) / 2);
+		if (mx < gx0 || my < startY || my >= limitY) return -1;
+		int col = (int) ((mx - gx0) / (cell + GAP));
+		if (col < 0 || col >= cols) return -1;
+		if (mx - (gx0 + col * (cell + GAP)) >= cell) return -1;
+		int row = (int) ((my - startY) / (cell + GAP));
+		if (row < 0 || row >= rowCap) return -1;
+		if (my - (startY + row * (cell + GAP)) >= cell) return -1;
+		int idx = (row + scrollRow) * cols + col;
+		if (idx < 0 || idx >= page.entries().size()) return -1;
+		return idx;
 	}
 
 	/** 滚 {@code rows} 行（正数向下），自动钳到 [0, max]。 */
@@ -294,42 +346,104 @@ public final class HubShopPage {
 		return scrollRow;
 	}
 
-	private static void drawCard(DrawContext dc, TextRenderer tr, int x, int y, int cw,
+	/**
+	 * 一个图标格（T54）：物品图标居中 + 右下角数量角标。
+	 *
+	 * <p>价格/含税/库存不在格子里画 —— 40 px 的格子塞四行字必然压字，
+	 * 统一走 {@link #renderHoverOverlay} 的 hover 浮层。
+	 */
+	private static void drawCell(DrawContext dc, TextRenderer tr, int x, int y, int cell,
 			ShopProtocol.Entry e, boolean selected, double mouseX, double mouseY) {
-		boolean hover = mouseX >= x && mouseX < x + cw && mouseY >= y && mouseY < y + CARD_H;
-		dc.fill(x, y, x + cw, y + CARD_H, selected ? HubTheme.SELECT : HubTheme.CARD);
+		boolean hover = mouseX >= x && mouseX < x + cell && mouseY >= y && mouseY < y + cell;
+		dc.fill(x, y, x + cell, y + cell, selected ? HubTheme.SELECT : HubTheme.CARD);
 		int edge = selected ? HubTheme.GOLD : (hover ? HubTheme.EDGE_HOVER : HubTheme.LINE);
-		dc.fill(x, y, x + cw, y + 1, edge);
-		dc.fill(x, y + CARD_H - 1, x + cw, y + CARD_H, edge);
-		dc.fill(x, y, x + 1, y + CARD_H, edge);
-		dc.fill(x + cw - 1, y, x + cw, y + CARD_H, edge);
+		dc.fill(x, y, x + cell, y + 1, edge);
+		dc.fill(x, y + cell - 1, x + cell, y + cell, edge);
+		dc.fill(x, y, x + 1, y + cell, edge);
+		dc.fill(x + cell - 1, y, x + cell, y + cell, edge);
 
 		ItemStack stack = stackOf(e.itemId());
 		if (!stack.isEmpty()) {
-			dc.drawItem(stack, x + 4, y + 4);
+			dc.drawItem(stack, x + (cell - 16) / 2, y + (cell - 16) / 2);
 		} else {
-			dc.fill(x + 4, y + 4, x + 20, y + 20, HubTheme.SLOT);
+			// 图标缺失（模组没装）：画一个占位方块 + 首字母，不要留空洞
+			int s = 12;
+			int ix = x + (cell - s) / 2;
+			int iy = y + (cell - s) / 2;
+			dc.fill(ix, iy, ix + s, iy + s, HubTheme.SLOT);
+			String ch = shortId(e.itemId()).substring(0, 1).toUpperCase(Locale.ROOT);
+			dc.drawText(tr, Text.literal(ch), ix + (s - tr.getWidth(ch)) / 2, iy + 2,
+					HubTheme.TEXT, false);
 		}
+
+		// 数量角标（库存）：无限库存不画（以前写「无限」，两个汉字在小格里放不下）
+		if (e.stock() >= 0 && cell >= 24) {
+			String badge = e.stock() >= 10000 ? (e.stock() / 1000) + "k" : String.valueOf(e.stock());
+			@SuppressWarnings("unused")
+			int bw = tr.getWidth(badge);
+			int bx = x + cell - 2 - bw;
+			int by = y + cell - 10;
+			// 角标压在图标右下，先垫一层底再画字（否则深色图标上读不清）
+			dc.fill(bx - 1, by - 1, bx + bw + 1, by + 9, 0xB0000000);
+			dc.drawText(tr, Text.literal(badge), bx, by,
+					e.stock() == 0 ? HubTheme.DANGER : HubTheme.TEXT, false);
+		}
+	}
+
+	/**
+	 * hover 浮层（T54）：名字 / 买价（含税）/ 卖价 / 库存。
+	 *
+	 * <p>★必须最后画★（硬规则：浮层最后画）—— 画在格子里会被相邻格和分页条盖住。
+	 */
+	public static void renderHoverOverlay(DrawContext dc, TextRenderer tr, double mx, double my,
+			int x, int y, int w, int h) {
+		ShopProtocol.Page page = ShopClientState.page();
+		if (page == null || page.entries().isEmpty()) return;
+		int gx = gridX(x, page);
+		int gw = gridW(w, page);
+		int startY = gridStartY(y);
+		int limitY = gridLimitY(y, h);
+		int[] d = dims(gw, limitY - startY);
+		int idx = indexAt(page, mx, my, gx, gw, startY, limitY, d);
+		if (idx < 0) return;
+		ShopProtocol.Entry e = page.entries().get(idx);
+
+		ItemStack stack = stackOf(e.itemId());
 		String name = stack.isEmpty() ? shortId(e.itemId()) : stack.getName().getString();
-		dc.drawText(tr, Text.literal(trim(tr, name, cw - 26)), x + 22, y + 6, HubTheme.TEXT, false);
-		int priceY = y + 26;
-		String price = e.buyPrice() + " 铜";
-		dc.drawText(tr, Text.literal(price), x + 4, priceY, HubTheme.GOLD, false);
+		long tax = com.akira.redtale.economy.client.ShopClientState.tax()
+				.buyTax(e.itemId(), e.buyPrice());
+		boolean hasTax = tax > 0;
 
-		// T01：标价旁显示含税价（税率关 / 本人免税 / 名单内免税时不画）
-		long tax = com.akira.redtale.economy.client.ShopClientState.tax().buyTax(e.itemId(), e.buyPrice());
-		if (tax > 0) {
-			String withTax = "含税 " + (e.buyPrice() + tax);
-			int tx = x + cw - 4 - tr.getWidth(withTax);
-			// 位置不够就不硬塞（窄窗口下会和单价压字）
-			if (tx > x + 6 + tr.getWidth(price)) {
-				dc.drawText(tr, Text.literal(withTax), tx, priceY, HubTheme.MUTED, false);
-			}
+		int lines = hasTax ? 4 : 3;
+		int boxW = Math.max(112, Math.min(190, tr.getWidth(name) + 16));
+		int boxH = lines * 11 + 6;
+		int bx = (int) mx + 12;
+		int by = (int) my + 6;
+		// 贴近右/下边界时翻到另一侧，别画出面板
+		if (bx + boxW > x + w) bx = (int) mx - boxW - 8;
+		if (bx < x) bx = x;
+		if (by + boxH > y + h) by = y + h - boxH - 2;
+		if (by < y) by = y;
+
+		dc.fill(bx, by, bx + boxW, by + boxH, HubTheme.PANEL);
+		dc.fill(bx, by, bx + boxW, by + 1, HubTheme.OUTLINE);
+		dc.fill(bx, by + boxH - 1, bx + boxW, by + boxH, HubTheme.OUTLINE);
+		dc.fill(bx, by, bx + 1, by + boxH, HubTheme.OUTLINE);
+		dc.fill(bx + boxW - 1, by, bx + boxW, by + boxH, HubTheme.OUTLINE);
+
+		int ty = by + 4;
+		dc.drawText(tr, Text.literal(trim(tr, name, boxW - 10)), bx + 5, ty, HubTheme.TEXT, false);
+		ty += 11;
+		dc.drawText(tr, Text.literal("买"), bx + 5, ty, HubTheme.MUTED, false);
+		HubMoney.draw(dc, tr, bx + 17, ty, e.buyPrice(), boxW - 22);
+		ty += 11;
+		if (hasTax) {
+			dc.drawText(tr, Text.literal("含税"), bx + 5, ty, HubTheme.MUTED, false);
+			HubMoney.draw(dc, tr, bx + 27, ty, e.buyPrice() + tax, boxW - 32);
+			ty += 11;
 		}
-
-		String stock = e.stock() < 0 ? "无限" : ("库存 " + e.stock());
-		int color = e.stock() == 0 ? HubTheme.DANGER : HubTheme.MUTED;
-		dc.drawText(tr, Text.literal(trim(tr, stock, cw - 8)), x + 4, y + 40, color, false);
+		dc.drawText(tr, Text.literal("卖"), bx + 5, ty, HubTheme.MUTED, false);
+		HubMoney.draw(dc, tr, bx + 17, ty, e.sellPrice(), boxW - 22);
 	}
 
 	private static void drawMini(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
@@ -409,28 +523,16 @@ public final class HubShopPage {
 		}
 		int gx = gridX(x, page);
 		int gw = gridW(w, page);
-		int cols = Math.max(1, (gw + GAP) / (CARD_W + GAP));
-		int cw = cardW(gw);
-		int startY = gridStartY(y);
-		int limitY = gridLimitY(y, h);
-		List<ShopProtocol.Entry> entries = page.entries();
-		int sr = Math.max(0, Math.min(scrollRow,
-				Math.max(0, (entries.size() + cols - 1) / cols - rowsFit(y, h))));
-		for (int i = 0; i < entries.size(); i++) {
-			int cx = gx + (i % cols) * (cw + GAP);
-			int cy = startY + (i / cols - sr) * (CARD_H + GAP);
-			if (cy + CARD_H > limitY) break;
-			if (cy < startY) continue;
-			if (mx >= cx && mx < cx + cw && my >= cy && my < cy + CARD_H) {
-				outIndex[0] = i;
-				return Action.NONE;
-			}
+		int hit = indexAt(page, mx, my, gx, gw, gridStartY(y), gridLimitY(y, h), null);
+		if (hit >= 0) {
+			outIndex[0] = hit;
+			return Action.NONE;
 		}
 		// 搜索行右端的「同步」（渲染位置 x+w-30 起）
 		if (my >= y && my < y + 18 && mx >= x + w - 40) return Action.SYNC;
 		int barY = y + h - 26;
 		if (my >= barY && my <= barY + 22) {
-			boolean hasSel = selected >= 0 && selected < entries.size();
+			boolean hasSel = selected >= 0 && selected < page.entries().size();
 			// 与 drawMini 的坐标一一对应：买 = -40..-22，卖 = -20..-2
 			if (mx >= x + w - 40 && mx <= x + w - 22) return hasSel ? Action.BUY : Action.NONE;
 			if (mx >= x + w - 20 && mx <= x + w - 2) return hasSel ? Action.SELL : Action.NONE;

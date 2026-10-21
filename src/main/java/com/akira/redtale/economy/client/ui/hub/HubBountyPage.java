@@ -64,7 +64,9 @@ public final class HubBountyPage {
 			int fill = e.need() <= 0 ? 0 : (int) (barW * Math.min(1.0, (double) e.progress() / e.need()));
 			dc.fill(x + 6, barY, x + 6 + fill, barY + 6, e.done() ? HubTheme.OK : HubTheme.GOLD);
 
-			dc.drawText(tr, Text.literal("+" + e.reward() + " 铜"), x + 6, top + 31, HubTheme.GOLD, false);
+			// T55：奖励金额走图标 + 数字
+			dc.drawText(tr, Text.literal("奖励"), x + 6, top + 31, HubTheme.MUTED, false);
+			HubMoney.draw(dc, tr, x + 32, top + 31, e.reward(), w - 44);
 
 			String btn = e.claimed() ? "已领取" : (e.done() ? "领取" : "进行中");
 			boolean can = !e.claimed() && e.done();

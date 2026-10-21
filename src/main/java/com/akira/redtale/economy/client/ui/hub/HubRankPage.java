@@ -112,9 +112,9 @@ public final class HubRankPage {
 				dc.drawText(tr, Text.literal(r.rank() + "."), x + 4, rowY + 3,
 						r.rank() <= 3 ? HubTheme.GOLD : HubTheme.MUTED, false);
 				dc.drawText(tr, Text.literal(r.name()), x + 22, rowY + 3, HubTheme.TEXT, false);
-				String money = com.akira.redtale.economy.economy.BalanceService.format(r.balance());
-				dc.drawText(tr, Text.literal(money), x + w - 4 - tr.getWidth(money), rowY + 3,
-						HubTheme.GOLD, false);
+				// T55：金额图标化（右对齐：先量宽再落笔）
+				int mw = HubMoney.width(tr, r.balance());
+				HubMoney.draw(dc, tr, x + w - 4 - mw, rowY + 3, r.balance(), mw);
 				rowY += 14;
 			}
 			// 总人数常驻（开关切换时这行就是"行数确实变了"的读数，见 _VERIFY_ECON.md → U9）
@@ -130,10 +130,12 @@ public final class HubRankPage {
 		String who = me == null ? "你 · 暂无数据"
 				: (me.rank() > 0 ? "你 · 第 " + me.rank() + " 名" : "你 · 暂未上榜");
 		dc.drawText(tr, Text.literal(who), x + 6, selfY + 6, HubTheme.PRIMARY_SOFT_TEXT, false);
-		String selfMoney = me == null ? "—"
-				: com.akira.redtale.economy.economy.BalanceService.format(me.balance());
-		dc.drawText(tr, Text.literal(selfMoney), x + w - 4 - tr.getWidth(selfMoney), selfY + 6,
-				HubTheme.GOLD, false);
+		if (me == null) {
+			dc.drawText(tr, Text.literal("—"), x + w - 10, selfY + 6, HubTheme.GOLD, false);
+		} else {
+			int mw = HubMoney.width(tr, me.balance());
+			HubMoney.draw(dc, tr, x + w - 4 - mw, selfY + 6, me.balance(), mw);
+		}
 	}
 
 	/** 下拉命中：返回 0..n-1 表示选中该榜，-2 = 点开/关闭，-1 = 无。 */

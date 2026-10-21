@@ -35,15 +35,18 @@ public final class HubChrome {
 		dc.drawText(tr, Text.literal(head), f.x + 10, f.y + 8, HubTheme.TITLE, false);
 
 		// 顶部：余额（右）—— §37.3「标题左、状态右，不随内容滚动」
-		// 窄面板/紧凑模式下会挤掉标题，所以只在够宽时画。
-		long bal = BalanceClientNetworking.RAW;
-		String balText = bal < 0 ? "" : Currency.format(bal);
-		if (!balText.isEmpty()) {
-			int bw = tr.getWidth(balText);
-			int bx = f.x + f.w - 24 - bw;
-			int titleEnd = f.x + 12 + tr.getWidth(head);
-			if (bx > titleEnd + 8) {
-				dc.drawText(tr, Text.literal(balText), bx, f.y + 8, HubTheme.GOLD, false);
+		// T55：侧栏常驻「头像 + 三段余额」，顶栏再画一遍是纯重复 ⇒ 只在侧栏收成图标条
+		// （紧凑 / 隐藏文字）时才补这一处，否则界面上根本看不到余额。
+		boolean sidebarHasMoney = ClientUiConfig.showLabels && !f.compact;
+		if (!sidebarHasMoney) {
+			long bal = BalanceClientNetworking.RAW;
+			if (bal >= 0) {
+				int bw = HubMoney.fullWidth(tr, bal);
+				int bx = f.x + f.w - 24 - bw;
+				int titleEnd = f.x + 12 + tr.getWidth(head);
+				if (bx > titleEnd + 8) {
+					HubMoney.drawFull(dc, tr, bx, f.y + 8, bal, f.x + f.w - 24 - bx);
+				}
 			}
 		}
 

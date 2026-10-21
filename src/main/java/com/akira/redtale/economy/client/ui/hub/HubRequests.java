@@ -16,6 +16,8 @@ final class HubRequests {
 
 	/** 切到某页时顺手拉一次数据（服务端只回快照，不做写操作）。 */
 	static void pullData(HubScreen host, HubPage p) {
+		// T56：进/退任务页都要告诉服务端（决定快照走 Hub 通道还是「弹独立面板」通道）
+		TasksHubClientNetworking.sync(p);
 		var mc = MinecraftClient.getInstance();
 		if (mc.player == null) return;
 		switch (p) {
