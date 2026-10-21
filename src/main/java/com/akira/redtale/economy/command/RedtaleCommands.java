@@ -101,7 +101,9 @@ public final class RedtaleCommands {
 																com.mojang.brigadier.arguments.StringArgumentType
 																		.getString(ctx, "season")))))))
 						// R36：数据根目录只读诊断（确认数据确实落在存档里，不用翻文件系统）
-						.then(CommandManager.literal("data").executes(RedtaleCommands::adminData)))
+						.then(CommandManager.literal("data").executes(RedtaleCommands::adminData))
+						// T14：CSV 导出（流水 / 商品 / 玩家资产）
+						.then(ExportCommands.build()))
 				.then(CommandManager.literal("lang")
 						.requires(src -> Permissions.has(src, Permissions.NODE_ADMIN))
 						.then(CommandManager.argument("code", com.mojang.brigadier.arguments.StringArgumentType.word())

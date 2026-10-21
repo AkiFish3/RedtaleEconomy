@@ -101,6 +101,8 @@ public final class TaskCommands {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
+		// T18：门禁必须在扣物品之前 —— 放到 claimAndSave 里就晚了（那时仓库/背包已经被扣）
+		if (altBlocked(src, p)) return 0;
 		int slot = IntegerArgumentType.getInteger(ctx, "slot");
 		TaskModule.Task t = TaskModule.task(p.getUuid(), slot);
 		if (t == null) {
@@ -179,6 +181,7 @@ public final class TaskCommands {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
+		if (altBlocked(src, p)) return 0;
 		int slot = IntegerArgumentType.getInteger(ctx, "slot");
 		TaskModule.Task t = TaskModule.task(p.getUuid(), slot);
 		if (t == null) {
@@ -302,6 +305,19 @@ public final class TaskCommands {
 	private static String displayName(String itemId) {
 		Item item = item(itemId);
 		return item == null ? itemId : new ItemStack(item).getName().getString();
+	}
+
+	/**
+	 * T18：防小号门禁。返回 {@code true} 表示已拒绝（调用方立刻 return 0，不要动物品）。
+	 *
+	 * <p>默认配置 {@code enabled=false} 时恒放行，等于零开销的一次 map 查询。
+	 */
+	private static boolean altBlocked(ServerCommandSource src, ServerPlayerEntity p) {
+		com.akira.redtale.economy.storage.AltGuard.Decision d =
+				com.akira.redtale.economy.storage.AltGuard.gate(p.getUuid(), p.getIp(), "task");
+		if (d.allowed()) return false;
+		src.sendError(Text.literal("§c[防小号] " + d.reason()));
+		return true;
 	}
 
 	private static int onlyPlayer(ServerCommandSource src) {

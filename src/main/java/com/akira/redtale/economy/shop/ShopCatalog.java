@@ -151,6 +151,9 @@ public final class ShopCatalog implements ShopSource {
 		SHOPS.clear();
 		SEARCH.clear();
 		ItemLang.clearCache();
+		// T08/T09：折扣与轮换表跟着商店数据一起重载，避免「改了 discounts.json 要重启」
+		ShopDiscounts.reload();
+		ROTATION.clear();
 		priceViolations = 0;
 		priceViolationSample = "";
 		ready = false;
@@ -778,13 +781,14 @@ public final class ShopCatalog implements ShopSource {
 			if (!cat.isEmpty() && !ShopTree.matches(it.category(), cat)) continue;
 			long sell = sellPrice(it);
 			// 价格按「能成交的价格」判断：能买看买价，只能卖看卖价
-			long price = it.buy() > 0 ? it.buy() : sell;
+			long buy = buyPriceOf(shopId, it);
+			long price = buy > 0 ? buy : sell;
 			if (filter.minPrice() > 0 && price < filter.minPrice()) continue;
 			if (filter.maxPrice() > 0 && price > filter.maxPrice()) continue;
 			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
 			if (filter.inStockOnly() && stock == 0) continue;
 			if (tokens.length > 0 && !search(shopId, it).matchesAll(tokens)) continue;
-			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock, it.buy() > 0, sell > 0));
+			out.add(new ShopProtocol.Entry(it.id(), buy, sell, stock, buy > 0, sell > 0));
 		}
 		return out;
 	}
@@ -816,8 +820,9 @@ public final class ShopCatalog implements ShopSource {
 			if (!it.enabled()) continue;
 			long stock = ShopStock.get(shopId, it.id(), it.stockInit());
 			long sell = sellPrice(it);
-			out.add(new ShopProtocol.Entry(it.id(), it.buy(), sell, stock,
-					it.buy() > 0, sell > 0));
+			long buy = buyPriceOf(shopId, it);
+			out.add(new ShopProtocol.Entry(it.id(), buy, sell, stock,
+					buy > 0, sell > 0));
 		}
 		return out;
 	}
@@ -836,7 +841,47 @@ public final class ShopCatalog implements ShopSource {
 		if (it == null || !it.enabled()) return null;
 		long stock = ShopStock.get(shopId, itemId, it.stockInit());
 		long sell = sellPrice(it);
-		return new ShopProtocol.Entry(it.id(), it.buy(), sell, stock, it.buy() > 0, sell > 0);
+		long buy = buyPriceOf(shopId, it);
+		return new ShopProtocol.Entry(it.id(), buy, sell, stock, buy > 0, sell > 0);
+	}
+
+	/**
+	 * T08：折后买入价 = 文件价 × (100 - 当前折扣%)。没有活动时就是文件价。
+	 *
+	 * <p>所有对外暴露价格的地方（{@link #entry}／{@link #allEntries}／{@link #slice}）都走这里，
+	 * 否则会出现「界面显示打折、结算按原价扣」的双口径。
+	 */
+	public static long buyPriceOf(String shopId, ItemDef it) {
+		if (it == null) return 0L;
+		long now = System.currentTimeMillis();
+		int pct = ShopDiscounts.percentFor(shopId, it.id(), now);
+		// T09：每日轮换特价与 T08 折扣取「更大的那个」，不叠加（叠加会算出 1 折以下的黑洞价）
+		int rot = rotationPercent(shopId, it.id(), now);
+		int best = Math.max(pct, rot);
+		return ShopDiscounts.priceWith(it.buy(), best);
+	}
+
+	/** 今日轮换缓存：key = shopId|dayIndex，reload 时清空。 */
+	private static final Map<String, java.util.Set<String>> ROTATION = new HashMap<>();
+
+	private static int rotationPercent(String shopId, String itemId, long nowMs) {
+		if (!ShopRotation.enabled() || !ShopRotation.coversShop(shopId)) return 0;
+		ShopDef def = SHOPS.get(shopId);
+		if (def == null) return 0;
+		long day = ShopRotation.dayIndex(nowMs, ShopRotation.refreshHour());
+		String key = shopId + '|' + day;
+		java.util.Set<String> picked = ROTATION.get(key);
+		if (picked == null) {
+			List<String> ids = new ArrayList<>();
+			for (ItemDef x : def.items.values()) {
+				if (x.enabled() && x.buy() > 0) ids.add(x.id());
+			}
+			picked = ShopRotation.pick(ids, day, ShopRotation.count(), ShopRotation.salt());
+			ROTATION.put(key, picked);
+			// 只留今天的：日期滚动后旧集合没有任何用处
+			ROTATION.keySet().removeIf(k -> !k.equals(key) && k.startsWith(shopId + '|'));
+		}
+		return picked.contains(itemId) ? ShopRotation.percent() : 0;
 	}
 
 	/**

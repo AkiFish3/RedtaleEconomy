@@ -181,6 +181,9 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			txn.commit();
 
 			long after = BalanceService.get(player.getUuid());
+			// T13：只发成功的成交（事务已 commit，钱货两清）
+			ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
+					price / Math.max(1, count), price, after, true));
 			return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
 		} catch (Throwable t) {
 			refundBuy(player, premium, price, ref, t);
@@ -247,6 +250,8 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			txn.commit();
 
 			long after = BalanceService.get(player.getUuid());
+			ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
+					income / Math.max(1, count), income, after, false));
 			return new ShopProtocol.ActionResult(true, "shop.sellOk", after, -1);
 		} catch (Throwable t) {
 			ItemStack back = new ItemStack(item, count);

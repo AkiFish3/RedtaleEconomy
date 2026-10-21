@@ -18,6 +18,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -150,11 +151,97 @@ public final class ShopAdminCommands {
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
 										.executes(ShopAdminCommands::removeShop)))
+						// T08：限时折扣表诊断 + 热重载
+						.then(CommandManager.literal("discount")
+								.executes(ShopAdminCommands::discountInfo)
+								.then(CommandManager.literal("reload")
+										.executes(ShopAdminCommands::discountReload)))
+						// T09：今日轮换特价诊断（哪几件、什么时候换、文件名）
+						.then(CommandManager.literal("rotation")
+								.executes(ShopAdminCommands::rotationInfo)
+								.then(CommandManager.argument("shopId", StringArgumentType.word())
+										.suggests(shops())
+										.executes(ctx -> rotationInfo(ctx, StringArgumentType.getString(ctx, "shopId")))))
 						.then(CommandManager.literal("edit")
 								.executes(ctx -> edit(ctx, null))
 								.then(CommandManager.argument("shopId", StringArgumentType.word())
 										.suggests(shops())
 										.executes(ctx -> edit(ctx, StringArgumentType.getString(ctx, "shopId")))))));
+	}
+
+	/** T08：折扣表状态（有几个窗口、现在生效的是哪些、文件在哪）。 */
+	private static int discountInfo(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			long now = System.currentTimeMillis();
+			List<String> active = com.akira.redtale.economy.shop.ShopDiscounts.activeIds(now);
+			java.nio.file.Path f = com.akira.redtale.economy.shop.ShopDiscounts.path();
+			src.sendFeedback(() -> Text.literal("§6[discount] §7窗口 §f"
+					+ com.akira.redtale.economy.shop.ShopDiscounts.windowCount()
+					+ " §7| 当前生效 §f" + (active.isEmpty() ? "无" : String.join(", ", active))), false);
+			src.sendFeedback(() -> Text.literal("§7文件 §f" + f
+					+ (java.nio.file.Files.isRegularFile(f) ? " §a✔" : " §c（不存在，等于无折扣）")), false);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c读取折扣表失败：" + e.getMessage()));
+			return 0;
+		}
+	}
+
+	/** T08：热重载折扣表（不动商店数据，避免为了改折扣把整棵 shop 树重扫一遍）。 */
+	private static int discountReload(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		try {
+			com.akira.redtale.economy.shop.ShopDiscounts.reload();
+			List<String> active = com.akira.redtale.economy.shop.ShopDiscounts.activeIds(System.currentTimeMillis());
+			src.sendFeedback(() -> Text.literal("§a[discount] 已重载 §f"
+					+ com.akira.redtale.economy.shop.ShopDiscounts.windowCount() + " §a个窗口，当前生效 §f"
+					+ (active.isEmpty() ? "无" : String.join(", ", active))), true);
+			return 1;
+		} catch (Exception e) {
+			src.sendError(Text.literal("§c重载失败：" + e.getMessage()));
+			return 0;
+		}
+	}
+
+	/** T09：今日轮换特价诊断。不传 shopId 时打印所有参与店铺的件数。 */
+	private static int rotationInfo(CommandContext<ServerCommandSource> ctx) {
+		ServerCommandSource src = ctx.getSource();
+		boolean on = com.akira.redtale.economy.shop.ShopRotation.enabled();
+		src.sendFeedback(() -> Text.literal("§6[rotation] §7" + (on ? "§a已启用" : "§c未启用（shop/rotation.json → enabled）")
+				+ " §7件数 §f" + com.akira.redtale.economy.shop.ShopRotation.count()
+				+ " §7折扣 §f" + com.akira.redtale.economy.shop.ShopRotation.percent() + "%"
+				+ " §7刷新 §f" + com.akira.redtale.economy.shop.ShopRotation.refreshHour() + ":00"), false);
+		for (String shopId : ShopCatalog.shopIds()) {
+			if (!com.akira.redtale.economy.shop.ShopRotation.coversShop(shopId)) continue;
+			int n = rotationItems(shopId).size();
+			src.sendFeedback(() -> Text.literal("§7- §f" + shopId + " §7今日特价 §f" + n + " §7件"), false);
+		}
+		return 1;
+	}
+
+	private static int rotationInfo(CommandContext<ServerCommandSource> ctx, String shopId) {
+		ServerCommandSource src = ctx.getSource();
+		List<String> ids = rotationItems(shopId);
+		src.sendFeedback(() -> Text.literal("§6[rotation] §f" + shopId + " §7今日 §f" + ids.size() + " §7件"), false);
+		String joined = String.join("§7, §f", ids.stream().limit(20).toList());
+		src.sendFeedback(() -> Text.literal("§f" + joined), false);
+		return 1;
+	}
+
+	/** 复算今日特价（与 ShopCatalog 用同一套入参，便于对账）。 */
+	private static List<String> rotationItems(String shopId) {
+		ShopCatalog.ShopDef def = ShopCatalog.shop(shopId);
+		if (def == null) return List.of();
+		List<String> pool = new ArrayList<>();
+		for (ShopCatalog.ItemDef it : def.items()) {
+			if (it.enabled() && it.buy() > 0) pool.add(it.id());
+		}
+		long day = com.akira.redtale.economy.shop.ShopRotation.dayIndex(
+				System.currentTimeMillis(), com.akira.redtale.economy.shop.ShopRotation.refreshHour());
+		return new ArrayList<>(com.akira.redtale.economy.shop.ShopRotation.pick(
+				pool, day, com.akira.redtale.economy.shop.ShopRotation.count(),
+				com.akira.redtale.economy.shop.ShopRotation.salt()));
 	}
 
 	/** 出票据并提示确认（R25）。 */

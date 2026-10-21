@@ -32,8 +32,14 @@ public final class CheckinCommands {
 			src.sendError(Text.literal(Lang.t("cmd.onlyPlayer")));
 			return 0;
 		}
-		CheckinModule.Outcome o = CheckinModule.checkin(p.getUuid());
-		switch (o.result()) {
+		// T18：防小号（默认关闭）。拒绝时不改状态、不发奖，直接回动作栏
+		com.akira.redtale.economy.storage.AltGuard.Decision alt =
+				com.akira.redtale.economy.storage.AltGuard.gate(p.getUuid(), p.getIp(), "checkin");
+		if (!alt.allowed()) {
+			p.sendMessage(Text.literal("§c[防小号] " + alt.reason()), true);
+			return 0;
+		}
+		CheckinModule.Outcome o = CheckinModule.checkin(p.getUuid());		switch (o.result()) {
 			case OK -> Feedback.success(src, Text.literal(
 					Lang.msg("checkin.ok", o.streak(), BalanceService.format(o.reward()))));
 			case NO_TIER -> p.sendMessage(Text.literal(

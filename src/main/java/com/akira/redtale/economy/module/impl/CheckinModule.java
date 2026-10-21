@@ -160,6 +160,9 @@ public final class CheckinModule implements RedtaleModule {
 	@Override
 	public void defineConfig(ConfigManager cfg) {
 		cfg.define(FILE, SCHEMA);
+		// T18：防小号配置（签到的主入口在这里，跟着一起生成，避免服主找不到文件）
+		cfg.define(com.akira.redtale.economy.config.AntiAltConfig.FILE,
+				com.akira.redtale.economy.config.AntiAltConfig.SCHEMA);
 	}
 
 	@Override
