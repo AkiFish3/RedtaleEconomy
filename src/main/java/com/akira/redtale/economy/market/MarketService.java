@@ -8,6 +8,7 @@ import com.akira.redtale.economy.mail.MailService;
 import com.akira.redtale.economy.module.ModuleManager;
 import com.akira.redtale.economy.module.impl.WarehouseModule;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.storage.TxnRunner;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
@@ -123,9 +124,8 @@ public final class MarketService {
 		ItemStack escrow = hand.copy();
 		String snbt = MarketStore.encode(escrow);
 		if (snbt.isEmpty()) {
-			if (fee > 0) {
-				BalanceService.add(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "market:list:refund");
-			}
+			// T34：正常回退走 revert（不进补偿队列），失败也会留 ERROR
+			TxnRunner.revert(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "market:list:refund");
 			return Result.err(Code.SAVE_FAIL);
 		}
 		player.setStackInHand(Hand.MAIN_HAND, ItemStack.EMPTY);
@@ -151,9 +151,7 @@ public final class MarketService {
 		if (!MarketStore.add(e)) {
 			MarketStore.removeEntry(e);
 			player.getInventory().offerOrDrop(escrow.copy());
-			if (fee > 0) {
-				BalanceService.add(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "market:list:refund");
-			}
+			TxnRunner.revert(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "market:list:refund");
 			return Result.err(Code.SAVE_FAIL);
 		}
 		return Result.ok(Lang.msg("market.ok.list", e.id, escrow.getName().getString(), e.count,
@@ -207,7 +205,9 @@ public final class MarketService {
 			e.soldTo = "";
 			e.soldToName = "";
 			e.soldAt = 0;
-			BalanceService.add(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id);
+			TxnRunner.refund(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id,
+					new TxnRunner.Note(buyer.getUuid(), "market", e.id, e.count, e.price,
+							"buy rolled back"));
 			return Result.err(Code.SAVE_FAIL);
 		}
 
@@ -221,7 +221,9 @@ public final class MarketService {
 			e.soldToName = "";
 			e.soldAt = 0;
 			MarketStore.save();
-			BalanceService.add(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id);
+			TxnRunner.refund(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id,
+					new TxnRunner.Note(buyer.getUuid(), "market", e.id, e.count, e.price,
+							"buy rolled back"));
 			return Result.err(Code.SAVE_FAIL);
 		}
 
@@ -340,7 +342,7 @@ public final class MarketService {
 		ItemStack escrow = hand.copy();
 		String snbt = MarketStore.encode(escrow);
 		if (snbt.isEmpty()) {
-			if (fee > 0) BalanceService.add(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "auction:list:refund");
+			TxnRunner.revert(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "auction:list:refund");
 			return Result.err(Code.SAVE_FAIL);
 		}
 		player.setStackInHand(Hand.MAIN_HAND, ItemStack.EMPTY);
@@ -364,7 +366,7 @@ public final class MarketService {
 		if (!MarketStore.add(e)) {
 			MarketStore.removeEntry(e);
 			player.getInventory().offerOrDrop(escrow.copy());
-			if (fee > 0) BalanceService.add(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "auction:list:refund");
+			TxnRunner.revert(player.getUuid(), fee, Ledger.TYPE_MARKET_FEE, "auction:list:refund");
 			return Result.err(Code.SAVE_FAIL);
 		}
 		return Result.ok(Lang.msg("market.ok.auction", e.id, escrow.getName().getString(), e.count,
@@ -420,12 +422,13 @@ public final class MarketService {
 			e.bidderName = "";
 			e.bidCount = prevCount;
 			e.expireAt = prevExpire;
-			BalanceService.add(bidder.getUuid(), amount, Ledger.TYPE_MARKET_AUCTION, "auction:bid:refund:" + e.id);
+			TxnRunner.refund(bidder.getUuid(), amount, Ledger.TYPE_MARKET_AUCTION, "auction:bid:refund:" + e.id,
+					new TxnRunner.Note(bidder.getUuid(), "market", e.id, 0, amount, "bid save failed"));
 			return Result.err(Code.SAVE_FAIL);
 		}
 		// 上一手的钱退还（他已经被超越，钱不能再押着）
 		if (!prevBidder.isEmpty() && prevBid > 0) {
-			BalanceService.add(UUID.fromString(prevBidder), prevBid, Ledger.TYPE_MARKET_AUCTION,
+			TxnRunner.revert(UUID.fromString(prevBidder), prevBid, Ledger.TYPE_MARKET_AUCTION,
 					"auction:outbid:" + e.id);
 			notifyOnline(prevBidder, Lang.msg("market.auction.outbid", e.id,
 					BalanceService.format(prevBid)));

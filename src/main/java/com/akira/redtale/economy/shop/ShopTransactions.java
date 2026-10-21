@@ -10,6 +10,7 @@ import com.akira.redtale.economy.module.impl.PremiumModule;
 import com.akira.redtale.economy.net.ShopNetworking;
 import com.akira.redtale.economy.net.ShopProtocol;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.storage.TxnRunner;
 import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.util.TimeUtil;
@@ -41,8 +42,6 @@ import java.util.UUID;
 public final class ShopTransactions implements ShopNetworking.TransactionHandler {
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-	private static final java.time.format.DateTimeFormatter TS =
-			java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final Map<UUID, Limit> LIMITS = new HashMap<>();
 	private static Path limitDir;
 	private static String limitDate = "";
@@ -163,14 +162,8 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 
 		// 2) 发货 + 3) 提交库存/限购：任一步失败都要退款并留补偿记录（Q2）
 		try {
-			ItemStack stack = new ItemStack(item, count);
-			player.getInventory().insertStack(stack);
-			if (!stack.isEmpty()) {
-				boolean dropped = player.dropItem(stack, false) != null;
-				if (!dropped) {
-					throw new IllegalStateException("背包与地面都放不下 " + count + " 个 " + itemId);
-				}
-			}
+			// T34：发货口径统一到 TxnRunner（塞不下就抛，由 catch 退款）
+			TxnRunner.deliver(player, new ItemStack(item, count));
 			addDailyLimit(player.getUuid(), key(shopId, itemId), count);
 			long left = stock;
 			if (stock > 0) {
@@ -186,7 +179,7 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 					price / Math.max(1, count), price, after, true));
 			return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
 		} catch (Throwable t) {
-			refundBuy(player, premium, price, ref, t);
+			refundBuy(player, premium, price, ref, shopId, itemId, count, t);
 			txn.dismiss();
 			return new ShopProtocol.ActionResult(false, "shop.giveFailed",
 					BalanceService.get(player.getUuid()), stock);
@@ -254,14 +247,12 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 					income / Math.max(1, count), income, after, false));
 			return new ShopProtocol.ActionResult(true, "shop.sellOk", after, -1);
 		} catch (Throwable t) {
-			ItemStack back = new ItemStack(item, count);
-			player.getInventory().insertStack(back);
-			if (!back.isEmpty()) player.dropItem(back, false);
+			// T34：物品回填与补偿记录都走 TxnRunner，失败不会被吞成「钱货两空」
+			int lost = TxnRunner.restore(player, new ItemStack(item, count));
+			TxnRunner.audit(new TxnRunner.Note(player.getUuid(), shopId, itemId, count, income,
+					"sell-add-failed: " + t.getMessage()));
 			txn.dismiss();
-			CompensationQueue.enqueue(new CompensationQueue.Entry(
-					java.time.LocalDateTime.now().format(TS), player.getUuid().toString(),
-					shopId, itemId, count, income, "sell-add-failed: " + t.getMessage()));
-			RedtaleEconomy.LOGGER.error("[shop] 出售入账失败，已退还物品：{}", t.getMessage(), t);
+			RedtaleEconomy.LOGGER.error("[shop] 出售入账失败，已退还物品（未送达 {} 件）：{}", lost, t.getMessage(), t);
 			return new ShopProtocol.ActionResult(false, "shop.sellFailed",
 					BalanceService.get(player.getUuid()), -1);
 		}
@@ -269,25 +260,13 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 
 	/** 退款 + 补偿记录；退款本身失败只记 ERROR，钱仍需人工补。 */
 	private static void refundBuy(ServerPlayerEntity player, boolean premium, long price,
-			String ref, Throwable cause) {
-		boolean refunded = false;
-		try {
-			if (premium) {
-				PremiumModule.add(player.getUuid(), price);
-			} else {
-				BalanceService.add(player.getUuid(), price, Ledger.TYPE_ADMIN, "refund:" + ref);
-			}
-			refunded = true;
-		} catch (Throwable t) {
-			RedtaleEconomy.LOGGER.error("[shop] 退款失败，需人工补 {} 给 {}（{}）：{}",
-					price, player.getUuid(), ref, t.getMessage());
-		}
-		CompensationQueue.enqueue(new CompensationQueue.Entry(
-				java.time.LocalDateTime.now().format(TS), player.getUuid().toString(),
-				ref, "", 0, price,
-				(refunded ? "refunded: " : "REFUND-FAILED: ") + cause.getMessage()));
+			String ref, String shopId, String itemId, int count, Throwable cause) {
+		TxnRunner.Note note = new TxnRunner.Note(player.getUuid(), shopId, itemId, count, price,
+				cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage());
+		TxnRunner.Outcome out = TxnRunner.refund(premium ? TxnRunner.PREMIUM : TxnRunner.COIN,
+				player.getUuid(), price, Ledger.TYPE_ADMIN, "refund:" + ref, note);
 		RedtaleEconomy.LOGGER.error("[shop] 购买发货失败（{}），已{} {}：{}",
-				ref, refunded ? "退款" : "未能退款", price, cause.getMessage());
+				ref, out == TxnRunner.Outcome.REFUNDED ? "退款" : "未能退款", price, cause.getMessage());
 	}
 
 	/** R38b：新业务日 → 清空限购缓存（下一次访问按新日期重新读盘）。 */

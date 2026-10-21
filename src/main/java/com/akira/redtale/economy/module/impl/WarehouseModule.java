@@ -8,6 +8,7 @@ import com.akira.redtale.economy.config.WarehouseConfig;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.module.RedtaleModule;
 import com.akira.redtale.economy.storage.Ledger;
+import com.akira.redtale.economy.storage.TxnRunner;
 import com.akira.redtale.economy.util.DataRoot;
 import com.akira.redtale.economy.util.PathResolver;
 import com.akira.redtale.economy.warehouse.WarehouseData;
@@ -225,14 +226,24 @@ public final class WarehouseModule implements RedtaleModule {
 			return new UpgradeOutcome(UpgradeResult.NO_MONEY, data.slots(), next);
 		}
 		if (next.premium() > 0 && !PremiumModule.take(uuid, next.premium())) {
-			if (next.price() > 0) {
-				BalanceService.add(uuid, next.price(), Ledger.TYPE_WAREHOUSE, "refund:slots:" + next.slots());
-			}
+			// T34：退款走统一出口，失败会留补偿记录（以前是裸 add，失败无声）
+			TxnRunner.refund(uuid, next.price(), Ledger.TYPE_WAREHOUSE, "refund:slots:" + next.slots(),
+					new TxnRunner.Note(uuid, "warehouse", "slots:" + next.slots(), 0, next.price(),
+							"premium take failed"));
 			return new UpgradeOutcome(UpgradeResult.NO_PREMIUM, data.slots(), next);
 		}
 		boolean ok = data.expandTo(next.slots());
 		data.save();
-		return new UpgradeOutcome(ok ? UpgradeResult.OK : UpgradeResult.FAILED, data.slots(), next);
+		if (!ok) {
+			// T34 修：expandTo 返回 false 说明槽位没变（已达上限），以前钱扣了不退
+			TxnRunner.refund(uuid, next.price(), Ledger.TYPE_WAREHOUSE, "refund:slots:" + next.slots(),
+					new TxnRunner.Note(uuid, "warehouse", "slots:" + next.slots(), 0, next.price(),
+							"expand failed"));
+			TxnRunner.revert(TxnRunner.PREMIUM, uuid, next.premium(), Ledger.TYPE_PREMIUM,
+					"refund:slots:" + next.slots());
+			return new UpgradeOutcome(UpgradeResult.FAILED, data.slots(), next);
+		}
+		return new UpgradeOutcome(UpgradeResult.OK, data.slots(), next);
 	}
 
 	/** 命令层用：只读展示用。 */
