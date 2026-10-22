@@ -1165,7 +1165,8 @@ public final class ShopCatalog implements ShopSource {
 		if (it.sell() > 0) return PricePolicy.clampSell(it.buy(), it.sell());
 		double ratio = PricePolicy.clampRatio(ShopConfig.sellPriceRatio());
 		if (ratio <= 0 || it.buy() <= 0) return 0L;
-		long v = (long) Math.floor(it.buy() * ratio);
+		// +1e-6 抵消二进制浮点误差（如 100×0.29=28.999999999999996 会少给 1 铜），口径同 GuildModule.priceAt
+		long v = (long) Math.floor(it.buy() * ratio + 1e-6);
 		return PricePolicy.clampSell(it.buy(), v);
 	}
 

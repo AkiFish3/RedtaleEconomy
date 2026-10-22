@@ -256,7 +256,19 @@ public final class GuildModule implements RedtaleModule {
 		if (price <= 0) return price;
 		double m = shopMultiplier(uuid);
 		if (Math.abs(m - 1.0) < 1e-9) return price;
-		return Math.max(1, (long) Math.floor(price * m));
+		return priceAt(price, m);
+	}
+
+	/**
+	 * 按倍率换算价格（纯函数，便于单测）。
+	 *
+	 * <p>向下取整、最低 1 铜；末尾加 {@code 1e-6} 抵消二进制浮点误差 ——
+	 * 实测 {@code 100 * 1.15 == 114.99999999999999}，直接 floor 会少收 1 铜（T64 重度加税）。
+	 */
+	public static long priceAt(long price, double multiplier) {
+		if (price <= 0) return price;
+		if (Double.isNaN(multiplier) || multiplier <= 0) return price;
+		return Math.max(1, (long) Math.floor(price * multiplier + 1e-6));
 	}
 
 	// ---------------------------------------------------------------- T64 负声望效果
