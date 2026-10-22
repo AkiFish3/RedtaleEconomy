@@ -178,15 +178,17 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             chip(context, cx, y + MODE_Y, MODE_CHIP_W, MODE_CHIP_H, active, hover, 0xFF4A7BD0);
         }
 
-        // 档位 chip（special 档不参与换档）
-        List<PackageCatalog.Tier> tiers = editableTiers();
-        String currentTier = handler.currentTierId();
-        for (int i = 0; i < tiers.size(); i++) {
-            PackageCatalog.Tier tier = tiers.get(i);
-            int cx = x + 8 + i * TIER_CHIP_W;
-            boolean active = tier.id().equals(currentTier);
-            boolean hover = inside(mouseX, mouseY, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H);
-            chip(context, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H, active, hover, 0xFF000000 | tier.color());
+        // 档位 chip（special 单件不参与换档 ⇒ 根本不许画，见 tierChipsActive）
+        if (tierChipsActive()) {
+            List<PackageCatalog.Tier> tiers = editableTiers();
+            String currentTier = handler.currentTierId();
+            for (int i = 0; i < tiers.size(); i++) {
+                PackageCatalog.Tier tier = tiers.get(i);
+                int cx = x + 8 + i * TIER_CHIP_W;
+                boolean active = tier.id().equals(currentTier);
+                boolean hover = inside(mouseX, mouseY, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H);
+                chip(context, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H, active, hover, 0xFF000000 | tier.color());
+            }
         }
 
         // 网格底槽
@@ -356,21 +358,27 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                     y + MODE_Y + 2, textOn(chipFill(active, false, 0xFF4A7BD0)), false);
         }
 
-        // 档位 chip 文案
-        List<PackageCatalog.Tier> tiers = editableTiers();
-        String currentTier = handler.currentTierId();
-        for (int i = 0; i < tiers.size(); i++) {
-            PackageCatalog.Tier tier = tiers.get(i);
-            int cx = x + 8 + i * TIER_CHIP_W;
-            String name = tier.nameZh();
-            // ★文字色必须跟着 chip 底色走★：旧实现写死 0xFF101014（近黑），而**未选中**的 chip 底色是
-            // 0xFF26262E ⇒ 六个档位里只有当前档那一个字看得见，其余五个是黑字压黑底（肉眼=标签缺失）。
-            // 与第 40 轮修过的「标题深灰压在深底」同一类问题，只是这次在 chip 上。
-            boolean active = tier.id().equals(currentTier);
-            int chipColor = 0xFF000000 | tier.color();
-            context.drawText(this.textRenderer, name,
-                    cx + (TIER_CHIP_W - 1 - this.textRenderer.getWidth(name)) / 2,
-                    y + TIER_Y + 2, textOn(chipFill(active, false, chipColor)), false);
+        // 档位 chip 文案（special 单件改为一行说明，不留一排点了没反应的空白 chip）
+        if (tierChipsActive()) {
+            List<PackageCatalog.Tier> tiers = editableTiers();
+            String currentTier = handler.currentTierId();
+            for (int i = 0; i < tiers.size(); i++) {
+                PackageCatalog.Tier tier = tiers.get(i);
+                int cx = x + 8 + i * TIER_CHIP_W;
+                String name = tier.nameZh();
+                // ★文字色必须跟着 chip 底色走★：旧实现写死 0xFF101014（近黑），而**未选中**的 chip 底色是
+                // 0xFF26262E ⇒ 六个档位里只有当前档那一个字看得见，其余五个是黑字压黑底（肉眼=标签缺失）。
+                // 与第 40 轮修过的「标题深灰压在深底」同一类问题，只是这次在 chip 上。
+                boolean active = tier.id().equals(currentTier);
+                int chipColor = 0xFF000000 | tier.color();
+                context.drawText(this.textRenderer, name,
+                        cx + (TIER_CHIP_W - 1 - this.textRenderer.getWidth(name)) / 2,
+                        y + TIER_Y + 2, textOn(chipFill(active, false, chipColor)), false);
+            }
+        } else {
+            context.drawText(this.textRenderer,
+                    Text.translatable("screen.redtale_economy.edit.tierFixed"),
+                    8, y + TIER_Y + 2, 0xFF8E8E9A, false);
         }
 
         // 权重表内容
@@ -620,14 +628,16 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                     return true;
                 }
             }
-            // 档位 chip
-            List<PackageCatalog.Tier> tiers = editableTiers();
-            for (int i = 0; i < tiers.size(); i++) {
-                int cx = x + 8 + i * TIER_CHIP_W;
-                if (inside(mouseX, mouseY, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H)) {
-                    final String tierId = tiers.get(i).id();
-                    RENetworking.sendEditAction(RENetworking.ACT_SET_TIER, buf -> buf.writeString(tierId));
-                    return true;
+            // 档位 chip（★special 单件不接点击★：见 tierChipsActive）
+            if (tierChipsActive()) {
+                List<PackageCatalog.Tier> tiers = editableTiers();
+                for (int i = 0; i < tiers.size(); i++) {
+                    int cx = x + 8 + i * TIER_CHIP_W;
+                    if (inside(mouseX, mouseY, cx, y + TIER_Y, TIER_CHIP_W - 1, TIER_CHIP_H)) {
+                        final String tierId = tiers.get(i).id();
+                        RENetworking.sendEditAction(RENetworking.ACT_SET_TIER, buf -> buf.writeString(tierId));
+                        return true;
+                    }
                 }
             }
         }
@@ -805,6 +815,22 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             if (!t.special()) out.add(t);
         }
         return out;
+    }
+
+    /**
+     * 当前物品是否**支持换档**（special 单件不支持）。
+     *
+     * <p>★这是一排「点了什么都不发生」的死控件★：{@code surprise} 在 {@code packages.json} 里是
+     * {@code series=null} 的全局单件，{@link PackageCatalog#itemIdForTier} 对它恒返回 {@code null}
+     * ⇒ 服务端 {@code applySetTier} 直接 return false。但客户端仍然画了六个档位 chip 并接受点击：
+     * 点下去发一个 ACT_SET_TIER，服务端什么都不做、只回发一份和原来一样的 state
+     * ⇒ **界面毫无变化、零报错、零日志**，管理员只会以为"这个界面坏了"或"彩蛋不能改档"（后者才是真的）。
+     *
+     * <p>三处（底槽绘制 / 文案 / 命中）必须同源：只改命中不改绘制会留下"看得见点不到"的假按钮，
+     * 反过来是"点得到但看不见"。绘制与命中都读这一个函数。
+     */
+    private boolean tierChipsActive() {
+        return !PackageCatalog.isSpecial(this.handler.currentItemPath());
     }
 
     /** 已占用格子（按 slot 升序），表格与汇总都用这一份口径。 */

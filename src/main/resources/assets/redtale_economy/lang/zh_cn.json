@@ -419,6 +419,7 @@
   "screen.redtale_economy.edit.total": "总权重 %s · %s 条",
   "screen.redtale_economy.edit.weightBtn": "权重",
   "screen.redtale_economy.edit.pickHint": "点击物品调整权重",
+  "screen.redtale_economy.edit.tierFixed": "彩蛋档位固定 · 开箱时随机",
   "screen.redtale_economy.edit.popup.weight": "权重",
   "screen.redtale_economy.edit.popup.confirm": "确认"
 }

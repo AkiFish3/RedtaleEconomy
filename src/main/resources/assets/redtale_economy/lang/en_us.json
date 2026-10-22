@@ -419,6 +419,7 @@
   "screen.redtale_economy.edit.total": "Total %s · %s entries",
   "screen.redtale_economy.edit.weightBtn": "Weight",
   "screen.redtale_economy.edit.pickHint": "Click an item to set its weight",
+  "screen.redtale_economy.edit.tierFixed": "Egg tier is fixed - rolled on open",
   "screen.redtale_economy.edit.popup.weight": "Weight",
   "screen.redtale_economy.edit.popup.confirm": "OK"
 }
