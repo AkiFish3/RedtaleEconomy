@@ -204,7 +204,27 @@ public final class RedtaleCommands {
 		for (String e : errors) {
 			src.sendFeedback(() -> Text.literal("§c  · " + e), false);
 		}
+		notifyOpsOnConfigError(ctx, errors);
 		return errors.size();
+	}
+
+	/**
+	 * 把「配置出错」推给在线 OP（T? / 本轮接线 {@code messages.notifyOpsOnConfigError}）。
+	 *
+	 * <p>执行 reload 的人已经在上一行看到逐条错误，这里跳过他自己，免得同一件事收两遍。
+	 * 只发给权限等级 ≥ 2 的玩家：普通玩家既看不懂也改不了，只会当成刷屏。
+	 */
+	private static void notifyOpsOnConfigError(CommandContext<ServerCommandSource> ctx, List<String> errors) {
+		if (!CoreConfig.notifyOpsOnConfigError()) return;
+		var server = ctx.getSource().getServer();
+		if (server == null) return;
+		var sender = ctx.getSource().getPlayer();
+		Text msg = Text.literal("§c[Redtale] 配置重载有 " + errors.size()
+				+ " 个文件出错，详见控制台或 /redtale info");
+		for (var p : server.getPlayerManager().getPlayerList()) {
+			if (sender != null && p.getUuid().equals(sender.getUuid())) continue;
+			if (p.hasPermissionLevel(2)) p.sendMessage(msg, false);
+		}
 	}
 
 	/** 不带参数：列出可编辑的配置文件。 */

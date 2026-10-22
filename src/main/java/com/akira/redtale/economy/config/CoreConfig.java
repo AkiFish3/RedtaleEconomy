@@ -109,6 +109,17 @@ public final class CoreConfig {
 		return store().getPathString("messages.prefix", "§7[§6Redtale§7] §r");
 	}
 
+	/**
+	 * 配置加载失败时是否在聊天栏提醒在线 OP（{@code messages.notifyOpsOnConfigError}）。
+	 *
+	 * <p>★这个键自 v0.13 起就声明在 schema 里，但一直没有读取方★ ⇒ 服主把它关掉、或者
+	 * 打开都毫无区别（典型的「键在、语义没落地」）。现在接到 {@code /redtale reload} 的
+	 * 出错分支上：执行者本身已经看到完整错误列表，其他 OP 只收一行摘要。
+	 */
+	public static boolean notifyOpsOnConfigError() {
+		return store().getPathBool("messages.notifyOpsOnConfigError", true);
+	}
+
 	public static int maxBackups() {
 		return (int) store().getPathLong("backup.maxBackups", 20);
 	}
