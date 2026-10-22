@@ -14,7 +14,14 @@ public final class HubDev {
 	public static boolean clickSidebar(HubScreen host, int index) {
 		HubPage[] all = HubPage.visible();
 		if (index < 0 || index >= all.length) return false;
-		double y = host.sidebar.rowCenterY(host.frame, index);
+		// ★先把目标行滚进条目区★ 427×240 下条目区只有 5 行，第 12 行（称号）的中心落在
+		// entryBottom 之下 ⇒ 直接按 rowCenterY 点必然被 rowAt 的 [entryTop,entryBottom) 夹掉
+		// （2026-10-23 实测 `page click TITLES hit=false`，拍出来还是上一页）。
+		// 这里只走真实的滚动状态（sidebar.setScroll），不改任何渲染/命中口径。
+		HubFrame f = host.frame;
+		int want = Math.max(0, Math.min(f.maxScroll(), index * HubFrame.ROW_H));
+		host.sidebar.setScroll(want);
+		double y = host.sidebar.rowCenterY(f, index);
 		return host.mouseClicked(host.panelX + host.sidebarW() / 2.0, y, 0);
 	}
 

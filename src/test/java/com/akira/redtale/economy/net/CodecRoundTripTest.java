@@ -61,8 +61,9 @@ class CodecRoundTripTest {
 				() -> new TaskProtocol.Snapshot("2026-10-20", 1,
 						List.of(new TaskProtocol.Task(0, 500, "submit", false,
 										List.of(new TaskProtocol.Item("minecraft:stone", 64, 12)),
-										"挖点石头"),
-								new TaskProtocol.Task(1, 1200, "kill", true, List.of(), "清怪")))));
+										"挖点石头", "daily"),
+								new TaskProtocol.Task(1, 1200, "kill", true, List.of(), "清怪", "weekly")),
+								"W2026-10-19")));
 
 		all.add(of("pass/snapshot",
 				Codec.of("pass/snapshot", PassProtocol::write, PassProtocol::read),

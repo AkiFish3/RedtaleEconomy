@@ -58,4 +58,25 @@ class HubSidebarHitTest {
 		assertEquals(-1, HubSidebar.rowAt(5, TOP, TOP + 120, 0, TOP + 120));
 		assertEquals(-1, HubSidebar.rowAt(5, TOP, TOP + 200, 0, TOP + 130));
 	}
+
+	/**
+	 * 夹具点击路径（第 N+74 轮）：先按 {@code scroll = min(maxScroll, index × ROW_H)} 把目标行
+	 * 滚进条目区，再取该行中心点。<b>对 17 个页面逐一断言点得中自己</b>。
+	 *
+	 * <p>起因：427×240 下条目区只有 5 行，第 12 行（称号）中心落在 entryBottom 之下，
+	 * {@code rowAt} 的 {@code [entryTop, entryBottom)} 夹取会直接判 miss
+	 * （2026-10-23 实机日志 {@code page click TITLES hit=false}，拍出来还是上一页）。
+	 * 公式与 {@code HubDev.clickSidebar} 逐字一致 —— 那边改了这里必须跟着改。
+	 */
+	@Test
+	void fixtureScrollLandsOnTargetRow() {
+		int bandH = BOTTOM - TOP;
+		int maxScroll = Math.max(0, COUNT * HubFrame.ROW_H - bandH);
+		for (int index = 0; index < COUNT; index++) {
+			int scroll = Math.max(0, Math.min(maxScroll, index * HubFrame.ROW_H));
+			double y = TOP - scroll + index * HubFrame.ROW_H + HubFrame.ROW_H / 2.0;
+			assertEquals(index, HubSidebar.rowAt(COUNT, TOP, BOTTOM, scroll, y),
+					"index=" + index + " scroll=" + scroll + " y=" + y);
+		}
+	}
 }

@@ -17,9 +17,10 @@ class TaskProtocolTest {
 		return new TaskProtocol.Snapshot("2026-10-20", 2, List.of(
 				new TaskProtocol.Task(0, 500, "submit", false,
 						List.of(new TaskProtocol.Item("minecraft:stone", 16, 7),
-								new TaskProtocol.Item("minecraft:oak_log", 8, 8)), "木材采集"),
+								new TaskProtocol.Item("minecraft:oak_log", 8, 8)), "木材采集", "daily"),
 				new TaskProtocol.Task(1, 1200, "detect", true,
-						List.of(new TaskProtocol.Item("minecraft:iron_ingot", 3, 3)), "矿物采集")));
+						List.of(new TaskProtocol.Item("minecraft:iron_ingot", 3, 3)), "矿物采集", "weekly")),
+				"W2026-10-19");
 	}
 
 	@Test
@@ -64,7 +65,7 @@ class TaskProtocolTest {
 	void negativeCountsAreClampedToZeroOnWrite() {
 		TaskProtocol.Snapshot s = new TaskProtocol.Snapshot("d", -3, List.of(
 				new TaskProtocol.Task(0, 0, "submit", false,
-						List.of(new TaskProtocol.Item("x", -5, -9)), "")));
+						List.of(new TaskProtocol.Item("x", -5, -9)), "", "daily")), "W2026-10-19");
 		PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
 		TaskProtocol.write(buf, s);
 		TaskProtocol.Snapshot r = TaskProtocol.read(buf);
