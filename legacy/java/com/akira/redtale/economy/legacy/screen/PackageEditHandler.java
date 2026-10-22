@@ -186,6 +186,14 @@ public class PackageEditHandler extends ScreenHandler {
         this.lastFlushMs = System.currentTimeMillis();
         ItemStack current = player.getStackInHand(this.hand);
         if (!isSamePackage(current)) return false;
+        // ★保存前必须重绑到「手牌当前那个 ItemStack」★（2026-10-22 第 32 轮实测的真 P0）：
+        // 构造器里 `new EditablePackageInventory(this.originalStack)` 传的是 `getStackInHand(...).copy()`
+        // 的**副本**，副本与手牌是两个对象 ⇒ `saveToNbt()` 把 mode/items 写进了那个没人再读的副本，
+        // 手牌 NBT **一个字节都不变**（关窗/1s debounce/掉线三条保存路径全失效，零报错、界面看起来完全正常）。
+        // 第 30 轮（23d4c72）为修「换档后拒写」删掉了原来的 `current.setNbt(originalStack.getNbt())`，
+        // 而 rebind 只发生在 applySetTier ⇒ 普通「开→拖→关」路径从此不再落盘。
+        // 症状判据：手牌 `data get` 只有 `{id, Count}`，连 mode/items 键都没有。
+        this.inventory.rebind(current);
         this.inventory.saveToNbt();
         // ★快照与基准必须无条件跟着刷新★：旧实现写成 `if (originalStack.hasNbt())` —— 但
         // originalStack 是「开窗/换档那一刻」的**副本**，那时包裹还没有 NBT ⇒ hasNbt()==false
