@@ -22,15 +22,27 @@ final class HubRequests {
 		if (mc.player == null) return;
 		switch (p) {
 			case SHOP -> host.requestShopPage();
-			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking
-					.request(host.rankActiveOnly);
+			case RANK -> {
+				HubRankPage.resetScroll();
+				com.akira.redtale.economy.client.rank.RankClientNetworking
+						.request(host.rankActiveOnly);
+			}
 			case MARKET -> {
 				HubMarketPage.resetScroll();
 				com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 			}
-			case BOARD -> BoardClientNetworking.request();
-			case LEDGER -> LedgerClientNetworking.request();
-			case ADMIN -> AdminClientNetworking.request();
+			case BOARD -> {
+				HubBoardPage.resetScroll();
+				BoardClientNetworking.request();
+			}
+			case LEDGER -> {
+				HubLedgerPage.reset();
+				LedgerClientNetworking.request();
+			}
+			case ADMIN -> {
+				HubAdminPage.reset();
+				AdminClientNetworking.request();
+			}
 			case CHECKIN -> chat("checkin status");
 			case MAIL -> {
 				HubMailPage.resetScroll();
@@ -43,8 +55,14 @@ final class HubRequests {
 				com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
 			}
 			case PASS -> chat("pass");
-			case BOUNTY -> chat("bounty list");
-			case GUILD -> chat("guild");
+			case BOUNTY -> {
+				HubBountyPage.resetScroll();
+				chat("bounty list");
+			}
+			case GUILD -> {
+				HubGuildPage.resetScroll();
+				chat("guild");
+			}
 			default -> {
 			}
 		}

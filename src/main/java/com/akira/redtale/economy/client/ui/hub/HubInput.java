@@ -186,6 +186,21 @@ final class HubInput {
 			HubBoardPage.scrollByRows(dir, host.frame.contentH());
 			return true;
 		}
+		if (inContent && host.page == HubPage.BOUNTY) {
+			// 悬赏位是配置项（协会等级还会加，最多 9 个），427×240 一屏只放得下 2 张
+			HubBountyPage.scrollByRows(dir, host.frame.contentH());
+			return true;
+		}
+		if (inContent && host.page == HubPage.GUILD) {
+			// 档位表来自配置（默认 7 档，240 高只放 6 行）
+			HubGuildPage.scrollByRows(dir, host.frame.contentH());
+			return true;
+		}
+		if (inContent && host.page == HubPage.RANK) {
+			// 服务端发前 10 名，240 高只放得下 5 行
+			HubRankPage.scrollByRows(dir, host.frame.contentH());
+			return true;
+		}
 		if (inContent && host.page == HubPage.LEDGER) {
 			// T16：低分辨率下一页只放得下五六行
 			HubLedgerPage.scrollByRows(dir, host.frame.contentH());

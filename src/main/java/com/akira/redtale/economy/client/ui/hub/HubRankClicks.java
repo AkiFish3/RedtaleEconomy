@@ -30,6 +30,7 @@ final class HubRankClicks {
 					host.panelH - HubFrame.TOP_BAR - HubFrame.BOTTOM_BAR - 16, host.rankBoard);
 			if (ra == HubRankPage.Action.ACTIVE_TOGGLE) {
 				host.rankActiveOnly = !host.rankActiveOnly;
+				HubRankPage.resetScroll();   // 榜单长度会变，留着旧偏移会落到"空行"
 				ClientUiConfig.click();
 				// U9：开关要真的影响数据 —— 带参数重新请求，服务端挑另一份缓存
 				com.akira.redtale.economy.client.rank.RankClientNetworking.request(host.rankActiveOnly);
@@ -44,6 +45,7 @@ final class HubRankClicks {
 					return HubClicks.R.HANDLED;
 				}
 				host.lastRankSyncAt = System.currentTimeMillis();
+				HubRankPage.resetScroll();
 				com.akira.redtale.economy.client.rank.RankClientNetworking.request(host.rankActiveOnly);
 				host.setStatus("正在同步榜单…");
 				return HubClicks.R.HANDLED;

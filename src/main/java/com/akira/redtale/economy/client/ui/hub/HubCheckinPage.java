@@ -52,6 +52,17 @@ public final class HubCheckinPage {
 		return !d.isBefore(from) && !d.isAfter(last);
 	}
 
+	/**
+	 * 今天是否已经签到。
+	 *
+	 * <p>★「签到」按钮曾经恒为启用态★：已签完再点照样发 {@code /checkin}，服务端每次都拒绝
+	 * 并把错误打进聊天栏 —— 与「补签」「战令领取」同族（画出来的禁用态必须与命中一致）。
+	 * 快照里没有独立字段，但 {@code lastDate + streak} 能反推出今天是否在区间内。
+	 */
+	public static boolean signedToday(CheckinProtocol.Snapshot snap) {
+		return isSigned(snap, LocalDate.now());
+	}
+
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			CheckinProtocol.Snapshot snap, int monthOffset, double mouseX, double mouseY) {
 		YearMonth ym = YearMonth.now().plusMonths(monthOffset);
@@ -203,8 +214,9 @@ public final class HubCheckinPage {
 			int hx = x + w - 6 - tr.getWidth(shown);
 			dc.drawText(tr, shown, hx, infoY + 6, hintColor, false);
 		}
-		drawButton(dc, tr, x, btnY, 96, btnH, "签到", true, mouseX, mouseY,
-				HubWidgets.Variant.PRIMARY);
+		boolean signedToday = signedToday(snap);
+		drawButton(dc, tr, x, btnY, 96, btnH, signedToday ? "今日已签" : "签到", !signedToday, mouseX, mouseY,
+				signedToday ? HubWidgets.Variant.SECONDARY : HubWidgets.Variant.PRIMARY);
 		int makeupLeft = snap == null ? 0 : snap.makeupLeft();
 		drawButton(dc, tr, x + 104, btnY, 110, btnH,
 				"补签（剩 " + makeupLeft + " 次）", makeupLeft > 0, mouseX, mouseY,
@@ -264,7 +276,10 @@ public final class HubCheckinPage {
 		}
 		int btnY = y + h - 20;
 		if (mouseY >= btnY && mouseY <= btnY + 20) {
-			if (mouseX >= x && mouseX <= x + 96) return Action.CHECKIN;
+			// ★今日已签就不要再发包★（服务端必拒，聊天栏刷屏）；按钮同时画成禁用态
+			if (mouseX >= x && mouseX <= x + 96) {
+				return signedToday(snap) ? Action.NONE : Action.CHECKIN;
+			}
 			// ★灰掉的「补签」不该发命令★：按钮画成禁用态却照样回 MAKEUP ⇒ 服务端拒绝刷屏
 			int makeupLeft = snap == null ? 0 : snap.makeupLeft();
 			if (makeupLeft > 0 && mouseX >= x + 104 && mouseX <= x + 214) return Action.MAKEUP;

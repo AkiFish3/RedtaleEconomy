@@ -55,16 +55,14 @@ final class HubClicks {
 				// ★拉数据只有 HubRequests.pullData 一套★：侧栏这里原来又写了一条 if 链，
 				// 与深链（setPage）覆盖的页面不同 ⇒ 称号/仓储/战令/悬赏/协会深链进来不拉数据；
 				// 而且 TITLES 那行被粘进了 STORAGE 分支（点仓储多发一条、点称号不刷新）。
+				// 复位滚动统一在 HubRequests.pullData 里（深链与侧栏同一条路径）
 				if (host.page == HubPage.BOARD) {
-					HubBoardPage.resetScroll();
 					host.setStatus("正在读取委托板…");
 				}
 				if (host.page == HubPage.LEDGER) {
-					HubLedgerPage.reset();
 					host.setStatus("正在读取流水…");
 				}
 				if (host.page == HubPage.ADMIN) {
-					HubAdminPage.reset();
 					host.setStatus("正在读取控制台数据…");
 				}
 				HubRequests.pullData(host, host.page);

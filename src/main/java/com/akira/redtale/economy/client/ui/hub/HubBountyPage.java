@@ -29,36 +29,69 @@ public final class HubBountyPage {
 		NONE, CLAIM_ALL, CLAIM
 	}
 
+	/** 滚动行号（数据下标 = scroll + 屏内行）。 */
+	private static int scroll;
+
 	/**
-	 * 卡片顶边（渲染与命中共用）。
+	 * 卡片顶边（渲染与命中共用）。{@code row} 是<b>屏内行</b>不是数据下标 ——
+	 * 滚过之后两者不同，混用就会「看着点第 3 张、实际领第 1 张」。
 	 *
 	 * <p>★曾经这里是两份算术★：render 用 {@code cy = y+16, cardH = 44} 并且会
 	 * {@code break} 掉超出可视区的卡，而点击侧直接在 `HubPassBountyClicks` 里
 	 * 硬算 {@code (mouseY - (cy+16)) / 48} —— 既不判 x、也不判「这张卡画出来没有」，
 	 * 于是点标题行（y..y+16）会因为整数向零截断算出 **idx = 0**，直接把第一条悬赏领了。
 	 */
-	static int cardTop(int y, int i) {
-		return y + HEAD_H + i * (CARD_H + CARD_GAP);
+	static int cardTop(int y, int row) {
+		return y + HEAD_H + row * (CARD_H + CARD_GAP);
 	}
 
-	/** 实际画出来的卡片数量（render 的 break 条件即此）。 */
-	static int visibleCount(int y, int h, int size) {
-		int n = 0;
-		for (int i = 0; i < size; i++) {
-			if (cardTop(y, i) + CARD_H > y + h - BOTTOM_RESERVE) break;
-			n++;
-		}
-		return n;
+	/** 一屏能完整放下几张卡（底边留 BOTTOM_RESERVE 给提示带）。 */
+	static int rowsVisible(int h) {
+		int usable = h - BOTTOM_RESERVE - HEAD_H;
+		if (usable < CARD_H) return 0;
+		return 1 + (usable - CARD_H) / (CARD_H + CARD_GAP);
 	}
 
-	/** 鼠标 → 卡片下标；-1 = 没点在卡上（标题行 / 卡间距 / 内容区外 / 没画出来的卡）。 */
+	/**
+	 * 滚动上限（张）。
+	 *
+	 * <p>★悬赏位是配置项，最多 9 个★（{@code perks.maxBountySlots}，协会等级还会加），
+	 * 427×240 下内容区只有 160 高、一屏 2 张 ⇒ 没有滚动时第 3~9 条既看不见也领不到
+	 * （与市场页 T45「一页 18 条只画 5 行」同族）。
+	 */
+	static int maxScroll(int h, int size) {
+		return Math.max(0, size - rowsVisible(h));
+	}
+
+	public static void resetScroll() {
+		scroll = 0;
+	}
+
+	/** 仅探针/夹具：当前滚动行。 */
+	public static int scrollRow() {
+		return scroll;
+	}
+
+	public static void scrollByRows(int delta, int h) {
+		scroll = Math.max(0, Math.min(maxScroll(h, BountyClientNetworking.LAST.entries().size()),
+				scroll + delta));
+	}
+
+	/** 鼠标 → 数据下标；-1 = 没点在卡上（标题行 / 卡间距 / 内容区外 / 没画出来的卡）。 */
 	static int indexAt(double mx, double my, int x, int y, int w, int h, int size) {
+		return indexAt(mx, my, x, y, w, h, size, scroll);
+	}
+
+	/** 带显式滚动值的版本（单测用，避免为了测几何去初始化 BountyClientNetworking）。 */
+	static int indexAt(double mx, double my, int x, int y, int w, int h, int size, int scrollRow) {
 		if (mx < x || mx >= x + w) return -1;
-		if (my < y + HEAD_H) return -1;
-		int i = (int) ((my - (y + HEAD_H)) / (CARD_H + CARD_GAP));
-		if (i < 0 || i >= visibleCount(y, h, size)) return -1;
-		int top = cardTop(y, i);
-		return (my >= top && my < top + CARD_H) ? i : -1;
+		if (my < y + HEAD_H || my >= y + h - BOTTOM_RESERVE) return -1;
+		int row = (int) ((my - (y + HEAD_H)) / (CARD_H + CARD_GAP));
+		if (row < 0 || row >= rowsVisible(h)) return -1;
+		int top = cardTop(y, row);
+		if (my >= top + CARD_H) return -1;
+		int i = scrollRow + row;
+		return (i >= 0 && i < size) ? i : -1;
 	}
 
 	/** 渲染；返回被点击的卡片下标（-1 = 没点到卡）。 */
@@ -78,11 +111,14 @@ public final class HubBountyPage {
 			return -1;
 		}
 
+		int per = rowsVisible(h);
+		scroll = Math.max(0, Math.min(maxScroll(h, list.size()), scroll));
 		int idx = -1;
-		for (int i = 0; i < list.size(); i++) {
+		for (int row = 0; row < per; row++) {
+			int i = scroll + row;
+			if (i >= list.size()) break;
 			BountyProtocol.Entry e = list.get(i);
-			int top = cardTop(y, i);
-			if (top + CARD_H > y + h - BOTTOM_RESERVE) break;
+			int top = cardTop(y, row);
 			boolean hover = mouseX >= x && mouseX < x + w && mouseY >= top && mouseY < top + CARD_H;
 			if (hover) idx = i;
 
@@ -112,6 +148,17 @@ public final class HubBountyPage {
 			dc.fill(bx, top + 26, bx + bw, top + 27, can ? HubTheme.GOLD : HubTheme.LINE);
 			dc.fill(bx, top + 39, bx + bw, top + 40, can ? HubTheme.GOLD : HubTheme.LINE);
 			dc.drawText(tr, Text.literal(btn), bx + 7, top + 29, can ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.DISABLED_TEXT, false);
+		}
+		// 溢出时画 1px 滚动条：没有它玩家根本不知道下面还有悬赏（卡边全是齐的）
+		int max = maxScroll(h, list.size());
+		if (max > 0) {
+			int barX = x + w - 1;
+			int trackY = y + HEAD_H;
+			int trackH = h - BOTTOM_RESERVE - HEAD_H;
+			dc.fill(barX, trackY, barX + 1, trackY + trackH, HubTheme.TRACK);
+			int knobH = Math.max(8, trackH * per / list.size());
+			int knobY = trackY + (trackH - knobH) * scroll / max;
+			dc.fill(barX, knobY, barX + 1, knobY + knobH, HubTheme.LINE);
 		}
 		hovered[0] = idx;
 		return idx;

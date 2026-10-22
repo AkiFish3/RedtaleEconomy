@@ -11,8 +11,41 @@ import java.util.List;
 /** Hub 内的协会页：档位阶梯 + 声望进度。 */
 public final class HubGuildPage {
 
-	
+	/** 档位行高 / 阶梯起点（相对内容区顶）/ 底部预留。 */
+	private static final int ROW_H = 20;
+	private static final int LIST_TOP = 34;
+	private static final int BOTTOM_RESERVE = 24;
+
+	/** 滚动行号（档位表来自配置，长度不固定）。 */
+	private static int scroll;
+
 	private HubGuildPage() {
+	}
+
+	public static void resetScroll() {
+		scroll = 0;
+	}
+
+	/** 一屏能放下几行档位。 */
+	static int rowsVisible(int h) {
+		int usable = h - LIST_TOP - BOTTOM_RESERVE;
+		if (usable < 0) return 0;
+		return 1 + usable / ROW_H;
+	}
+
+	static int maxScroll(int h, int size) {
+		return Math.max(0, size - rowsVisible(h));
+	}
+
+	/** 滚轮：默认配置 7 档，427×240 只放得下 6 行 ⇒ 最高档会整行看不见。 */
+	public static void scrollByRows(int delta, int h) {
+		int size = GuildClientNetworking.LAST.ranks().size();
+		scroll = Math.max(0, Math.min(maxScroll(h, size), scroll + delta));
+	}
+
+	/** 仅探针：当前滚动行。 */
+	public static int scrollRow() {
+		return scroll;
 	}
 
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
@@ -47,11 +80,14 @@ public final class HubGuildPage {
 			dc.drawText(tr, Text.literal("已达最高档"), x, barY + 9, HubTheme.MUTED, false);
 		}
 
-		// 档位阶梯
-		int ly = y + 34;
-		for (int i = 0; i < ranks.size(); i++) {
-			int ry = ly + i * 20;
-			if (ry > y + h - 24) break;
+		// 档位阶梯（滚过之后 屏内行 ≠ 数据下标）
+		int per = rowsVisible(h);
+		int max = maxScroll(h, ranks.size());
+		scroll = Math.max(0, Math.min(max, scroll));
+		for (int row = 0; row < per; row++) {
+			int i = scroll + row;
+			if (i >= ranks.size()) break;
+			int ry = y + LIST_TOP + row * ROW_H;
 			boolean isCur = i == s.currentIndex();
 			dc.fill(x, ry, x + w, ry + 18, isCur ? HubTheme.SELECT : HubTheme.CARD);
 			if (isCur) dc.fill(x, ry, x + 3, ry + 18, HubTheme.GOLD);
@@ -60,6 +96,16 @@ public final class HubGuildPage {
 			String need = ranks.get(i).rep() + "";
 			dc.drawText(tr, Text.literal(need), x + w - 6 - tr.getWidth(need), ry + 5,
 					isCur ? HubTheme.GOLD : HubTheme.MUTED, false);
+		}
+		// 溢出时画 1px 滚动条（不画的话最后一档被切掉时看不出还有内容）
+		if (max > 0) {
+			int barX = x + w - 1;
+			int trackY = y + LIST_TOP;
+			int trackH = Math.max(1, h - LIST_TOP - BOTTOM_RESERVE);
+			dc.fill(barX, trackY, barX + 1, trackY + trackH, HubTheme.TRACK);
+			int knobH = Math.max(8, trackH * Math.max(1, per) / ranks.size());
+			int knobY = trackY + (trackH - knobH) * scroll / max;
+			dc.fill(barX, knobY, barX + 1, knobY + knobH, HubTheme.LINE);
 		}
 	}
 }

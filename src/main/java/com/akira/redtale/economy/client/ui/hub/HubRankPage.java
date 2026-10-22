@@ -14,6 +14,18 @@ public final class HubRankPage {
 
 	public static final String[] BOARDS = {"财富", "收入", "悬赏", "声望", "战令"};
 
+	/** 榜单行高 / 列表距内容区顶的偏移（下拉 18 + 勾选行 18 + 6）。 */
+	private static final int ROW_H = 14;
+	private static final int LIST_TOP = 42;
+
+	/**
+	 * 滚动行号。
+	 *
+	 * <p>★服务端发的是前 10 名★，427×240 内容区从 y+42 到 y+h-46 只有 72px ⇒ 5 行，
+	 * 第 6~10 名原来直接 {@code break} 掉、既看不见也翻不到（与市场/悬赏同族）。
+	 */
+	private static int scroll;
+
 
 	/** 通知 HubScreen：本帧需要在下拉位置最后再画一遍（避免被底栏遮住）。 */
 	private static boolean pendingDropdown;
@@ -31,6 +43,32 @@ public final class HubRankPage {
 
 	public static boolean needsDropdownOverlay() {
 		return pendingDropdown;
+	}
+
+	public static void resetScroll() {
+		scroll = 0;
+	}
+
+	/** 一屏能放下几行（与 render 的 listBottom 同一口径）。 */
+	static int rowsVisible(int h) {
+		int usable = (h - 46) - LIST_TOP;
+		if (usable < ROW_H) return 0;
+		return 1 + (usable - ROW_H) / ROW_H;
+	}
+
+	static int maxScroll(int h, int size) {
+		return Math.max(0, size - rowsVisible(h));
+	}
+
+	public static void scrollByRows(int delta, int h) {
+		var snap = com.akira.redtale.economy.client.rank.RankClientNetworking.LAST;
+		int size = snap == null ? 0 : snap.top().size();
+		scroll = Math.max(0, Math.min(maxScroll(h, size), scroll + delta));
+	}
+
+	/** 仅探针：当前滚动行。 */
+	public static int scrollRow() {
+		return scroll;
 	}
 
 	/** 在所有内容与底栏画完之后调用，保证下拉在最上层。 */
@@ -83,7 +121,8 @@ public final class HubRankPage {
 				syncLeft > 0 ? HubTheme.DISABLED_TEXT : HubTheme.MUTED, false);
 
 		// 列表（U9b：财富榜前 10，服务端缓存 60 秒）
-		int ly = sy + 18;
+		// LIST_TOP 必须等于 sy+18（=y+42）：滚动上限按它算，改布局忘改常量就会多算/少算一行
+		int ly = y + LIST_TOP;
 		// ★底部要留 18px 给「共 N 人上榜」★：原来用 min(rowY+2, y+h-34) 兜底，
 		// 行数多时这行正好落在「自己那行」的色块下面 ⇒ 被压住看不见（2026-10-21 截图实证）。
 		int listBottom = y + h - 46;
@@ -104,9 +143,14 @@ public final class HubRankPage {
 			dc.drawText(tr, Text.literal("暂无榜单数据"), x + 8, ly + 8, HubTheme.MUTED, false);
 			dc.drawText(tr, Text.literal("服务端每 60 秒统计一次，稍后再看"), x + 8, ly + 22, HubTheme.MUTED, false);
 		} else {
-			int rowY = ly;
-			for (var r : rows) {
-				if (rowY + 14 > listBottom) break;
+			int per = rowsVisible(h);
+			int max = maxScroll(h, rows.size());
+			scroll = Math.max(0, Math.min(max, scroll));
+			for (int row = 0; row < per; row++) {
+				int i = scroll + row;
+				if (i >= rows.size()) break;
+				var r = rows.get(i);
+				int rowY = ly + row * ROW_H;
 				boolean me = snap.self() != null && r.name().equals(snap.self().name());
 				if (me) dc.fill(x, rowY, x + w, rowY + 14, HubTheme.SELECT);
 				dc.drawText(tr, Text.literal(r.rank() + "."), x + 4, rowY + 3,
@@ -115,7 +159,16 @@ public final class HubRankPage {
 				// T55：金额图标化（右对齐：先量宽再落笔）
 				int mw = HubMoney.width(tr, r.balance());
 				HubMoney.draw(dc, tr, x + w - 4 - mw, rowY + 3, r.balance(), mw);
-				rowY += 14;
+			}
+			// 溢出时画 1px 滚动条（前 10 名里第 6 名以后原来完全不可达）
+			if (max > 0) {
+				int barX = x + w - 1;
+				int trackY = ly;
+				int trackH = Math.max(1, listBottom - ly);
+				dc.fill(barX, trackY, barX + 1, trackY + trackH, HubTheme.TRACK);
+				int knobH = Math.max(8, trackH * Math.max(1, per) / rows.size());
+				int knobY = trackY + (trackH - knobH) * scroll / max;
+				dc.fill(barX, knobY, barX + 1, knobY + knobH, HubTheme.LINE);
 			}
 			// 总人数常驻（开关切换时这行就是"行数确实变了"的读数，见 _VERIFY_ECON.md → U9）
 			String more = "共 " + snap.total() + " 人上榜";
