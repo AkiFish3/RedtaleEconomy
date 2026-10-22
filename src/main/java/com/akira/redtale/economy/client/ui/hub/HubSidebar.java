@@ -56,11 +56,22 @@ public final class HubSidebar {
 		rippleAt = System.currentTimeMillis();
 	}
 
-	/** 鼠标 Y 落在第几行（不考虑是否在栏内）；越界返回 -1。 */
+	/**
+	 * 鼠标 Y 落在第几行（不考虑是否在栏内）；越界返回 -1。
+	 *
+	 * <p>★必须夹在 {@code [entryTop, entryBottom)}★：条目区在渲染时被 scissor 裁掉了，但命中
+	 * 只按 Y 算行号 —— 底栏（状态行/提示，和侧栏同一列、在列表下方）算出来的行号仍然是
+	 * 合法页号，点一下底部空白就悄悄切页（与「浮层命中没夹边界」同族）。
+	 */
 	public int rowAt(HubFrame f, double mouseY) {
-		int idx = ((int) mouseY - f.entryTop() + scroll) / HubFrame.ROW_H;
-		HubPage[] all = HubPage.visible();
-		return (idx >= 0 && idx < all.length) ? idx : -1;
+		return rowAt(HubPage.visible().length, f.entryTop(), f.entryBottom(), scroll, mouseY);
+	}
+
+	/** 纯几何命中（可 headless 测）：{@code count} 个条目，条目区 {@code [entryTop, entryBottom)}。 */
+	static int rowAt(int count, int entryTop, int entryBottom, int scroll, double mouseY) {
+		if (mouseY < entryTop || mouseY >= entryBottom) return -1;
+		int idx = ((int) mouseY - entryTop + scroll) / HubFrame.ROW_H;
+		return (idx >= 0 && idx < count) ? idx : -1;
 	}
 
 	/** 第 index 行的垂直中心（真实命中路径用，含滚动偏移）。 */
@@ -230,6 +241,8 @@ public final class HubSidebar {
 		int bottom = f.entryBottom();
 		int sidebarW = f.sidebarW();
 		boolean clip = bottom > top;
+		// 模块被关掉会让页数变少 ⇒ 旧的 scroll 可能超过新上限，不夹的话列表整段画到上面看不见
+		scroll = Math.max(0, Math.min(scroll, f.maxScroll()));
 		// ★裁剪★：不让滚动时条目画到顶栏/底栏上
 		if (clip) dc.enableScissor(f.x, top, f.x + sidebarW, bottom);
 		int y = top - scroll;
