@@ -1,0 +1,13 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "redtale_economy:font/coins.png",
+      "ascent": 7,
+      "height": 9,
+      "chars": [
+        ""
+      ]
+    }
+  ]
+}
