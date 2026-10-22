@@ -255,23 +255,36 @@ public final class CheckinModule implements RedtaleModule {
 	}
 
 	public static void saveState(java.util.UUID uuid, State s) {
+		saveStateChecked(uuid, s);
+	}
+
+	/**
+	 * 落盘并返回是否真的写成功。
+	 *
+	 * <p>★R129：补签先扣券/扣钱再落状态★ 写失败时券和钱已经从玩家身上拿走了，
+	 * 而补签这件事没记下来 ⇒ 下次还是「昨天缺签」。调用方要看返回值并退款。
+	 */
+	public static boolean saveStateChecked(java.util.UUID uuid, State s) {
 		CACHE.put(uuid.toString(), s);
 		Path f = stateFile(uuid);
-		if (f == null) return;
+		if (f == null) return false;
 		Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
 		try (Writer w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
 			w.write(s.toJson());
 		} catch (IOException e) {
 			RedtaleEconomy.LOGGER.error("[checkin] 写入 {} 失败：{}", uuid, e.getMessage());
-			return;
+			return false;
 		}
 		try {
 			Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			return true;
 		} catch (IOException e) {
 			try {
 				Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING);
+				return true;
 			} catch (IOException e2) {
 				RedtaleEconomy.LOGGER.error("[checkin] 落盘 {} 失败：{}", uuid, e2.getMessage());
+				return false;
 			}
 		}
 	}
@@ -292,7 +305,7 @@ public final class CheckinModule implements RedtaleModule {
 
 	// ---------------------------------------------------------------- 业务
 
-	public enum Result { OK, ALREADY, NO_TIER, DISABLED }
+	public enum Result { OK, ALREADY, NO_TIER, DISABLED, IO_FAIL }
 
 	/**
 	 * 签到结果。
@@ -331,7 +344,12 @@ public final class CheckinModule implements RedtaleModule {
 
 		Tier tier = tierOf(s.streak);
 		long reward = tier == null ? 0L : tier.money();
-		saveState(uuid, s);
+		// ★R129：签到状态没落盘就绝不发奖★ 否则内存里 lastDate 已更新、磁盘还是昨天，
+		// 重启后可以再签一次 = 每日奖励/里程碑/物品重复发放。
+		if (!saveStateChecked(uuid, s)) {
+			RedtaleEconomy.LOGGER.error("[checkin] 签到状态落盘失败，本次不发奖：{}", uuid);
+			return new Outcome(Result.IO_FAIL, s.streak, 0L, "", "");
+		}
 		if (reward > 0) {
 			BalanceService.add(uuid, reward, com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN,
 					"streak:" + s.streak);
@@ -582,7 +600,7 @@ public final class CheckinModule implements RedtaleModule {
 		}
 	}
 
-	public enum MakeupResult { OK, DISABLED, LIMIT, NOT_NEEDED, NO_FUNDS, TOO_OLD, NO_TICKET }
+	public enum MakeupResult { OK, DISABLED, LIMIT, NOT_NEEDED, NO_FUNDS, TOO_OLD, NO_TICKET, IO_FAIL }
 
 	/**
 	 * 补签：把「昨天」补上，连续链接回来，但不补发那天的奖励。
@@ -649,7 +667,12 @@ public final class CheckinModule implements RedtaleModule {
 		// 补签照常发奖（按当前档位算，和正常签到一致）
 		Tier tier = tierOf(s.streak);
 		long reward = tier == null ? 0L : tier.money();
-		saveState(uuid, s);
+		// ★R129：状态落盘失败 ⇒ 券/钱已经扣了却什么都没记下来，必须退回并明确失败★
+		if (!saveStateChecked(uuid, s)) {
+			refundMakeupCost(uuid, ticket, cfg.getPathLong("makeup.price", 500));
+			RedtaleEconomy.LOGGER.error("[checkin] 补签状态落盘失败，已退回成本：{}", uuid);
+			return MakeupResult.IO_FAIL;
+		}
 		if (reward > 0) {
 			BalanceService.add(uuid, reward, com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN,
 					"makeup:" + target);
@@ -681,6 +704,29 @@ public final class CheckinModule implements RedtaleModule {
 			return true;
 		}
 		return false;
+	}
+
+	/** 补签落盘失败时把刚扣掉的券/钱退回去（退不掉的记 ERROR 交人工）。 */
+	private static void refundMakeupCost(java.util.UUID uuid, String ticketId, long price) {
+		if (ticketId != null && !ticketId.isBlank()) {
+			net.minecraft.server.MinecraftServer srv = RedtaleEconomy.server();
+			ServerPlayerEntity p = srv == null ? null : srv.getPlayerManager().getPlayer(uuid);
+			Identifier ident = Identifier.tryParse(ticketId);
+			Item item = ident == null ? null : Registries.ITEM.get(ident);
+			if (p == null || item == null) {
+				RedtaleEconomy.LOGGER.error("[checkin] 补签券退回失败（离线或物品不存在）：{} {}", uuid, ticketId);
+				return;
+			}
+			ItemStack back = new ItemStack(item, 1);
+			p.getInventory().insertStack(back);
+			if (!back.isEmpty()) p.dropItem(back, false);
+			p.getInventory().markDirty();
+			return;
+		}
+		if (price > 0) {
+			BalanceService.add(uuid, price, com.akira.redtale.economy.storage.Ledger.TYPE_CHECKIN,
+					"makeup:refund");
+		}
 	}
 
 	public static List<Path> debugFiles() {

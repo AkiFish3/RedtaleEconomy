@@ -49,6 +49,8 @@ public final class CheckinCommands {
 							+ (o.bonus().isEmpty() ? "" : " · " + o.bonus())), true);
 			case ALREADY -> p.sendMessage(Text.literal(
 					Lang.msg("checkin.already", o.streak())), true);
+			// 落盘失败（未发奖，可原地重试）：复用通用写盘失败文案，不新增 assets 键
+			case IO_FAIL -> src.sendError(Text.literal(Lang.msg("market.err.saveFail")));
 			default -> src.sendError(Text.literal(Lang.msg("checkin.disabled")));
 		}
 		// U3：同步刷新可视化面板
@@ -72,6 +74,8 @@ public final class CheckinCommands {
 			case NO_FUNDS -> "checkin.makeup.noFunds";
 			case TOO_OLD -> "checkin.makeup.tooOld";
 			case NO_TICKET -> "checkin.makeup.noTicket";
+			// 落盘失败（成本已退回）：复用通用的写盘失败文案，避免新增 assets 键（assets 归 B）
+			case IO_FAIL -> "market.err.saveFail";
 		};
 		String ticket = CheckinModule.store().getString("makeup.ticketItem", "");
 		long price = CheckinModule.store().getPathLong("makeup.price", 500);
