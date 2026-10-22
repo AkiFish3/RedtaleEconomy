@@ -204,29 +204,24 @@ public final class MarketService {
 		e.soldToName = buyer.getGameProfile().getName();
 		e.soldAt = System.currentTimeMillis();
 		if (!MarketStore.save()) {
-			e.status = MarketStore.Status.OPEN.name();
-			e.soldTo = "";
-			e.soldToName = "";
-			e.soldAt = 0;
-			TxnRunner.refund(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id,
-					new TxnRunner.Note(buyer.getUuid(), "market", e.id, e.count, e.price,
-							"buy rolled back"));
+			rollbackBuy(e, buyer, "buy save failed");
 			return Result.err(Code.SAVE_FAIL);
 		}
 
 		// 发货：仓储优先（spec §43.5 预留 source=market），其次邮件队列
+		// ★deliver 不抛异常，失败是返回 false★（离线 + 邮件也不可用时才为 false）。
+		// 旧代码只用 try/catch 兜，返回值被丢掉 ⇒ 买家付了钱、单子已 SOLD、托管被清空、卖家照样收款，
+		// 而物品只留下一条 ERROR 日志 —— 正是 T34 要消灭的「钱货两空」。R127 同族（返回值 ≠ 成功/异常两态）。
+		boolean delivered;
 		try {
-			deliver(buyer.getUuid(), stack, "market:" + e.id, RedtaleEconomy.server());
+			delivered = deliver(buyer.getUuid(), stack, "market:" + e.id, RedtaleEconomy.server());
 		} catch (Exception ex) {
-			RedtaleEconomy.LOGGER.error("[market] 发货失败，回滚交易 {}：{}", e.id, ex.getMessage());
-			e.status = MarketStore.Status.OPEN.name();
-			e.soldTo = "";
-			e.soldToName = "";
-			e.soldAt = 0;
-			MarketStore.save();
-			TxnRunner.refund(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id,
-					new TxnRunner.Note(buyer.getUuid(), "market", e.id, e.count, e.price,
-							"buy rolled back"));
+			RedtaleEconomy.LOGGER.error("[market] 发货异常 {}：{}", e.id, ex.getMessage());
+			delivered = false;
+		}
+		if (!delivered) {
+			RedtaleEconomy.LOGGER.error("[market] 发货失败，回滚交易 {}", e.id);
+			rollbackBuy(e, buyer, "deliver failed");
 			return Result.err(Code.SAVE_FAIL);
 		}
 
@@ -246,6 +241,17 @@ public final class MarketService {
 	}
 
 	// ---------------------------------------------------------------- 撤单 / 过期
+
+	/** 成交失败的统一回滚：单子回到 OPEN（物品仍在托管里）+ 买家退款 + 补偿记录。 */
+	private static void rollbackBuy(MarketStore.Entry e, ServerPlayerEntity buyer, String reason) {
+		e.status = MarketStore.Status.OPEN.name();
+		e.soldTo = "";
+		e.soldToName = "";
+		e.soldAt = 0;
+		MarketStore.save();
+		TxnRunner.refund(buyer.getUuid(), e.price, Ledger.TYPE_MARKET_BUY, "market:buy:refund:" + e.id,
+				new TxnRunner.Note(buyer.getUuid(), "market", e.id, e.count, e.price, reason));
+	}
 
 	public static synchronized Result cancel(ServerPlayerEntity player, String offerId) {
 		if (player == null) return Result.err(Code.DISABLED);
@@ -448,14 +454,24 @@ public final class MarketService {
 		ItemStack stack = e.escrowStack();
 		long now = System.currentTimeMillis();
 		if (e.bid > 0 && !e.bidder.isEmpty()) {
+			// ★先交付、再清托管、最后才给卖家打款★ —— 与 expireOne 同一条不变量。
+			// 旧顺序（先写 SOLD + 清 escrow + 落盘，再 deliver，且不看 deliver 的返回值）在
+			// 「买家离线且邮件不可用」时会把物品彻底弄丢，但钱照扣、卖家照收、佣金照抽。
+			// deliver 失败时保留挂单，等下次 sweep 重试（钱已经在系统手里，不会跑）。
+			if (!stack.isEmpty()
+					&& !deliver(UUID.fromString(e.bidder), stack, "auction:win:" + e.id, server)) {
+				RedtaleEconomy.LOGGER.warn("[market] 拍卖 {} 结算时买家收不到物品，保留挂单等下次重试", e.id);
+				return;
+			}
 			e.status = MarketStore.Status.SOLD.name();
 			e.soldTo = e.bidder;
 			e.soldToName = e.bidderName;
 			e.soldAt = now;
 			e.escrow = "";
-			MarketStore.save();
-			if (!stack.isEmpty()) {
-				deliver(UUID.fromString(e.bidder), stack, "auction:win:" + e.id, server);
+			if (!MarketStore.save()) {
+				// 内存里已经交付且状态是 SOLD ⇒ 本进程不会重复发；磁盘上还是挂单，
+				// 只有「落盘失败 + 重启」才会重复，比「物品已发而单子还在」轻，但仍要留痕。
+				RedtaleEconomy.LOGGER.error("[market] 拍卖 {} 已交付但落盘失败，重启后可能重复发货", e.id);
 			}
 			long proceeds = MarketRules.sellerProceeds(e.bid, MarketConfig.commissionPercent());
 			BalanceService.add(UUID.fromString(e.seller), proceeds, Ledger.TYPE_MARKET_SELL,
@@ -470,12 +486,16 @@ public final class MarketService {
 					BalanceService.format(proceeds)));
 			return;
 		}
-		// 流拍
+		// 流拍：同一条不变量 —— 先交付再清托管，交不出去就保留挂单等下次 sweep
+		if (!stack.isEmpty()
+				&& !deliver(UUID.fromString(e.seller), stack, "auction:unsold:" + e.id, server)) {
+			RedtaleEconomy.LOGGER.warn("[market] 拍卖 {} 流拍但物主收不到物品，保留挂单等下次重试", e.id);
+			return;
+		}
 		e.status = MarketStore.Status.EXPIRED.name();
 		e.soldAt = now;
 		e.escrow = "";
 		MarketStore.save();
-		if (!stack.isEmpty()) deliver(UUID.fromString(e.seller), stack, "auction:unsold:" + e.id, server);
 		if (MarketConfig.notifyOnExpire()) {
 			notifyOnline(e.seller, Lang.msg("market.auction.unsold", e.id,
 					stack.isEmpty() ? e.itemId : stack.getName().getString(), e.count));
