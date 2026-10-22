@@ -5,6 +5,7 @@ import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.init.RENetworking;
 import com.akira.redtale.economy.legacy.screen.PackageEditHandler;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.entity.player.PlayerInventory;
@@ -260,49 +261,49 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
      */
     public static int weightColor(int weight, boolean editing) {
         if (editing) return 0xFF58D6A8;
-        // ★金必须是 8 位的 0xFFFFD24A★：旧值 0xFFD24A 只有 6 位（alpha=0）。文字本身看不出来 ——
-        // `TextRenderer.tweakTransparency()` 会在 alpha 段 < 0x04 时强制 OR 上 0xFF000000（本实例
-        // javap 实证：掩码 -67108864 判零后 ior -16777216），所以金色字仍然是实的；但同一个值还要喂给
-        // {@link #darken} 推导描边，而 darken 取的是 `(c>>16)&0xFF` ⇒ 6 位时红色分量读成 0x00，
-        // 描边变成 RGB(0,94,33) 的墨绿（规格 §三 要求金 → #7A5E00 深金）—— 零报错、只在浅色物品上
-        // 显出一条颜色不对的暗边，肉眼很容易当成"描边就这样"。
+        // ★金必须是 8 位的 0xFFFFD24A★：旧值 0xFFD24A 只有 6 位（alpha=0）。字号/位置全对，
+        // 颜色也"看起来对"——`TextRenderer.tweakTransparency()` 会在 alpha 段 < 0x04 时强制
+        // OR 上 0xFF000000（本实例 javap 实证：掩码 -67108864 判零后 ior -16777216），字形仍是实的。
+        // 但这是个只在**渲染期**成立的补丁：任何按 ARGB 拆分这个值的地方（阴影/描边/渐变）都会拿到
+        // alpha=0 的语义，且零报错。统一写 8 位，不要依赖那个补丁。
         return weight == 0 ? 0xFF8A8A8A : 0xFFFFD24A;
-    }
-
-    /**
-     * 同色深一档（描边用）。规格给的例子是金 {@code #FFD24A} → {@code #7A5E00}，
-     * 这里按 RGB ×0.45 统一推导 ⇒ (114,94,33)，与例子肉眼同级，三态都能自动获得对应深色，
-     * 不用为绿/灰再各写一个魔数。
-     */
-    private static int darken(int argb) {
-        int r = (int) (((argb >> 16) & 0xFF) * 0.45f);
-        int g = (int) (((argb >> 8) & 0xFF) * 0.45f);
-        int b = (int) ((argb & 0xFF) * 0.45f);
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
     /**
      * 画一格的权重角标（面板相对坐标 {@code (sx, sy)} = 格子左上角 +1）。
      *
-     * <p>★3 位数要缩一半★：9px 字体一个字符宽 6px，{@code 999} 就是 18px，正好等于整格宽
-     * ⇒ 不缩会压到右边相邻格子上（看起来像"隔壁的权重"）。上限 999 时用 0.5 缩放画成 9px 宽。
+     * <p>★口径一律对齐原版堆叠数量（第 52 轮，Aki 定）★：原版那段在
+     * {@code DrawContext.drawItemInSlot} 里，javap 出来就四步 ——
+     * {@code push} → {@code translate(0, 0, 200)} → {@code drawText(..., 0xFFFFFF, true)} → {@code pop}。
+     * 三步各自解决一个真实缺陷，缺任何一步都会出现"字不对"：
+     *
+     * <ol>
+     *   <li><b>整段 z +200</b>（{@link #render} 之外的唯一层级手段）：
+     *       物品图标在 GUI 里**有深度** —— 方块/工具是 3D 模型，前面板落在 z&gt;0；文字若画在 z=0，
+     *       即使调用顺序在物品之后，也会在深度测试里输给模型前面片。表现极隐蔽：字形只是被物品轮廓
+     *       "啃掉一块"，看着像字体缺笔画，实际是没进前层（零报错、日志干净、静态门查不出）。
+     *       原版数量之所以永远压在物品上，靠的就是这个 +200 —— 不是靠调用顺序。</li>
+     *   <li><b>shadow=true</b>：原版数量用阴影，不是描边。旧实现在 (x+1,y+1) 再画一遍深色字冒充描边，
+     *       字重比数量数字粗一档，并排时一眼就看得出不是同一套字形。</li>
+     *   <li><b>不缩放</b>：旧实现对 3 位数 {@code scale(0.5)} 免得压到右邻格，代价是"位数一变字号就变"
+     *       （4 是 9px、999 是 4.5px）。上限已定 999 ⇒ 3 位数最宽 18px = 整格宽，直接贴整格左沿画
+     *       （{@code sx-1 .. sx+17}），只压 0~1px 的格线，与原版 3 位数量（{@code x-1 .. x+17}）同款。</li>
+     * </ol>
+     *
+     * <p>★不要为了"更清楚"把这段挪回 {@code drawForeground} 并加 z★：{@code HandledScreen.render}
+     * 在进槽位循环前就 {@code RenderSystem.disableDepthTest()}，z 只对**自带深度状态**的图层
+     * （文字层就是）生效，挪到别处会退回"被物品遮一半"。
      */
     private void drawWeightBadge(DrawContext context, int sx, int sy, int weight, boolean editing) {
         String text = String.valueOf(weight);
         int color = weightColor(weight, editing);
-        int outline = darken(color);
-        if (text.length() >= 3) {
-            context.getMatrices().push();
-            context.getMatrices().translate(sx, sy, 0);
-            context.getMatrices().scale(0.5f, 0.5f, 1.0f);
-            context.drawText(this.textRenderer, text, 1, 1, outline, false);
-            context.drawText(this.textRenderer, text, 0, 0, color, false);
-            context.getMatrices().pop();
-            return;
-        }
-        // 1px 右下描边 ⇒ 浅色物品（纸、白羊毛）上也读得清
-        context.drawText(this.textRenderer, text, sx + 1, sy + 1, outline, false);
-        context.drawText(this.textRenderer, text, sx, sy, color, false);
+        // sx = 格左上角 +1，格宽 18 ⇒ 右界 sx+17。9px 字体 3 位数正好 18px ⇒ 贴整格左沿。
+        int w = this.textRenderer.getWidth(text);
+        int tx = w > 17 ? sx + 17 - w : sx;
+        context.getMatrices().push();
+        context.getMatrices().translate(0.0f, 0.0f, 432.0f);
+        context.drawText(this.textRenderer, text, tx, sy, color, true);
+        context.getMatrices().pop();
     }
 
     private void slotBg(DrawContext context, int x, int y) {        context.fill(x, y, x + 18, y + 18, 0xFF2A2A31);
@@ -332,10 +333,10 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                 this.playerInventoryTitleX, this.playerInventoryTitleY, 0xFF8E8E9A, false);
 
         // ★T80：每格权重数字画在物品**左上角**（规格 §三）★
-        // 只在该格有物品时画；颜色三态见 weightColor()。位置 = 格子坐标 +(1,1)，
-        // 即 `slot.x + 1, slot.y + 1`（与槽位同一份几何，不另算）。
-        // drawForeground 里已经是面板相对坐标且**在物品之后**执行（第 42 轮 javap 实证：
-        // HandledScreen.render 的 translate 在 40，drawForeground 在 179）⇒ 数字压在图标上，正是规格要的角标。
+        // 只在该格有物品时画；颜色三态见 weightColor()。位置 = 格子坐标 +(1,1)。
+        // ★层级问题在 drawWeightBadge 里用 z 解决★（第 52 轮）：物品不是画在 z=0 ——
+        // `HandledScreen.drawItem` 先 `translate(0,0,232)` 再 `drawItem`（内部再 +150），
+        // 所以物品实际在 z=232+150=382；原版堆叠数量画在 232+200=432。我们照抄 432。
         for (int i = 0; i < PackageEditHandler.EDITOR_SLOTS; i++) {
             ItemStack stack = this.handler.getSlot(i).getStack();
             if (stack.isEmpty()) continue;

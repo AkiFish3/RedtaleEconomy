@@ -28,11 +28,24 @@ import net.minecraft.util.Identifier;
  */
 public final class HubMoney {
 
-	/** 硬币图标边长（含描边）。 */
-	public static final int ICON = 7;
-	/** 图标与数字之间的间距。 */
+	/**
+	 * 硬币图标边长（含描边）。
+	 *
+	 * <p>★11 不是随手放大的★（Aki 报「货币图标过小」）：原来的 8（16×16 贴图缩一半）/ 7（几何兜底）
+	 * 只有相邻数字字高（9px 字体的墨迹约 7px）的 1.0~1.1 倍，读起来像数字前面的一个小点，
+	 * 币种靠颜色区分而不是形状。11 = 字高 1.5 倍，与 9px 数字并排时"图标在前、数字在后"的主次清楚，
+	 * 又不会把 18px 行高撑开（图标 y 上移 1px，占 y-1..y+9，仍在行内）。
+	 */
+	public static final int ICON = 11;
+	/**
+	 * 图标与数字之间的间距。
+	 *
+	 * <p>★保持 2 而不是跟着放大★：16×16 的硬币贴图本身四周有 1~2px 透明边，
+	 * 画成 11px 后视觉留白已经够了；再加会把 3 段价钱整体推宽，行情行/商店行的右对齐栏
+	 * （`maxW` 预算）就得一起改，得不偿失。
+	 */
 	private static final int ICON_TEXT = 2;
-	/** 两个币种之间的间距。 */
+	/** 两个币种之间的间距（同上：段间靠币面透明边留白，不额外加宽）。 */
 	private static final int SEG_GAP = 5;
 
 	/** Numismatic 硬币贴图的实际边长（16×16，见 jar 内 textures/item/*_coin.png）。 */
@@ -227,7 +240,7 @@ public final class HubMoney {
 			if (drawn > 0) need += SEG_GAP;
 			if (maxW > 0 && cx - x + need > maxW) break;
 			if (drawn > 0) cx += SEG_GAP;
-			coin(dc, cx, y + 1, i);
+			coin(dc, cx, y - 1, i);
 			dc.drawText(tr, Text.literal(n), cx + ic + ICON_TEXT, y,
 					i == 0 ? HubTheme.GOLD : HubTheme.TEXT, false);
 			cx += ic + ICON_TEXT + tr.getWidth(n);
@@ -236,9 +249,14 @@ public final class HubMoney {
 		return cx - x;
 	}
 
-	/** 硬币图标宽：有原版贴图时 8（16×16 缩一半），否则 7。 */
+	/**
+	 * 硬币图标边长：贴图与几何兜底**同尺寸**。
+	 *
+	 * <p>旧实现贴图 8 / 兜底 7，差 1px 导致"装了 Numismatic"和"没装"两种环境下排版宽度不同
+	 * （{@link #width}/{@link #fullWidth} 跟着变），右对齐的价钱会跳 1~3px。统一成 {@link #ICON}。
+	 */
 	private static int iconW() {
-		return texOk(0) ? 8 : ICON;
+		return ICON;
 	}
 
 	/**
@@ -283,7 +301,7 @@ public final class HubMoney {
 		coinGeometry(dc, x, y, kind);
 	}
 
-	/** 几何硬币：1px 描边 + 实心面，7×7，四角切掉（圆形近似）。 */
+	/** 几何硬币：1px 描边 + 实心面，边长 = {@link #ICON}，四角切掉（圆形近似）。 */
 	private static void coinGeometry(DrawContext dc, int x, int y, int kind) {
 		int face = switch (kind) {
 			case 0 -> HubTheme.COIN_GOLD;
