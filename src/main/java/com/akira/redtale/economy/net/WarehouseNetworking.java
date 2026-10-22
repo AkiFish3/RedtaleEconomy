@@ -1,7 +1,9 @@
 package com.akira.redtale.economy.net;
 
+import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.warehouse.WarehouseData;
+import com.akira.redtale.economy.warehouse.WarehouseSlots;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
@@ -24,7 +26,62 @@ public final class WarehouseNetworking {
 
 	private static final Map<UUID, ItemStack> CURSOR = new HashMap<>();
 
+	/**
+	 * 每个玩家每秒允许的仓储操作数。
+	 *
+	 * <p>每次操作末尾都会 {@code d.save()}（整份 JSON 原子重写），所以「包频率」直接等于
+	 * 「磁盘写频率」。真人点击最多 10 次/秒，80 留足拖拽与连点的余量；改过的客户端刷包
+	 * 会在这一层被丢掉，不会把主线程和磁盘打满。
+	 */
+	private static final int OPS_PER_SEC = 80;
+
+	/** uuid → {当前秒, 本秒计数}。 */
+	private static final Map<UUID, int[]> OP_WINDOW = new HashMap<>();
+
+	private static final long THROTTLE_LOG_EVERY_MS = 30_000;
+	private static long lastThrottleLogAt;
+
 	private WarehouseNetworking() {
+	}
+
+	/**
+	 * 收包统一入口：节流 + 兜异常。
+	 *
+	 * <p>★为什么要兜★：主线程执行队列里抛出的异常会一路冒到 tick，直接崩服务端
+	 * （{@code Exception in server tick loop}）。包里的槽号来自客户端，不能当可信输入；
+	 * 万一还有没守住的取值，也只应该「这一次操作无效 + 回一次真实快照」，不许拖垮服务器。
+	 */
+	private static void op(ServerPlayerEntity player, String name, Runnable body) {
+		if (player == null) return;
+		if (!allowed(player.getUuid())) {
+			long now = System.currentTimeMillis();
+			if (now - lastThrottleLogAt > THROTTLE_LOG_EVERY_MS) {
+				lastThrottleLogAt = now;
+				RedtaleEconomy.LOGGER.info("[warehouse] 操作过于频繁，已丢弃：{}",
+						player.getGameProfile().getName());
+			}
+			return;
+		}
+		try {
+			body.run();
+		} catch (Exception e) {
+			RedtaleEconomy.LOGGER.warn("[warehouse] {} 执行失败（已忽略）：{}", name, e.toString());
+			try {
+				send(player); // 服务端才是权威：异常后就地重发，别让界面停在错状态
+			} catch (Exception ignored) {
+				// 连快照都发不出去就只能等下一次请求
+			}
+		}
+	}
+
+	private static boolean allowed(UUID id) {
+		int sec = (int) (System.currentTimeMillis() / 1000L);
+		int[] w = OP_WINDOW.computeIfAbsent(id, k -> new int[]{-1, 0});
+		if (w[0] != sec) {
+			w[0] = sec;
+			w[1] = 0;
+		}
+		return ++w[1] <= OPS_PER_SEC;
 	}
 
 	public static void send(ServerPlayerEntity player) {
@@ -58,14 +115,14 @@ public final class WarehouseNetworking {
 
 	public static void register() {
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_REQ,
-				(server, player, h, buf, sender) -> server.execute(() -> send(player)));
+				(server, player, h, buf, sender) -> server.execute(() -> op(player, "req", () -> send(player))));
 
 		// 抓取：0 = 整叠，1 = 一半
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_PICK,
 				(server, player, h, buf, sender) -> {
 					int idx = buf.readVarInt();
 					boolean half = buf.readBoolean();
-					server.execute(() -> pick(player, idx, half));
+					server.execute(() -> op(player, "pick", () -> pick(player, idx, half)));
 				});
 
 		// 放下：1 = 只放一个
@@ -73,19 +130,19 @@ public final class WarehouseNetworking {
 				(server, player, h, buf, sender) -> {
 					int idx = buf.readVarInt();
 					boolean one = buf.readBoolean();
-					server.execute(() -> place(player, idx, one));
+					server.execute(() -> op(player, "place", () -> place(player, idx, one)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_QUICK,
 				(server, player, h, buf, sender) -> {
 					int idx = buf.readVarInt();
-					server.execute(() -> quickOut(player, idx));
+					server.execute(() -> op(player, "quick", () -> quickOut(player, idx)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_QUICK_INV,
 				(server, player, h, buf, sender) -> {
 					int slot = buf.readVarInt();
-					server.execute(() -> quickIn(player, slot));
+					server.execute(() -> op(player, "quickinv", () -> quickIn(player, slot)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_SPREAD,
@@ -95,43 +152,44 @@ public final class WarehouseNetworking {
 					int[] slots = new int[raw.size()];
 					for (int i = 0; i < slots.length; i++) slots[i] = raw.get(i);
 					boolean even = buf.readBoolean();
-					server.execute(() -> spread(player, slots, even));
+					server.execute(() -> op(player, "spread", () -> spread(player, slots, even)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_PLACE_INV,
 				(server, player, h, buf, sender) -> {
 					int slot = buf.readVarInt();
 					boolean one = buf.readBoolean();
-					server.execute(() -> placeToInv(player, slot, one));
+					server.execute(() -> op(player, "placeinv", () -> placeToInv(player, slot, one)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_HOTBAR,
 				(server, player, h, buf, sender) -> {
 					int slot = buf.readVarInt();
-					server.execute(() -> hotbarSwap(player, slot));
+					server.execute(() -> op(player, "hotbar", () -> hotbarSwap(player, slot)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_INV_PICK,
 				(server, player, h, buf, sender) -> {
 					int slot = buf.readVarInt();
 					boolean half = buf.readBoolean();
-					server.execute(() -> invPick(player, slot, half));
+					server.execute(() -> op(player, "invpick", () -> invPick(player, slot, half)));
 				});
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_DROP,
-				(server, player, h, buf, sender) -> server.execute(() -> dropCursor(player)));
+				(server, player, h, buf, sender) -> server.execute(() -> op(player, "drop", () -> dropCursor(player))));
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_COLLECT,
-				(server, player, h, buf, sender) -> server.execute(() -> collect(player)));
+				(server, player, h, buf, sender) -> server.execute(() -> op(player, "collect", () -> collect(player))));
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_SORT,
-				(server, player, h, buf, sender) -> server.execute(() -> sort(player)));
+				(server, player, h, buf, sender) -> server.execute(() -> op(player, "sort", () -> sort(player))));
 
 		ServerPlayNetworking.registerGlobalReceiver(PacketIds.C2S_WAREHOUSE_UPGRADE,
-				(server, player, h, buf, sender) -> server.execute(() -> upgrade(player)));
+				(server, player, h, buf, sender) -> server.execute(() -> op(player, "upgrade", () -> upgrade(player))));
 
 		// 断开时把光标里的东西塞回背包，避免丢物品
 		ModuleEvents.onQuit("warehouse.cursor", p -> {
+			OP_WINDOW.remove(p.getUuid());
 			ItemStack cur = CURSOR.remove(p.getUuid());
 			if (cur != null && !cur.isEmpty()) {
 				p.getInventory().offerOrDrop(cur);
@@ -207,6 +265,8 @@ public final class WarehouseNetworking {
 
 	/** 背包 → 仓储（Shift 点击）。 */
 	private static void quickIn(ServerPlayerEntity player, int slot) {
+		// ★槽号来自客户端★ 原版 getStack(负数) 直接 List.get(-1) 抛异常（见 WarehouseSlots 注释）
+		if (!WarehouseSlots.validInventory(slot)) return;
 		WarehouseData d = WarehouseData.of(player.getUuid());
 		ItemStack src = player.getInventory().getStack(slot);
 		if (src.isEmpty()) return;
@@ -246,6 +306,8 @@ public final class WarehouseNetworking {
 
 	/** 从背包抓取到光标（和原版一样能抓背包里的东西）。 */
 	private static void invPick(ServerPlayerEntity player, int slot, boolean half) {
+		// ★同上★ 负槽号会崩主线程
+		if (!WarehouseSlots.validInventory(slot)) return;
 		ItemStack st = player.getInventory().getStack(slot);
 		if (st.isEmpty()) return;
 		ItemStack cur = cursor(player.getUuid());
@@ -314,7 +376,7 @@ public final class WarehouseNetworking {
 
 	/** 光标物品放进玩家背包指定格。 */
 	private static void placeToInv(ServerPlayerEntity player, int slot, boolean one) {
-		if (slot < 0 || slot >= 36) return;
+		if (!WarehouseSlots.validInventory(slot)) return;
 		ItemStack cur = cursor(player.getUuid());
 		if (cur.isEmpty()) return;
 		ItemStack dst = player.getInventory().getStack(slot);
@@ -337,6 +399,7 @@ public final class WarehouseNetworking {
 
 	/** 数字键：光标与快捷栏交换。 */
 	private static void hotbarSwap(ServerPlayerEntity player, int hotbarSlot) {
+		if (!WarehouseSlots.validHotbar(hotbarSlot)) return;
 		ItemStack cur = cursor(player.getUuid());
 		ItemStack bar = player.getInventory().getStack(hotbarSlot);
 		setCursor(player.getUuid(), bar);
