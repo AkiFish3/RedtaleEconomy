@@ -35,7 +35,9 @@ public final class StorageConfig {
 			.field("ledger", ConfigSchema.obj("流水")
 					.field("enabled", ConfigSchema.bool(true, "是否记录流水"))
 					.field("flushIntervalSeconds", ConfigSchema.integer(5, 1, 600,
-							"流水批量落盘间隔（秒）")))
+							"流水批量落盘间隔（秒）。★当前实现是每笔立即追加到 JSONL（异步单线程），"
+									+ "未做批量缓冲 ⇒ 本项暂不生效★；改成批量会缩短崩溃前的持久化窗口，"
+									+ "属架构改动，留待确认")))
 			.field("snapshotsEnabled", ConfigSchema.bool(true, "是否写余额快照（对账/回滚用）"))
 			.field("snapshotIntervalMinutes", ConfigSchema.integer(30, 1, 10080,
 					"同一玩家两次快照的最小间隔（分钟），仅在余额有变动时写"))

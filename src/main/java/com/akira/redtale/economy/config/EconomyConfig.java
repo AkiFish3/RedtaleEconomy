@@ -27,7 +27,10 @@ public final class EconomyConfig {
 					.field("cooldownSeconds", ConfigSchema.integer(0, 0, 86400, "两次转账最小间隔（秒），0=无限制"))
 					.field("allowSelf", ConfigSchema.bool(false, "是否允许给自己转账（仅测试用）")))
 			.field("migrate", ConfigSchema.obj("provider 迁移")
-					.field("requireConfirm", ConfigSchema.bool(true, "迁移必须二次确认（/redtale migrate provider 后跟 confirm）")));
+					.field("requireConfirm", ConfigSchema.bool(true,
+							"迁移必须二次确认（/redtale migrate provider 后跟 confirm）。"
+									+ "★当前命令结构已强制 confirm（不带 confirm 只做预检），"
+									+ "把本项改 false 不会跳过确认 ⇒ 暂不生效★")));
 
 	private EconomyConfig() {
 	}
