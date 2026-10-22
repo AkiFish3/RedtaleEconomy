@@ -76,6 +76,8 @@ final class FontShotClient {
 
 	private static final Text L3 = Text.literal("3) ").append(GLYPHS);
 	private static final Text L4 = Text.literal("4) 3723 3723");
+	/** T70：第 5 行走**图标**绘制路径（{@code HubMoney.drawFull}），用来区分贴图 8px / 几何 7px。 */
+	private static final int ROW5_Y = 86;
 
 	private FontShotClient() {
 	}
@@ -92,6 +94,9 @@ final class FontShotClient {
 			ctx.drawText(mc.textRenderer, line2(), 6, 24, 0xFFFFFFFF, false);
 			ctx.drawText(mc.textRenderer, L3, 6, 42, 0xFFFFFFFF, false);
 			ctx.drawText(mc.textRenderer, L4, 6, 60, 0xFFFFFFFF, false);
+			// T70：第五行走图标路径（贴图/几何二选一都画在这里）
+			com.akira.redtale.economy.client.ui.hub.HubMoney.drawFull(
+					ctx, mc.textRenderer, 6, ROW5_Y, 3723L, 0);
 		});
 	}
 
@@ -169,6 +174,8 @@ final class FontShotClient {
 			sb.append("line2=").append(line2().getString()).append('\n');
 			// 字形路径必须让 getString() 里出现 U+E000 系（回落时是「金/银/铜」三个汉字）
 			sb.append("line1HasGlyph=").append(line1().getString().indexOf('\uE000') >= 0).append('\n');
+			// T70：图标行实际画出来的宽度（贴图 8 + 2 + 数字 / 几何 7 + 2 + 数字）
+			sb.append("row5Y=").append(ROW5_Y).append('\n');
 		} catch (Throwable t) {
 			sb.append("EXCEPTION ").append(t).append('\n');
 		}
