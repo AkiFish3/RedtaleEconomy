@@ -108,6 +108,8 @@ public final class MailNetworking {
 				int r = claimItem(player, index);
 				if (r == 1) {
 					player.sendMessage(net.minecraft.text.Text.literal("已取出邮件物品"), true);
+				} else if (r == 2) {
+					player.sendMessage(net.minecraft.text.Text.literal("背包放不下一部分，余量留在待领取里"), true);
 				} else if (r == 0) {
 					player.sendMessage(net.minecraft.text.Text.literal("背包已满，物品留在待领取里"), true);
 				}
@@ -120,7 +122,7 @@ public final class MailNetworking {
 	/**
 	 * 把队列第 {@code index} 件物品塞进背包。
 	 *
-	 * @return 1=取出成功；0=背包满（物品原样留在队列）；-1=下标无效
+	 * @return 1=全部取出；2=只取出一部分（余量已写回队列）；0=一件都没放下（原样留在队列）；-1=下标无效
 	 */
 	static int claimItem(ServerPlayerEntity player, int index) {
 		MailQueue q = MailQueue.of(player.getUuid());
@@ -132,14 +134,18 @@ public final class MailNetworking {
 			q.save();
 			return -1;
 		}
-		// insertStack 会把没放下的余量留在传入的栈里 ⇒ 全没放下就原样塞回队列
+		// insertStack 会把没放下的余量留在传入的栈里。
+		// ★返回值的语义是「放进去了至少一件」，不是「全放进去了」★ —— 1.20.1 里
+		// `replaceStack.getCount() < before` 就 return true（javap 实证）。按返回值判「全放」时，
+		// 只放下一部分（背包剩几格）会走进成功分支把余量直接扔掉 ⇒ 物品凭空消失、零日志。
+		// 唯一可信判据是 remain 是否空。
 		ItemStack remain = st.copy();
-		boolean all = player.getInventory().insertStack(remain);
-		if (!all && !remain.isEmpty()) {
+		player.getInventory().insertStack(remain);
+		if (!remain.isEmpty()) {
 			q.items.set(index, remain);
 			q.dirty = true;
 			q.save();
-			return 0;
+			return remain.getCount() == st.getCount() ? 0 : 2;
 		}
 		q.items.remove(index);
 		q.dirty = true;
