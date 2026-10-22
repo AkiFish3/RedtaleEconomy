@@ -138,6 +138,13 @@ public class RECommands {
                 .then(literal("weightprobe")
                         .executes(RECommands::weightProbe)
                 )
+                // dev/运维命令：绑定归属判定（名字 vs UUID）自检（B57）。
+                // 背景：旧实现只存名字 ⇒ 玩家改名后绑定物永久锁死；旧名字被别人抢注则**直接易主**。
+                // 现在 UUID 与名字双写，有 UUID 就只认 UUID；旧档只有名字时首次交互补 UUID。
+                // 纯逻辑、不需要客户端 ⇒ RCON 就能判。
+                .then(literal("ownerprobe")
+                        .executes(RECommands::ownerProbe)
+                )
                 .then(literal("list")
                         .executes(context -> {
                             ServerCommandSource source = context.getSource();
@@ -356,8 +363,85 @@ public class RECommands {
         return failures == 0 ? 1 : 0;
     }
 
-    /** 造一件带固定内容的探针包裹（RANDOM 模式、一条 items）。 */
-    private static com.akira.redtale.economy.legacy.misc.EditablePackageInventory newProbeInventory(Item pkgItem) {
+    /**
+     * {@code /redtale bound ownerprobe}：归属判定「名字 / UUID」自检（B57）。
+     *
+     * <p>判据全部走 {@link com.akira.redtale.economy.legacy.bound.BoundItemHandler#ownerMatches}
+     * （生产代码同一个方法），因此能证伪「UUID 写了但判定不看」这种假修复。</p>
+     */
+    private static int ownerProbe(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        java.util.UUID alice = java.util.UUID.fromString("00000000-0000-4000-8000-0000000000a1");
+        java.util.UUID bob = java.util.UUID.fromString("00000000-0000-4000-8000-0000000000b2");
+        int[] c = new int[]{0, 0}; // [fail, total]
+
+        // ① 绑定必须双写（旧实现只写名字）
+        ItemStack bound = new ItemStack(Items.DIAMOND);
+        com.akira.redtale.economy.legacy.bound.BoundItemHandler.writeOwner(bound, alice, "Alice");
+        check(source, c, "绑定后 hasOwner", true,
+                com.akira.redtale.economy.legacy.bound.BoundItemHandler.hasOwner(bound));
+        check(source, c, "绑定后 uuid=Alice", true,
+                alice.equals(com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerUuid(bound)));
+        check(source, c, "绑定后 name=Alice", true,
+                "Alice".equals(com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerName(bound)));
+
+        // ② 正常路径：本人 / 改名（UUID 不变）
+        check(source, c, "本人可用", true, matches(bound, alice, "Alice"));
+        check(source, c, "改名后仍可用", true, matches(bound, alice, "Alice2"));
+
+        // ③ ★核心负样本★ 同名但 UUID 不同 ⇒ 必须拒绝
+        //    旧实现按名字判 ⇒ 这里会 true（旧名字被抢注即可易主，改名则本人永久锁死）
+        check(source, c, "同名异UUID被拒", false, matches(bound, bob, "Alice"));
+
+        // ④ 旧档（只有名字）：仍要能用，且迁移后升级成 UUID
+        ItemStack legacy = new ItemStack(Items.DIAMOND);
+        legacy.getOrCreateNbt().putString("BoundOwnerName", "Alice");
+        check(source, c, "旧档(仅名字)本人可用", true, matches(legacy, alice, "Alice"));
+        // 旧档没有 UUID，名字是唯一钥匙 ⇒ 这里必须换**不同的名字**才算「他人」；
+        // 用「同名不同 UUID」测旧档永远是 true（旧档压根没有 UUID 可比），那会把判据本身写错。
+        check(source, c, "旧档(仅名字)他人被拒", false, matches(legacy, bob, "Bob"));
+        com.akira.redtale.economy.legacy.bound.BoundItemHandler.adoptOwner(legacy, alice);
+        check(source, c, "迁移后 uuid 已写入", true,
+                alice.equals(com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerUuid(legacy)));
+        check(source, c, "迁移后同名异UUID被拒", false, matches(legacy, bob, "Alice"));
+
+        // ⑤ 无主 = 公共；只有 UUID 没有名字也照样按 UUID 判
+        ItemStack free = new ItemStack(Items.DIAMOND);
+        check(source, c, "无主=公共", true, matches(free, bob, "Bob"));
+        ItemStack uuidOnly = new ItemStack(Items.DIAMOND);
+        uuidOnly.getOrCreateNbt().putUuid("BoundOwnerUuid", alice);
+        check(source, c, "仅UUID本人可用", true, matches(uuidOnly, alice, "Whatever"));
+        check(source, c, "仅UUID他人被拒", false, matches(uuidOnly, bob, "Alice"));
+
+        // ⑥ 损坏的 UUID 不能变成永久锁死 ⇒ 回退名字
+        ItemStack broken = new ItemStack(Items.DIAMOND);
+        NbtCompound btag = broken.getOrCreateNbt();
+        btag.putString("BoundOwnerName", "Alice");
+        btag.putString("BoundOwnerUuid", "not-a-uuid");
+        check(source, c, "UUID损坏回退名字", true, matches(broken, alice, "Alice"));
+
+        final int failures = c[0];
+        final int total = c[1];
+        LegacyInit.LOGGER.info("[dev][oprobe] done fail={} / {}", failures, total);
+        source.sendFeedback(() -> Text.literal("[dev][oprobe] fail=" + failures + " / " + total), false);
+        return failures == 0 ? 1 : 0;
+    }
+
+    private static boolean matches(ItemStack stack, java.util.UUID uuid, String name) {
+        return com.akira.redtale.economy.legacy.bound.BoundItemHandler.ownerMatches(stack, uuid, name);
+    }
+
+    /** 计数版判据：分母自动累加（R113：别写死分母）。 */
+    private static void check(ServerCommandSource source, int[] c, String name, boolean want, boolean got) {
+        c[1]++;
+        boolean ok = want == got;
+        if (!ok) c[0]++;
+        LegacyInit.LOGGER.info("[dev][oprobe] {} expect={} actual={} {}", name, want, got, ok ? "PASS" : "FAIL");
+        source.sendFeedback(() -> Text.literal("[dev][oprobe] " + name + " expect=" + want
+                + " actual=" + got + (want == got ? " PASS" : " FAIL")), false);
+    }
+
+    /** 造一件带固定内容的探针包裹（RANDOM 模式、一条 items）。 */    private static com.akira.redtale.economy.legacy.misc.EditablePackageInventory newProbeInventory(Item pkgItem) {
         ItemStack stack = new ItemStack(pkgItem);
         NbtCompound nbt = new NbtCompound();
         nbt.putString("mode", PackageData.PackageMode.RANDOM.name());
