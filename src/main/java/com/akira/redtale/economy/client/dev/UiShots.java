@@ -250,6 +250,12 @@ public final class UiShots {
 	private static void onTick(MinecraftClient mc) {
 		if (!active) return;
 		tick++;
+		// T70 快速探针：不依赖跑到 step 237（整轮 sweep 在装了 REI/Xaero 后极慢）。
+		// 资源管理器一就绪就能判「Numismatic 贴图能不能找到」，写盘后立刻 flush。
+		if (tick == 40 || tick == 200) {
+			LOG.add("money tick=" + tick + " " + HubMoney.texProbe());
+			flushLog(mc.runDirectory.toPath());
+		}
 		if (fatalProbe && tick > 20 && !fatalSeen && mc.getOverlay() == null) {
 			// 自检：故意弹致命界面（文案写明是夹具自检，别让人误判成真崩溃）。
 			// ★必须等 overlay 为 null★：tick 20 时还在 Reloading ResourceManager，
