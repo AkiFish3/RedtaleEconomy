@@ -30,6 +30,10 @@ sourceSets {
 |---|---|---|
 | `PackageShotHarness` / `PackageShotClient` | `run/b14-pkg-shots.flag` | `run/screenshots/b14-pkg-<tier>-f<N>.png`，玩家钉在固定锚点，3 档包裹各连拍 14 帧 / 5 tick |
 | `TooltipShotHarness` / `TooltipShotClient` | `run/b16-ttip.flag` | 逐行 `getTooltip` 落盘 + HUD 截图 3 帧，跑完自动退出 |
+| `ItemShotHarness` / `ItemShotClient` | `run/b36-item-shots.flag` | `run/screenshots/b36-item-<item>-f<N>.png`：自绘纯黑屏 + 物品 6× 居中，隔 10 tick 连拍 8 帧（`surprise` 正样本 / `package_normal` 空动画负对照），判据 `_b38_item_anim.py` |
+
+⚠ `legacy/devsrc` 里有几个旧夹具引用了已删除的常量（`TooltipShot*`），临时启用源集时要
+`exclude 'com/akira/redtale/economy/legacy/dev/TooltipShot*'`，否则 `compileJava` 必红。
 
 两个 flag 都会让客户端**提前自行退出**，且 `run/` 是 A/B 共用的 gameDir
 ⇒ 跑之前确认没有别人正在 `runClient`，跑完把 flag 删掉（见 `_LESSONS.md` 第 14 轮 / 第 10 轮）。
