@@ -92,6 +92,9 @@ public final class MailNetworking {
 	/** 领取一条：货币走 {@link MailService#claimMoney}（带流水），物品进背包。 */
 	static void claim(ServerPlayerEntity player, int kind, int index) {
 		if (player == null) return;
+		// ★模块总开关★：收包点在 MailModule.onLoad 里注册，关掉模块后不会被注销 ⇒ 必须在此重判，
+		// 否则「邮件关了、老界面还在」时仍能把待领货币提出来（同 shop/warehouse 一族）。
+		if (!com.akira.redtale.economy.module.impl.MailModule.enabled()) return;
 		try {
 			if (kind == MailProtocol.KIND_MONEY) {
 				long got = MailService.claimMoney(player.getUuid());

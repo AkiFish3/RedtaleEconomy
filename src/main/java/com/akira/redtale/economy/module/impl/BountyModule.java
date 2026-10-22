@@ -246,6 +246,8 @@ public final class BountyModule implements RedtaleModule {
 
 	/** 领取一条；返回奖励金额，-1 表示不可领。 */
 	public static synchronized long claim(UUID uuid, int index) {
+		// 发奖前自判模块开关（同 TaskModule.claimAndSave）：别把「能不能发钱」交给调用方。
+		if (!enabled()) return -1;
 		BountyState st = daily(uuid);
 		if (index < 0 || index >= st.slots.size()) return -1;
 		BountyState.Slot slot = st.slots.get(index);

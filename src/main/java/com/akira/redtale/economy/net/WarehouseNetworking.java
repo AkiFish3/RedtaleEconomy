@@ -51,6 +51,10 @@ public final class WarehouseNetworking {
 	 */
 	private static void op(ServerPlayerEntity player, String name, Runnable body) {
 		if (player == null) return;
+		// ★模块总开关★：关掉 warehouse 时 /storage 根命令会被摘掉，但这 13 个收包点注册后
+		// 无法反注册（Fabric 没有 API）⇒ 只靠命令树等于「开关只关了一半」。放在节流之前：
+		// 关掉的模块不该消耗任何配额，也不该落任何盘。
+		if (!com.akira.redtale.economy.module.impl.WarehouseModule.enabled()) return;
 		if (!THROTTLE.allow(player.getUuid(), System.currentTimeMillis())) {
 			long now = System.currentTimeMillis();
 			if (now - lastThrottleLogAt > THROTTLE_LOG_EVERY_MS) {

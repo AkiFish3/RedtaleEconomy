@@ -1009,9 +1009,18 @@ public final class TaskModule implements RedtaleModule {
 		return d.tasks.stream().filter(x -> x.slot == slot).findFirst().orElse(null);
 	}
 
+	/** 任务模块是否可用（模块开关；面板/命令/发奖都只认这一个判据）。 */
+	public static boolean enabled() {
+		return com.akira.redtale.economy.module.ModuleManager.get().isEnabled("tasks");
+	}
+
 	/** 标记完成 + 发奖 + 落盘；返回奖励，任务不存在或已领返回 -1。 */
 	// Q3：领取是「读-改-写」，必须串行化，否则同一任务可能被并发领两次（GUI 连点 / FTBQ 自动领）
 	public static synchronized long claimAndSave(UUID uuid, int slot) {
+		// ★发奖前必须自己再判一次模块开关★：命令面靠 CommandSync 摘根命令，但这条发奖路径
+		// 是全仓唯一实现，将来任何新增调用方（FTBQ 自动领 / 脚本）都不该假定「调用方已经判过」。
+		// 发奖是不可逆动作，判据要贴在最贵的操作旁边，而不是散在入口。
+		if (!enabled()) return -1L;
 		Daily d = load(uuid, periodOfSlot(slot));
 		Task t = d.tasks.stream().filter(x -> x.slot == slot).findFirst().orElse(null);
 		if (t == null || t.claimed) return -1L;

@@ -109,6 +109,13 @@ public final class ShopNetworking {
 	 */
 	public static ShopProtocol.ActionResult trade(ServerPlayerEntity player, String shopId, String itemId,
 			int count, boolean buy) {
+		// ★模块总开关必须在这条唯一入口上再判一次★：关掉 shop 时 CommandSync 只摘掉 /shop 根命令，
+		// 已经注册的 C2S_BUY / C2S_SELL 收包点<b>不会被注销</b>（Fabric 没有反注册 API），
+		// 于是「模块关了、界面还在、改过的客户端照样能结算」。以前这里只判 ShopConfig.buyEnabled()，
+		// 那是配置项不是模块开关 —— 两件事，别混。
+		if (player == null || !com.akira.redtale.economy.module.Modules.enabled("shop")) {
+			return new ShopProtocol.ActionResult(false, buy ? "shop.buyDisabled" : "shop.sellDisabled", 0, 0);
+		}
 		int max = ShopConfig.maxCountPerTrade();
 		if (count < 1 || count > max || itemId.isBlank() || itemId.length() > 128) {
 			return new ShopProtocol.ActionResult(false, "shop.badRequest",
