@@ -14,6 +14,7 @@ import com.akira.redtale.economy.client.ui.hub.HubMoney;
 import com.akira.redtale.economy.client.ui.hub.HubPage;
 import com.akira.redtale.economy.client.ui.hub.HubScreen;
 import com.akira.redtale.economy.client.ui.hub.HubSettingsPage;
+import com.akira.redtale.economy.client.ui.hub.HubTasksPage;
 import com.akira.redtale.economy.client.ui.hub.HubTheme;
 import com.akira.redtale.economy.net.TaskProtocol;
 import net.fabricmc.api.EnvType;
@@ -66,7 +67,7 @@ public final class UiShots {
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
 	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2 + T44 商店滚动 1，到 89）。 */
-	private static final int LAST_STEP = 247;
+	private static final int LAST_STEP = 251;
 	/**
 	 * 多人模式（连专用服务器）的起点 step。
 	 *
@@ -868,6 +869,27 @@ public final class UiShots {
 			});
 			case 247 -> act(mc, () -> LOG.add("hub page sweep done (16 pages, last="
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()) + ")"));
+			// T06：任务页三分栏的像素证据（服务端数据层已于第 N+68 轮实机验证）。
+			// 每切一栏拍一张，日志同时记该栏可见条数 —— 只有截图分不出「空态」和「数据没到」。
+			case 248 -> shotKeep(mc, "u6-87-hub-tasks-daily.png", () -> {
+				openFresh(mc, HubPage.TASKS, "rt tasks");
+				HubTasksPage.selectTab(0);
+				LOG.add("tasks tab=daily visible=" + HubTasksPage.visible().size());
+			});
+			case 249 -> shotKeep(mc, "u6-88-hub-tasks-weekly.png", () -> {
+				HubTasksPage.selectTab(1);
+				LOG.add("tasks tab=weekly visible=" + HubTasksPage.visible().size());
+			});
+			case 250 -> shotKeep(mc, "u6-89-hub-tasks-event.png", () -> {
+				HubTasksPage.selectTab(2);
+				LOG.add("tasks tab=event visible=" + HubTasksPage.visible().size());
+			});
+			// 末尾必须是纯 act（最后一步若停在全屏截图会卡 toggle windowed，见 _LESSONS）
+			case 251 -> act(mc, () -> {
+				HubTasksPage.selectTab(0);
+				LOG.add("tasks tabs done, tab=" + HubTasksPage.tab()
+						+ " total=" + HubTasksPage.visible().size());
+			});
 			// ★稀疏编号★：这个 step 号没有动作时直接跳下一个，不要 finish。
 			// 以前是 `default -> finish`，于是「在末尾追加 218+」会被 123 这个空号直接截断
 			// （整轮只跑到 122 就退出，新步骤永远不执行、也不报错）。

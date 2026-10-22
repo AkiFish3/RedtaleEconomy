@@ -89,7 +89,7 @@ public final class TaskCommands {
 		for (TaskModule.Task t : d.tasks) {
 			StringBuilder sb = new StringBuilder();
 			sb.append(t.claimed ? "§8✔ " : "§f").append("§e#").append(t.slot).append(" §7[")
-					.append(t.pool).append("] ");
+					.append(t.label == null || t.label.isBlank() ? t.pool : t.label).append("] ");
 			for (TaskModule.ItemCount ic : t.items) {
 				sb.append("§f").append(displayName(ic.id)).append("§7×").append(ic.count).append("  ");
 			}
@@ -107,7 +107,7 @@ public final class TaskCommands {
 			for (TaskModule.Task t : w.tasks) {
 				StringBuilder sb = new StringBuilder();
 				sb.append(t.claimed ? "§8✔ " : "§f").append("§e#").append(t.slot).append(" §7[")
-						.append(t.pool).append("] ");
+						.append(t.label == null || t.label.isBlank() ? t.pool : t.label).append("] ");
 				for (TaskModule.ItemCount ic : t.items) {
 					sb.append("§f").append(displayName(ic.id)).append("§7×").append(ic.count).append("  ");
 				}

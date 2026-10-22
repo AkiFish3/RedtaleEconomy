@@ -126,9 +126,12 @@ public final class TaskNetworking {
 				int have = evHave >= 0 ? evHave : countOf(player, ic.id);
 				items.add(new TaskProtocol.Item(ic.id, ic.count, have));
 			}
+			// 标题优先用任务自带的 label：事件型任务没有 pool（pool=""），
+			// 原来只发 labelOf(pool) ⇒ 界面上「本周挖矿」变成内部槽号 #100。
+			String label = t.label == null || t.label.isBlank() ? TaskModule.labelOf(t.pool) : t.label;
 			out.add(new TaskProtocol.Task(t.slot, t.reward,
 					t.completion == null ? "submit" : t.completion, t.claimed, items,
-					TaskModule.labelOf(t.pool), d.period));
+					label, d.period));
 		}
 	}
 
