@@ -74,6 +74,10 @@ public final class MailService {
 	/** 领取全部待领取货币；返回领取金额（0 = 没有）。 */
 	public static synchronized long claimMoney(UUID target) {
 		if (target == null) return 0;
+		// R110：这是「余额 +1」的唯一实现，两个调用方（命令 / 收包）各自判过开关，
+		// 但判据不能只存在于调用方 —— 将来任何新调用方都不该假定「外面判过了」。
+		// 用 ModuleManager 直查而不是 MailModule.enabled()：避免 mail ↔ module 的静态初始化互指。
+		if (!com.akira.redtale.economy.module.ModuleManager.get().isEnabled("mail")) return 0;
 		MailQueue q = MailQueue.of(target);
 		long amount = q.pendingMoney;
 		if (amount <= 0) return 0;

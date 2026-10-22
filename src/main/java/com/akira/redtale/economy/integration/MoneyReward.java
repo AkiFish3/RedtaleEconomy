@@ -58,6 +58,13 @@ public final class MoneyReward extends Reward {
 	}
 
 	private void doClaim(ServerPlayerEntity player, boolean notify) {
+		// R110：FTBQ 的奖励对象是「已经注册进任务书数据里的东西」，关掉集成也摘不掉；
+		// 只关注册（FtbqIntegration）挡不住运行期关掉开关后玩家继续领钱 ⇒ 发钱这一刻再判一次。
+		if (!com.akira.redtale.economy.config.FtbqConfig.enabled()) {
+			com.akira.redtale.economy.util.Logs.warnOnce("ftbq.claim.disabled",
+					"[ftbq] 集成已关闭，拒绝发放奖励（uuid={} amount={}）", player.getUuid(), amount);
+			return;
+		}
 		String ref = "quest:" + (getQuest() == null ? "?" : getQuest().getId());
 		boolean premium = "premium".equalsIgnoreCase(com.akira.redtale.economy.config.FtbqConfig.rewardCurrency());
 		if (premium) {

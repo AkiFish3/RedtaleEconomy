@@ -167,6 +167,11 @@ public final class CheckinModule implements RedtaleModule {
 		return ConfigManager.get().store(FILE);
 	}
 
+	/** 模块开关（走 ModuleManager 直查，避免 impl ↔ 自身静态初始化互指）。 */
+	public static boolean enabled() {
+		return com.akira.redtale.economy.module.ModuleManager.get().isEnabled("checkin");
+	}
+
 	public static int resetHour() {
 		return (int) store().getLong("resetHour", 0);
 	}
@@ -301,6 +306,9 @@ public final class CheckinModule implements RedtaleModule {
 	/** 今日签到。奖励在服务端算好再入账，客户端无法影响。 */
 	// Q3：同 Claim，签到也是读-改-写（state → save），类级锁防并发重复发奖
 	public static synchronized Outcome checkin(java.util.UUID uuid) {
+		// R110：签到是「改状态 + 发钱」的复合动作，命令根被摘掉也挡不住别的调用方
+		// （将来接 C2S / 自动化脚本）；判据贴在发奖那一刻。
+		if (!enabled()) return new Outcome(Result.DISABLED, 0, 0L, "", "");
 		int reset = resetHour();
 		String today = TimeUtil.today(reset);
 		State s = state(uuid);
@@ -582,6 +590,7 @@ public final class CheckinModule implements RedtaleModule {
 	 * <p>前提是昨天确实缺签，且未超出 lookback 与每日次数上限。
 	 */
 	public static MakeupResult makeup(java.util.UUID uuid) {
+		if (!enabled()) return MakeupResult.DISABLED;
 		ConfigStore cfg = store();
 		if (!cfg.getPathBool("makeup.enabled", true)) return MakeupResult.DISABLED;
 

@@ -162,6 +162,12 @@ public final class BoardCommands {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
+		// R110：关模块只摘得掉命令根，摘不掉「已经在跑的东西」；接单/交付/撤销这三个会动钱，
+		// 判据必须贴在动钱那一刻，不许假定「命令还在 ⇒ 模块还开着」。
+		if (!BoardModule.enabled()) {
+			src.sendError(Text.literal(Lang.msg("board.disabled")));
+			return 0;
+		}
 		BoardStore.Entry e = BoardStore.byId(StringArgumentType.getString(ctx, "id"));
 		if (e == null || !BoardStore.Status.OPEN.name().equals(e.status)) {
 			src.sendError(Text.literal(Lang.msg("board.notOpen")));
@@ -194,6 +200,10 @@ public final class BoardCommands {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
+		if (!BoardModule.enabled()) {
+			src.sendError(Text.literal(Lang.msg("board.disabled")));
+			return 0;
+		}
 		BoardStore.Entry e = BoardStore.byId(StringArgumentType.getString(ctx, "id"));
 		if (e == null || !BoardStore.Status.ACCEPTED.name().equals(e.status)) {
 			src.sendError(Text.literal(Lang.msg("board.notAccepted")));
@@ -226,6 +236,10 @@ public final class BoardCommands {
 		ServerCommandSource src = ctx.getSource();
 		ServerPlayerEntity p = src.getPlayer();
 		if (p == null) return onlyPlayer(src);
+		if (!BoardModule.enabled()) {
+			src.sendError(Text.literal(Lang.msg("board.disabled")));
+			return 0;
+		}
 		BoardStore.Entry e = BoardStore.byId(StringArgumentType.getString(ctx, "id"));
 		if (e == null || !BoardStore.Status.OPEN.name().equals(e.status)) {
 			src.sendError(Text.literal(Lang.msg("board.cannotCancel")));
