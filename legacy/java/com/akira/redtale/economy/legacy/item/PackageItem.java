@@ -236,10 +236,16 @@ public class PackageItem extends Item implements GeoItem {
         return cache;
     }
 
-    @Override
-    public double getTick(Object itemStack) {
-        return 0;
-    }
+    // ★不要覆盖 GeoItem#getTick★：默认实现返回 RenderUtils.getCurrentTick()（活的渲染 tick），
+    // 而旧模这里写死 `return 0`。javap 实证（geckolib 4.7.1.2）：
+    //   GeoItemRenderer.actuallyRender → AnimationState.setData(DataTickets.TICK, getTick(stack))  ← 非 null
+    //   → GeoModel.handleAnimations：TICK 非 null 所以**不会**回落到 getCurrentTick，
+    //     物品分支算 animTime = tick - firstTickTime（恒为常数）
+    //   → 之后每帧 `animTime == getLastUpdateTime()` 为真、instanceId 未变 ⇒ 方法在 updatedAt() 之前就 return
+    // ⇒ 管理器一辈子只被更新一次：控制器只跑首帧，物品动画永远停在第 0 帧。
+    // 现场症状：T74 给 surprise 画的 item.idle（egg 骨骼 ±4° 摇晃，3 秒循环）从来没有播放过，
+    // 包裹/宝箱/货箱的 item.idle 是空动画，所以肉眼也看不出差别 —— 零日志、零报错。
+    // 回归门：`python _b37_item_tick.py`。
 
     @Override
     public void appendTooltip(ItemStack stack, @Nullable World world, List<Text> tooltip, TooltipContext context) {
