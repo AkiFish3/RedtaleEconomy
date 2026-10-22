@@ -179,7 +179,13 @@ public final class HubSidebar {
 		}
 		// ★三段放不下时退化成紧凑文字★：drawFull 放不下会静默少画一段，
 		// 余额少画一个币种比「字挤一点」严重得多（玩家会误判自己有多少钱）。
+		// T67：退化优先用硬币字形（asText），字体缺失时它自己回落纯文字。
 		if (HubMoney.fullWidth(tr, raw) > w) {
+			Text compact = HubMoney.asText(raw, true);
+			if (tr.getWidth(compact) <= w) {
+				dc.drawText(tr, compact, x, y, HubTheme.TEXT, false);
+				return;
+			}
 			dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.text(raw), w)), x, y,
 					HubTheme.TEXT, false);
 			return;

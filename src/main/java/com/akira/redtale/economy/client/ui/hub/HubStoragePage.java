@@ -116,14 +116,17 @@ public final class HubStoragePage {
 		if (confirmUpgrade) {
 			long price = WarehouseClientNetworking.NEXT_PRICE;
 			long prem = WarehouseClientNetworking.NEXT_PREMIUM;
-			// T55：金额统一走 HubMoney（图标 + 三段），只有赞助点仍是纯文字
-			String cost = price > 0 ? ("花 " + HubMoney.text(price))
-					: (prem > 0 ? ("花 " + prem + " 赞助点") : "免费");
-			String q = "确认扩容到 " + WarehouseClientNetworking.NEXT_SLOTS + " 格 · " + cost + "？";
+			// T55/T67：金额统一走 HubMoney（硬币字形优先，字体缺失回退纯文字）；赞助点仍是纯文字
+			net.minecraft.text.MutableText cost;
+			if (price > 0) cost = Text.literal("花 ").append(HubMoney.asText(price, false));
+			else if (prem > 0) cost = Text.literal("花 " + prem + " 赞助点");
+			else cost = Text.literal("免费");
+			Text q = Text.literal("确认扩容到 " + WarehouseClientNetworking.NEXT_SLOTS + " 格 · ")
+					.append(cost).append("？");
 			final int cw2 = Math.min(w, 300);
 			dc.fill(x, y + 16, x + cw2, y + 34, HubTheme.CARD);
 			dc.fill(x, y + 16, x + cw2, y + 17, HubTheme.LINE);
-			dc.drawText(tr, Text.literal(q), x + 5, y + 22, HubTheme.TEXT, false);
+			dc.drawText(tr, q, x + 5, y + 22, HubTheme.TEXT, false);
 			button(dc, tr, x + cw2 - 74, y + 18, 34, 14, "确认", HubWidgets.Variant.PRIMARY, mouseX, mouseY);
 			button(dc, tr, x + cw2 - 38, y + 18, 34, 14, "取消", HubWidgets.Variant.OUTLINE, mouseX, mouseY);
 		}

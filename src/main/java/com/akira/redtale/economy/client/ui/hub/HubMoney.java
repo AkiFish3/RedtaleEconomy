@@ -51,6 +51,15 @@ public final class HubMoney {
 	private static final char[] COIN_GLYPH = {'\uE000', '\uE001', '\uE002'};
 	/** T67：字体 id（B 提供 assets/redtale_economy/font/coins.json）。 */
 	private static final Identifier COIN_FONT = Identifier.tryParse("redtale_economy:coins");
+	/**
+	 * T67：字体 json 引用的位图（{@code BitmapFont.Loader} 在 {@code textures/} 下解析）。
+	 *
+	 * <p>★必须一起查★：只有 json 没有 png 时字体仍会被加载器拒绝，
+	 * 但 {@code font/coins.json} 依然存在 ⇒ 只查 json 会得到「字体可用」的假绿
+	 * （B 队列实测踩到：字形落到 unifont 缺字方块，界面上是一串空白）。
+	 */
+	private static final Identifier COIN_FONT_TEX =
+			Identifier.tryParse("redtale_economy:textures/font/coins.png");
 	/** T67：字体可用性缓存（同上：查到就用，查不到 5 秒后重试）。 */
 	private static Boolean fontOk;
 	private static long fontRetry;
@@ -87,6 +96,17 @@ public final class HubMoney {
 	 * @param full true = 三段全显（余额），false = 零值段隐藏（单价）
 	 */
 	public static Text asText(long raw, boolean full) {
+		return asText(raw, full, 0);
+	}
+
+	/**
+	 * T67：可指定数字颜色的版本。
+	 *
+	 * <p>{@code color<=0} 用默认（金 0xFFD700 / 其余白）；底栏、hint 这类次要信息
+	 * 传 {@link HubTheme#MUTED}，否则一串亮白数字会把整条的层级关系打乱
+	 * —— 硬币字形本身带贴图颜色，不受这里影响。
+	 */
+	public static Text asText(long raw, boolean full, int color) {
 		if (raw < 0) return Text.literal("…");
 		if (!fontReady()) return Text.literal(full ? fullText(raw) : text(raw));
 		long[] p = split(raw);
@@ -96,10 +116,10 @@ public final class HubMoney {
 			boolean show = full || p[i] > 0 || (i == 2 && p[0] == 0 && p[1] == 0);
 			if (!show) continue;
 			if (any) out.append(Text.literal(" "));
-			Style st = Style.EMPTY.withFont(COIN_FONT).withColor(i == 0 ? 0xFFD700 : 0xFFFFFF);
+			Style st = Style.EMPTY.withFont(COIN_FONT);
 			out.append(Text.literal(String.valueOf(COIN_GLYPH[i])).setStyle(st));
-			out.append(Text.literal(Long.toString(p[i]))
-					.setStyle(Style.EMPTY.withColor(i == 0 ? 0xFFD700 : 0xFFFFFF)));
+			int c = color > 0 ? color : (i == 0 ? 0xFFD700 : 0xFFFFFF);
+			out.append(Text.literal(Long.toString(p[i])).setStyle(Style.EMPTY.withColor(c)));
 			any = true;
 		}
 		return any ? out : Text.literal(full ? fullText(raw) : text(raw));
@@ -113,10 +133,12 @@ public final class HubMoney {
 		boolean found = false;
 		try {
 			MinecraftClient mc = MinecraftClient.getInstance();
-			found = COIN_FONT != null && mc != null
-					&& mc.getResourceManager()
-							.getResource(new Identifier(COIN_FONT.getNamespace(), "font/" + COIN_FONT.getPath() + ".json"))
-							.isPresent();
+			if (mc != null && COIN_FONT != null && COIN_FONT_TEX != null) {
+				var rm = mc.getResourceManager();
+				found = rm.getResource(new Identifier(COIN_FONT.getNamespace(),
+						"font/" + COIN_FONT.getPath() + ".json")).isPresent()
+						&& rm.getResource(COIN_FONT_TEX).isPresent();
+			}
 		} catch (Exception ignored) {
 			found = false;
 		}

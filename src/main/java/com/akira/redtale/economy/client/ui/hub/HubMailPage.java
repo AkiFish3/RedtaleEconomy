@@ -110,11 +110,16 @@ public final class HubMailPage {
 		int by = y + h - 20;
 		HubWidgets.button(dc, tr, x, by, 96, 20, "打开信箱", HubWidgets.Variant.SECONDARY,
 				hover(mouseX, mouseY, x, by, 96, 20), false, true);
-		String foot = snap.pendingMoney() > 0
-				? "货币 " + HubMoney.text(snap.pendingMoney()) + " 待领取"
-				: "没有待领取货币";
-		dc.drawText(tr, Text.literal(HubText.trim(tr, foot, w - 104)), x + 104, by + 6,
-				HubTheme.MUTED, false);
+		// T67：待领取货币走硬币字形（字体缺失时 asText 自己回落纯文字）
+		Text foot = snap.pendingMoney() > 0
+				? Text.literal("货币 ").append(HubMoney.asText(snap.pendingMoney(), false, HubTheme.MUTED))
+						.append(" 待领取")
+				: Text.literal("没有待领取货币");
+		String footStr = foot.getString();
+		if (tr.getWidth(foot) > w - 104) {
+			foot = Text.literal(HubText.trim(tr, footStr, w - 104));
+		}
+		dc.drawText(tr, foot, x + 104, by + 6, HubTheme.MUTED, false);
 	}
 
 	private static void drawRow(DrawContext dc, TextRenderer tr, int x, int ry, int w,

@@ -192,16 +192,16 @@ public final class HubCheckinPage {
 
 		// T57 里程碑提示：右侧一行，写清「还差几天 + 到达给多少」。
 		// ★以前只有刻点没有文字★：玩家看得到 7/14/28 的点，但不知道到达能拿什么。
-		String hint = milestoneHint(next, streak);
-		if (!hint.isEmpty()) {
-			int avail = x + w - 6 - (moneyEnd + 8);
-			int tw = tr.getWidth(hint);
-			if (avail > 24) {
-				String shown = HubText.trim(tr, hint, avail);
-				int hx = x + w - 6 - tr.getWidth(shown);
-				dc.drawText(tr, Text.literal(shown), hx, infoY + 6,
-						next == null ? HubTheme.OK : HubTheme.PRIMARY_SOFT_TEXT, false);
-			}
+		// T67：奖励金额改走硬币字形（字体缺失时 asText 自己回落纯文字）。
+		int hintColor = next == null ? HubTheme.OK : HubTheme.PRIMARY_SOFT_TEXT;
+		Text hint = milestoneHint(next, streak, hintColor);
+		int avail = x + w - 6 - (moneyEnd + 8);
+		if (avail > 24) {
+			Text shown = tr.getWidth(hint) <= avail
+					? hint
+					: Text.literal(HubText.trim(tr, hint.getString(), avail));
+			int hx = x + w - 6 - tr.getWidth(shown);
+			dc.drawText(tr, shown, hx, infoY + 6, hintColor, false);
 		}
 		drawButton(dc, tr, x, btnY, 96, btnH, "签到", true, mouseX, mouseY,
 				HubWidgets.Variant.PRIMARY);
@@ -237,12 +237,14 @@ public final class HubCheckinPage {
 	}
 
 	/** 里程碑提示文案；今天是最后一天前一日时改成「明天达成」。 */
-	private static String milestoneHint(CheckinProtocol.Milestone next, int streak) {
-		if (next == null) return "已达成全部里程碑";
+	private static Text milestoneHint(CheckinProtocol.Milestone next, int streak, int color) {
+		if (next == null) return Text.literal("已达成全部里程碑");
 		int left = next.day() - streak;
-		String reward = next.money() > 0 ? " · +" + HubMoney.text(next.money()) : "";
-		if (left == 1) return "明天达成 " + next.day() + " 天里程碑" + reward;
-		return "距 " + next.day() + " 天里程碑还差 " + left + " 天" + reward;
+		Text reward = next.money() > 0
+				? Text.literal(" · +").append(HubMoney.asText(next.money(), false, color))
+				: Text.empty();
+		if (left == 1) return Text.literal("明天达成 " + next.day() + " 天里程碑").append(reward);
+		return Text.literal("距 " + next.day() + " 天里程碑还差 " + left + " 天").append(reward);
 	}
 
 	private static void drawButton(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
