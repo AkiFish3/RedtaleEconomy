@@ -813,8 +813,33 @@ public final class UiShots {
 					() -> openFresh(mc, HubPage.STORAGE, "rt storage"));
 			case 233 -> shotKeep(mc, "u6-78-hub-checkin.png",
 					() -> openFresh(mc, HubPage.CHECKIN, "rt checkin"));
-			case 234 -> act(mc, () -> clickPage(mc, HubPage.TITLES));
-			case 235 -> shotKeep(mc, "u6-79-hub-titles.png", () -> clickPage(mc, HubPage.TITLES));
+			// ★称号页没有 /rt 子命令，且侧栏第 12 行在 427×240 下已滚出条目区★：
+			// 第 N+72 轮给侧栏命中加了 `[entryTop, entryBottom)` 夹取之后，clickPage 点这一行
+			// 会 hit=false（实测 `page click TITLES hit=false page=checkin`，拍出来还是签到页）。
+			// 所以先照常点（证明可达路径），点不中再直开 + forcePage 兜底，并把走了哪条路写进日志。
+			case 234 -> act(mc, () -> {
+				clickPage(mc, HubPage.TITLES);
+				if (mc.currentScreen instanceof HubScreen hs) {
+					String id = HubDev.pageId(hs);
+					if (!HubPage.TITLES.id.equals(id)) {
+						HubDev.forcePage(hs, HubPage.TITLES);
+						LOG.add("titles: sidebar click missed (page was " + id + "), forced -> "
+								+ HubDev.pageId(hs));
+					} else {
+						LOG.add("titles: sidebar click ok page=" + id);
+					}
+				} else {
+					HubScreen.open(HubPage.TITLES);
+					LOG.add("titles: no Hub on screen, opened directly -> "
+							+ (mc.currentScreen instanceof HubScreen hs2 ? HubDev.pageId(hs2) : "null"));
+				}
+			});
+			case 235 -> shotKeep(mc, "u6-79-hub-titles.png", () -> {
+				if (!(mc.currentScreen instanceof HubScreen)) {
+					mc.setScreen(null);
+					HubScreen.open(HubPage.TITLES);
+				}
+			});
 			case 236 -> shotKeep(mc, "u6-80-hub-market.png",
 					() -> openFresh(mc, HubPage.MARKET, "rt market"));
 			// T70/T67 证据：硬币走贴图还是几何圆片，日志里给 true/false，别靠肉眼量 1 像素。
