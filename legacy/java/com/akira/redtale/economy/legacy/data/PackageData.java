@@ -65,6 +65,23 @@ public class PackageData {
     public PackageMode mode() { return mode; }
     public List<PackageItem> items() { return items; }
 
+    /**
+     * 是否至少有一条**能真正发出去**的条目（物品非空）。
+     *
+     * <p>★为什么需要这条判据★：{@link #fromNbt} 在没有 {@code mode} 键时默认 {@code ALL}，
+     * 而「裸 id 包裹」（{@code /give redtale_economy:chest_rare}、命令/商店/任务发出来的
+     * 没有 NBT 的那种）items 是**空表**。旧实现里 ALL + 空表 ⇒ 发放循环一次都不进、
+     * {@code rewardGiven = true}、80 tick 后实体静默消失：
+     * 物品被消耗、玩家什么都没拿到、**日志一行没有**（RANDOM 分支至少还有一句 "no valid items"）。
+     * 现在右键时先过这条判据（不消耗物品），实体侧也补一句 warn 兜住旧存档里已经在飞的空包裹。
+     */
+    public boolean hasGiveableItem() {
+        for (PackageItem item : items) {
+            if (item != null && !item.item().isEmpty()) return true;
+        }
+        return false;
+    }
+
     // 随机抽取一个物品（根据权重）
     public PackageItem getRandomItem(Random random) { // ✅ 参数类型已更新
         if (items.isEmpty()) {

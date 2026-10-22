@@ -334,9 +334,25 @@ public class RECommands {
                     PackageEntity.shouldGiveInAll(emptyItem));
         }
 
+        // ⑧ 裸 id 包裹（无 NBT）＝ mode 默认 ALL + items 空表 ⇒ 必须判成「没有可发条目」。
+        //    旧链路：右键 → 刷实体 → 一次都不发 → 80 tick 消失，物品扣了、日志 0 行。
+        //    ±⑨ 反证这条判据不是恒 false（真实包裹必须判 true，否则会把正常包裹全拒了）。
+        {
+            PackageData bare = PackageData.fromNbt(null);
+            fail += expectBool(source, "空包裹(null NBT) 不可发", false, bare.hasGiveableItem());
+        }
+        {
+            java.util.List<PackageData.PackageItem> mixed = java.util.List.of(
+                    new PackageData.PackageItem(ItemStack.EMPTY, 3),
+                    new PackageData.PackageItem(ItemStack.EMPTY, 1),
+                    new PackageData.PackageItem(new ItemStack(Items.DIAMOND, 1), 0));
+            PackageData data = new PackageData(PackageData.PackageMode.ALL, mixed);
+            fail += expectBool(source, "有 1 条非空即可发", true, data.hasGiveableItem());
+        }
+
         final int failures = fail;
-        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / 7", failures);
-        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / 7"), false);
+        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / 9", failures);
+        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / 9"), false);
         return failures == 0 ? 1 : 0;
     }
 

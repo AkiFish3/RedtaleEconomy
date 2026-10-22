@@ -1,5 +1,6 @@
 package com.akira.redtale.economy.legacy.item;
 
+import com.akira.redtale.economy.legacy.LegacyInit;
 import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.entity.PackageEntity;
 import com.akira.redtale.economy.legacy.init.REHandlers;
@@ -68,6 +69,15 @@ public class PackageItem extends Item implements GeoItem {
                 stack.getNbt().remove(PROCESSED_ON_BLOCK_USE);
             }
             PackageData data = PackageData.fromNbt(stack.getNbt());
+            // ★空包裹不许开★：裸 id（没有 NBT）的包裹 `mode` 默认成 ALL、items 是空表，
+            // 旧实体会被刷出来、80 tick 后静默消失 —— 物品扣了、奖励 0 件、日志 0 行。
+            // 这里直接拒绝并留痕（不 spawn 也不 decrement），管理员能从日志看到是哪件物品。
+            if (!data.hasGiveableItem()) {
+                LegacyInit.LOGGER.warn("[legacy] 空包裹 {} 被 {} 右键，已拒绝开启（物品未消耗）：{}",
+                        net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath(),
+                        player.getName().getString(), context.getBlockPos());
+                return ActionResult.PASS;
+            }
 
             if (data.mode() == PackageData.PackageMode.CHOOSE) {
                 // ★一个玩家同时只能有一个「未激活的 CHOOSE 实体」★

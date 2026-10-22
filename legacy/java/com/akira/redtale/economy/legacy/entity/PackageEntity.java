@@ -352,6 +352,12 @@ public class PackageEntity extends Entity implements GeoEntity {
             }
             // ALL 模式
             else if (cachedData.mode() == PackageData.PackageMode.ALL) {
+                // ★空 ALL 包必须留痕★（B56）：items 为空时下面两个分支都一次不发、直接 rewardGiven，
+                // 80 tick 后实体消失。旧实现零日志 ⇒ 和 RANDOM 分支的 "no valid items to give" 不对称，
+                // 管理员只能看到「包裹开了但没东西」。只记一次（下一 tick rewardGiven 已 true）。
+                if (!cachedData.hasGiveableItem()) {
+                    LegacyInit.LOGGER.warn("空 ALL 包裹实体 {} 不发奖（items=0，位置 {}）", this.getUuid(), this.getPos());
+                }
                 // 如果玩家无效（离线或太远），将剩余所有物品掉落，然后结束
                 if (!hasValidPlayer) {
                     // 掉落所有尚未给予的物品
