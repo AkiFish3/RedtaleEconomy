@@ -72,6 +72,8 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private static final int WEIGHT_X = 33;
     private static final int BTN_PLUS_X = 52;
     private static final int NAME_X = 66;
+    /** 名字列可用宽度（右侧留 2px）。★绘制与"是否截断"判定共用这一份★。 */
+    private static final int TABLE_NAME_W = TABLE_W - NAME_X - 2;
 
     /** 表格滚动偏移（按"已占用条目"计，不是按格子）。 */
     private int tableScroll = 0;
@@ -236,7 +238,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             context.drawText(this.textRenderer, "+", tx + BTN_PLUS_X + 3, ry + 5, 0xFFB9B9C4, false);
 
             String name = stack.getName().getString();
-            name = trim(name, TABLE_W - NAME_X - 2);
+            name = trim(name, TABLE_NAME_W);
             context.drawText(this.textRenderer, name, tx + NAME_X, ry + 5, 0xFFA9A9B4, false);
         }
 
@@ -264,6 +266,17 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                 tip.add(Text.translatable("screen.redtale_economy.edit.weight",
                         PackageEditClientState.weight(hoverGridSlot)).formatted(Formatting.GRAY));
                 tip.add(Text.translatable("screen.redtale_economy.edit.hint").formatted(Formatting.DARK_GRAY));
+            }
+        } else if (hoverTableRow >= 0) {
+            // ★表格行补完整名★：名字列只有 48px（约 5 个汉字），`trim()` 会截成「附魔金苹果…」
+            // 这类无法区分的串；`hoverTableRow` 之前**只写不读**（死字段）⇒ 类注释承诺的
+            // 「表格行显示完整名」从未生效。只在真被截断时提示，避免每行都弹 tooltip 变噪音。
+            int entrySlot = tableEntrySlot(hoverTableRow);
+            if (entrySlot >= 0) {
+                ItemStack stack = this.handler.getSlot(entrySlot).getStack();
+                if (!stack.isEmpty() && this.textRenderer.getWidth(stack.getName()) > TABLE_NAME_W) {
+                    tip.add(stack.getName());
+                }
             }
         }
         if (!tip.isEmpty()) {
@@ -307,6 +320,18 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         return (int) ((mouseY - gy) / TABLE_ROW_H);
     }
 
+    /**
+     * 表格第 {@code row} 行对应哪个编辑格（-1 = 该行没有条目）。
+     *
+     * <p>绘制、命中、tooltip 三处都走这一个换算，避免"滚动了但点击还按未滚动的下标"。
+     */
+    private int tableEntrySlot(int row) {
+        if (row < 0 || row >= TABLE_ROWS) return -1;
+        List<Integer> entries = occupiedSlots();
+        int idx = tableScrollFor(entries.size()) + row;
+        return idx >= 0 && idx < entries.size() ? entries.get(idx) : -1;
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int x = left();
@@ -338,10 +363,8 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         // 权重表
         int row = tableRowAt(mouseX, mouseY);
         if (row >= 0) {
-            List<Integer> entries = occupiedSlots();
-            int entryIndex = tableScrollFor(entries.size()) + row;
-            if (entryIndex < entries.size()) {
-                int slot = entries.get(entryIndex);
+            int slot = tableEntrySlot(row);
+            if (slot >= 0) {
                 double relX = mouseX - (x + TABLE_X);
                 int weight = PackageEditClientState.weight(slot);
                 if (button == 0 && relX >= BTN_MINUS_X && relX < BTN_MINUS_X + BTN_W) {

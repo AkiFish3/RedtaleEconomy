@@ -14,11 +14,35 @@ import net.minecraft.screen.slot.Slot;
 import net.minecraft.util.collection.DefaultedList;
 
 public class PackageChooseHandler extends ScreenHandler {
+    /**
+     * 候选网格**最多显示 10 行（90 格）**。
+     *
+     * <p>★旧实现 `rows = ceil(count / 9)` 没有上限★：包裹 NBT 里的 `items` 条数只由编辑器
+     * （90 格）约束，管理员用手改 NBT / `/data modify` 塞进 120 条时 rows=14 ⇒ 面板高
+     * `114 + 14×18 = 366`，在 1920×1080（guiScale auto=4 ⇒ 逻辑 480×270）下 `top()` 变成 -48
+     * ⇒ 前半截候选格和整块背包区跑到屏幕外，**看得见点不到**，且零报错、零日志（鼠标移到
+     * 格子上也没反应，玩家只会觉得"这个礼包打不开"）。
+     *
+     * <p>现在按最窄目标分辨率反推：10 行 = 294 高，在 480×270 下只切掉底部 12px 的背包边框
+     * （`_b39_screen_fit.py` 那条 WARN 就是它，候选格全部仍可点）；超过 90 条的部分不显示，
+     * 由服务端构造器写一条 warn，别静默。
+     */
+    public static final int MAX_ROWS = 10;
+
     private final Inventory packageInventory;
     public final int rows;
     public final int totalPackageSlots;
     private final int actualItemCount;
     private final int entityId;
+
+    /**
+     * 条目数 → 行数。★客户端与服务端两个构造器必须共用这一份★：
+     * 两边各写一遍公式时，只要有一边加了上限，槽位下标 / 点击映射就会错位（点了 A 给 B）。
+     */
+    private static int rowsFor(int count) {
+        if (count <= 0) return 1;
+        return Math.min(MAX_ROWS, (int) Math.ceil(count / 9.0));
+    }
 
     // 客户端使用的构造函数（从 buf 读取）
     public PackageChooseHandler(int syncId, PlayerInventory playerInventory, PacketByteBuf buf) {
@@ -29,7 +53,7 @@ public class PackageChooseHandler extends ScreenHandler {
         NbtCompound nbt = (buf != null && buf.isReadable()) ? buf.readNbt() : null;
         DefaultedList<ItemStack> packageItems = extractItemsFromNbt(nbt);
         this.actualItemCount = packageItems.size();
-        this.rows = (this.actualItemCount == 0) ? 1 : (int) Math.ceil(this.actualItemCount / 9.0);
+        this.rows = rowsFor(this.actualItemCount);
         this.totalPackageSlots = this.rows * 9;
         this.packageInventory = new SimpleInventoryWrapper(packageItems, this.totalPackageSlots);
         addPackageSlots();
@@ -42,8 +66,14 @@ public class PackageChooseHandler extends ScreenHandler {
         this.entityId = entityId;
         DefaultedList<ItemStack> packageItems = extractItemsFromNbt(nbt);
         this.actualItemCount = packageItems.size();
-        this.rows = (this.actualItemCount == 0) ? 1 : (int) Math.ceil(this.actualItemCount / 9.0);
+        this.rows = rowsFor(this.actualItemCount);
         this.totalPackageSlots = this.rows * 9;
+        if (this.actualItemCount > this.totalPackageSlots) {
+            // 静默截断会让"管理员塞了 120 件但只能选前 90 件"变成玄学 ⇒ 明确记一条
+            com.akira.redtale.economy.legacy.LegacyInit.LOGGER.warn(
+                    "[legacy] 选择包条目 {} > 界面上限 {} 格，超出部分不显示（实体 {})",
+                    this.actualItemCount, this.totalPackageSlots, entityId);
+        }
         this.packageInventory = new SimpleInventoryWrapper(packageItems, this.totalPackageSlots);
         addPackageSlots();
         addPlayerInventorySlots(playerInventory);
