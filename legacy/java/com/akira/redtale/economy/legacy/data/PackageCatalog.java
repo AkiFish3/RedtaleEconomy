@@ -335,25 +335,50 @@ public final class PackageCatalog {
         }
     }
 
-    /** 内置默认表：packages.json 坏了也要能注册（与 json 保持同构，改一处要改两处）。 */
+    /**
+     * 兜底表（{@code packages.json} 挂了才会用到）：**必须与 json 同构**。
+     *
+     * <p>★旧版只写了 {@code package} 一个系列★：json 解析失败时 18 个物品 id 只剩 6 个
+     * ⇒ 存档里已有的 {@code chest_*} / {@code crate_*} 全部变成空气（不可逆），
+     * 而兜底分支本来就是"出事了别炸"的场合，塌掉一半比崩掉更难查。现在系列也照抄 json。
+     *
+     * <p>漂移检查：{@code python _b36_builtin_drift.py}（比对 json 与这两张表，任何字段不同即红）。
+     */
+    private static final String[][] DEFAULT_SERIES = {
+            {"package", "包裹", "Package", "geo/package.geo.json", "animations/package.animation.json", "item/package"},
+            {"chest", "宝箱", "Chest", "geo/chest.geo.json", "animations/chest.animation.json", "item/chest"},
+            {"crate", "货箱", "Crate", "geo/crate.geo.json", "animations/crate.animation.json", "item/crate"},
+    };
+
+    private static final String[] DEFAULT_ANIM_ITEM = {"animations/package_item.animation.json"};
+
+    private static final String[][] DEFAULT_TIERS = {
+            {"normal", "普通", "Normal", "#D8CBB0", "1.0", "common"},
+            {"rare", "稀有", "Rare", "#4FA3D1", "1.2", "uncommon"},
+            {"epic", "史诗", "Epic", "#9B59D0", "1.4", "rare"},
+            {"legend", "传说", "Legendary", "#FFD24A", "1.6", "epic"},
+            {"mythic", "神话", "Mythic", "#E04B4B", "1.8", "epic"},
+            {"event", "活动", "Event", "#58D6A8", "1.3", "rare"},
+    };
+
+    private static String ns(String path) {
+        return "redtale_economy:" + path;
+    }
+
     private static void builtinDefaults() {
-        SERIES.add(new Series("package", "包裹", "Package",
-                "redtale_economy:geo/package.geo.json",
-                "redtale_economy:animations/package.animation.json",
-                "redtale_economy:animations/package_item.animation.json", "item/package"));
-        String[][] t = {
-                {"normal", "普通", "Normal", "#D8CBB0", "1.0", "common"},
-                {"rare", "稀有", "Rare", "#4FA3D1", "1.2", "uncommon"},
-                {"epic", "史诗", "Epic", "#9B59D0", "1.4", "rare"},
-                {"legend", "传说", "Legendary", "#FFD24A", "1.6", "epic"},
-                {"mythic", "神话", "Mythic", "#E04B4B", "1.8", "epic"},
-                {"event", "活动", "Event", "#58D6A8", "1.3", "rare"},
-        };
-        for (String[] row : t) {
+        for (String[] s : DEFAULT_SERIES) {
+            SERIES.add(new Series(s[0], s[1], s[2], ns(s[3]), ns(s[4]), ns(DEFAULT_ANIM_ITEM[0]), s[5]));
+        }
+        for (String[] row : DEFAULT_TIERS) {
             TIERS.add(new Tier(row[0], row[1], row[2], parseColor(row[3]),
                     Double.parseDouble(row[4]), rarityOf(row[5]), null));
-            ITEMS.add(new ItemDef("package_" + row[0], SERIES.get(0), TIERS.get(TIERS.size() - 1), false));
-            SKIN.put("package_" + row[0], new String[]{"package", row[0]});
+        }
+        for (Series s : SERIES) {
+            for (Tier t : TIERS) {
+                String id = s.id() + "_" + t.id();
+                ITEMS.add(new ItemDef(id, s, t, false));
+                SKIN.put(id, new String[]{s.id(), t.id()});
+            }
         }
         // special 单件（与 json 同构：内置表也要有，否则 json 坏掉时 surprise 不存在）
         Tier surprise = new Tier("surprise", "惊喜", "Surprise", 0xFFFFFF, 1.0, Rarity.EPIC,

@@ -222,8 +222,12 @@ public class RECommands {
         world.spawnEntity(entity);
 
         String uuid = entity.getUuidAsString();
-        LegacyInit.LOGGER.info("[dev] spawnpkg tier={} mode={} uuid={} at {} {} {}",
-                tier, mode, uuid, pos.x, pos.y, pos.z);
+        // 皮肤 → 档位解析结果必须打出来：旧别名（legendary_package）与 surprise 的档位
+        // 是一条纯查表链，错了零报错（粒子颜色/倍率静默回落到 normal）⇒ 只有日志能证伪。
+        LegacyInit.LOGGER.info("[dev] spawnpkg arg={} item={} skin={} tier={} effective={} mode={} uuid={} at {} {} {}",
+                tier, item == Items.AIR ? "air" : Registries.ITEM.getId(item).getPath(),
+                entity.getPackageSkin(), entity.getPackageTier(), entity.getEffectiveTier(),
+                mode, uuid, pos.x, pos.y, pos.z);
         source.sendFeedback(() -> Text.literal("[dev] spawnpkg " + tier + " " + mode + " " + uuid), false);
         return 1;
     }
