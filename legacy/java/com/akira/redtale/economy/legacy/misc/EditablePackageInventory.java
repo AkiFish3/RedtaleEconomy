@@ -14,7 +14,17 @@ import java.util.List;
  * 与手持卡包物品绑定，保存时写回 NBT。
  */
 public class EditablePackageInventory extends SimpleInventory {
-    public static final int SIZE = 90; // 6 行 × 15 列（与 PackageEditHandler.GRID_ROWS/COLS 同口径）
+    /**
+     * 编辑器格数 = 网格格数（`GRID_COLS × GRID_ROWS`），**唯一真值在 `PackageEditHandler.EDITOR_SLOTS`**。
+     *
+     * <p>★这里原是第四份字面量 90★（另有 `GRID_COLS/ROWS`、`PackageEditHandler.EDITOR_SLOTS`、
+     * `PackageEditClientState.SLOTS`）。这个数组是**落盘的那一份**（`saveToNbt` 按它截断、`loadFromNbt` 按它读），
+     * 一旦与网格分叉就是「界面能放 60 格、NBT 只存 90」或反过来的静默错位。
+     *
+     * <p>引用的是**常量表达式** ⇒ 编译期内联，运行期不会真的去初始化 screen 包的那个类，
+     * 所以 misc → screen 的源码依赖不构成初始化顺序问题（`javac` 允许这种互相引用）。
+     */
+    public static final int SIZE = com.akira.redtale.economy.legacy.screen.PackageEditHandler.EDITOR_SLOTS;
 
     /** ★可换绑★：T71 的「档位选择」要换物品 id（tier 存在 id 里）⇒ 底层 ItemStack 会整颗换掉。 */
     private ItemStack stackInHand;
