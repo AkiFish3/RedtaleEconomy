@@ -265,7 +265,9 @@ public final class HubCheckinPage {
 		int btnY = y + h - 20;
 		if (mouseY >= btnY && mouseY <= btnY + 20) {
 			if (mouseX >= x && mouseX <= x + 96) return Action.CHECKIN;
-			if (mouseX >= x + 104 && mouseX <= x + 214) return Action.MAKEUP;
+			// ★灰掉的「补签」不该发命令★：按钮画成禁用态却照样回 MAKEUP ⇒ 服务端拒绝刷屏
+			int makeupLeft = snap == null ? 0 : snap.makeupLeft();
+			if (makeupLeft > 0 && mouseX >= x + 104 && mouseX <= x + 214) return Action.MAKEUP;
 		}
 		return Action.NONE;
 	}
