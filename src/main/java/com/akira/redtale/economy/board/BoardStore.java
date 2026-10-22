@@ -70,7 +70,17 @@ public final class BoardStore {
 	}
 
 	public static synchronized void save() {
-		if (file == null) return;
+		saveChecked();
+	}
+
+	/**
+	 * 落盘并返回是否真的写成功。
+	 *
+	 * <p>★R129：发钱/销毁物品之前必须看这个返回值★ —— {@link #save()} 是 void 且吞掉 IOException，
+	 * 调用方「以为已落盘」继续发钱，重启后条目回到 ACCEPTED，就能重复交付/重复退款。
+	 */
+	public static synchronized boolean saveChecked() {
+		if (file == null) return false;
 		JsonObject o = new JsonObject();
 		o.addProperty("_version", 1);
 		o.addProperty("updatedAt", System.currentTimeMillis());
@@ -88,8 +98,10 @@ public final class BoardStore {
 			} catch (IOException atomicFail) {
 				Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
 			}
+			return true;
 		} catch (IOException e) {
 			RedtaleEconomy.LOGGER.error("[board] 写入委托板失败：{}", e.getMessage());
+			return false;
 		}
 	}
 
@@ -105,8 +117,21 @@ public final class BoardStore {
 	}
 
 	public static synchronized void add(Entry e) {
+		addChecked(e);
+	}
+
+	/**
+	 * 加入并落盘；写盘失败时把条目从内存里撤掉并返回 false。
+	 *
+	 * <p>★R129：{@code /board post} 已经把钱扣了★ 落盘失败必须让调用方退款，
+	 * 不能只在内存里挂着 —— 重启后条目消失 = 玩家的赏金凭空蒸发。
+	 */
+	public static synchronized boolean addChecked(Entry e) {
+		if (e == null) return false;
 		ENTRIES.add(e);
-		save();
+		if (saveChecked()) return true;
+		ENTRIES.remove(e);
+		return false;
 	}
 
 	public static synchronized int openCountOf(String uuid) {

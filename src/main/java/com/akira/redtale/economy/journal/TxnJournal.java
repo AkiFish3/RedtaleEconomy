@@ -53,6 +53,8 @@ public final class TxnJournal {
 	public static final String TASK_SUBMIT = "task.submit";
 	public static final String SHOP_SELL = "shop.sell";
 	public static final String SHOP_BUY = "shop.buy";
+	/** R129：委托交付（物品已销毁、赏金未发 ⇒ 重启后退物品）。 */
+	public static final String BOARD_DELIVER = "board.deliver";
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 	private static final DateTimeFormatterHolder TS = new DateTimeFormatterHolder();
@@ -228,7 +230,7 @@ public final class TxnJournal {
 	private static boolean resume(MinecraftServer server, String kind, String state,
 			UUID uuid, JsonObject payload) {
 		boolean done = switch (state) {
-			case "taken" -> TASK_SUBMIT.equals(kind) || SHOP_SELL.equals(kind);
+			case "taken" -> TASK_SUBMIT.equals(kind) || SHOP_SELL.equals(kind) || BOARD_DELIVER.equals(kind);
 			case "charged" -> SHOP_BUY.equals(kind);
 			default -> false;
 		};
@@ -237,6 +239,13 @@ public final class TxnJournal {
 				case TASK_SUBMIT -> {
 					RedtaleEconomy.LOGGER.warn("[journal] 任务缴纳中断（物品已扣、奖励未发）→ 退还物品：{}", uuid);
 					refundItems(server, uuid, payloadItemArray(payload, "items"), "task-submit-rollback");
+				}
+				case BOARD_DELIVER -> {
+					int count = (int) num(payload, "count", 0);
+					String itemId = str(payload, "itemId", "");
+					RedtaleEconomy.LOGGER.warn("[journal] 委托交付中断（物品已销毁、赏金未发）→ 退还 {} x{} 给 {}",
+							itemId, count, uuid);
+					refundItems(server, uuid, itemArray(itemId, count), "board-deliver-rollback");
 				}
 				case SHOP_SELL -> {
 					int count = (int) num(payload, "count", 0);

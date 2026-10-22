@@ -83,7 +83,15 @@ public final class MailService {
 		if (amount <= 0) return 0;
 		q.pendingMoney = 0;
 		q.dirty = true;
-		q.save();
+		// ★R129：先确认队列真的清空落盘，再发钱★
+		// save() 是 void 且吞 IOException：写失败时磁盘上 pendingMoney 还在，
+		// 重启后同一个玩家可以把同一笔钱再领一次（复制金币）。
+		if (!q.saveChecked()) {
+			q.pendingMoney = amount;
+			q.dirty = true;
+			RedtaleEconomy.LOGGER.error("[mail] 待领取金额落盘失败，本次不发放（{} 枚）：{}", amount, target);
+			return 0;
+		}
 		BalanceService.add(target, amount, Ledger.TYPE_MAIL, "mail:claim");
 		return amount;
 	}

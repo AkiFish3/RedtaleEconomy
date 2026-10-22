@@ -131,7 +131,7 @@ public final class MailNetworking {
 		if (st == null || st.isEmpty()) {
 			q.items.remove(index);
 			q.dirty = true;
-			q.save();
+			q.saveChecked();
 			return -1;
 		}
 		// insertStack 会把没放下的余量留在传入的栈里。
@@ -139,17 +139,28 @@ public final class MailNetworking {
 		// `replaceStack.getCount() < before` 就 return true（javap 实证）。按返回值判「全放」时，
 		// 只放下一部分（背包剩几格）会走进成功分支把余量直接扔掉 ⇒ 物品凭空消失、零日志。
 		// 唯一可信判据是 remain 是否空。
+		//
+		// ★R129：顺序是「先落盘队列 → 再交付」★ 反过来（先塞背包再 save）时，save 写失败
+		// 等于磁盘上这件东西没动过，重启后可以再领一次 = 复制物品。代价是两次落盘之间崩溃会丢件，
+		// 按本项目口径「宁可不发，不可双发」。
+		q.items.remove(index);
+		q.dirty = true;
+		if (!q.saveChecked()) {
+			q.items.add(index, st);          // 内存回滚，物品仍在队列里
+			RedtaleEconomy.LOGGER.error("[mail] 队列落盘失败，取消本次领取：{}", player.getUuid());
+			return 0;
+		}
 		ItemStack remain = st.copy();
 		player.getInventory().insertStack(remain);
 		if (!remain.isEmpty()) {
-			q.items.set(index, remain);
+			q.items.add(index, remain);
 			q.dirty = true;
-			q.save();
+			if (!q.saveChecked()) {
+				RedtaleEconomy.LOGGER.error("[mail] 余量写回队列失败（余 {} 件，重启后可能重复）：{}",
+						remain.getCount(), player.getUuid());
+			}
 			return remain.getCount() == st.getCount() ? 0 : 2;
 		}
-		q.items.remove(index);
-		q.dirty = true;
-		q.save();
 		return 1;
 	}
 }

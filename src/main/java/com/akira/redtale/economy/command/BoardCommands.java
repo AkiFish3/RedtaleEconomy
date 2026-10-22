@@ -1,5 +1,6 @@
 package com.akira.redtale.economy.command;
 
+import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.board.BoardStore;
 import com.akira.redtale.economy.config.BoardConfig;
 import com.akira.redtale.economy.economy.BalanceService;
@@ -146,9 +147,9 @@ public final class BoardCommands {
 		e.createdAt = System.currentTimeMillis();
 		e.expiresAt = e.createdAt + BoardConfig.expireHours() * 3600_000L;
 		e.status = BoardStore.Status.OPEN.name();
-		try {
-			BoardStore.add(e);
-		} catch (Exception ex) {
+		// ★R129：钱已经扣了，落盘失败必须退款★ 原来 catch 包住 save()，但 save() 从不抛（只吞错打日志）
+		// ⇒ 分支永不执行，条目只活在内存里，重启后赏金凭空蒸发。
+		if (!BoardStore.addChecked(e)) {
 			BalanceService.add(p.getUuid(), total, Ledger.TYPE_BOARD, "board:post:refund");
 			src.sendError(Text.literal(Lang.msg("board.postFail")));
 			return 0;
@@ -222,11 +223,45 @@ public final class BoardCommands {
 			src.sendError(Text.literal(Lang.msg("board.missing", displayName(e.itemId), e.count)));
 			return 0;
 		}
-		removeFrom(p, item, e.count);
+		// ★R129：顺序 = 落盘状态 → 销毁物品 → 发赏金★
+		// 原来「销毁物品 → save()（void，吞 IO 错）→ 发钱」：保存失败时条目重启后回到 ACCEPTED，
+		// 同一个人可以再交一次拿第二份赏金；且物品已销毁、发钱抛异常时没人退。
+		com.google.gson.JsonObject payload = new com.google.gson.JsonObject();
+		payload.addProperty("id", e.id);
+		payload.addProperty("itemId", e.itemId);
+		payload.addProperty("count", e.count);
+		payload.addProperty("bounty", e.bounty);
+		com.akira.redtale.economy.journal.TxnJournal.Txn txn =
+				com.akira.redtale.economy.journal.TxnJournal.begin(
+						com.akira.redtale.economy.journal.TxnJournal.BOARD_DELIVER,
+						p.getUuid(), payload);
+
+		String prevStatus = e.status;
 		e.status = BoardStore.Status.DONE.name();
-		BoardStore.save();
-		// 赏金在发布时已扣，这里只发给接单者；物品直接销毁（不返还发布者，防自买自卖刷钱）
-		BalanceService.add(p.getUuid(), e.bounty, Ledger.TYPE_BOARD, "board:deliver:" + e.id);
+		if (!BoardStore.saveChecked()) {
+			e.status = prevStatus;
+			txn.dismiss();
+			src.sendError(Text.literal(Lang.msg("market.err.saveFail")));
+			return 0;
+		}
+
+		removeFrom(p, item, e.count);
+		txn.state("taken");
+		try {
+			// 赏金在发布时已扣，这里只发给接单者；物品直接销毁（不返还发布者，防自买自卖刷钱）
+			BalanceService.add(p.getUuid(), e.bounty, Ledger.TYPE_BOARD, "board:deliver:" + e.id);
+		} catch (Throwable t) {
+			// 赏金没发出去 ⇒ 物品还给交付者、条目退回 ACCEPTED，可原样重试
+			giveBack(p, item, e.count);
+			e.status = prevStatus;
+			BoardStore.saveChecked();
+			txn.dismiss();
+			RedtaleEconomy.LOGGER.error("[board] 交付发赏金失败，已退还物品：{}", t.toString(), t);
+			src.sendError(Text.literal(Lang.msg("market.err.saveFail")));
+			return 0;
+		}
+		txn.state("paid");
+		txn.commit();
 		src.sendFeedback(() -> Text.literal(Lang.msg("board.delivered", e.id,
 				BalanceService.format(e.bounty))), false);
 		return 1;
@@ -249,9 +284,25 @@ public final class BoardCommands {
 			src.sendError(Text.literal(Lang.msg("board.notYours")));
 			return 0;
 		}
+		// ★R129：状态没落盘成功就不退款★ 否则内存里 CANCELLED、磁盘上还是 OPEN，
+		// 重启后条目复活，可以再撤一次 = 每重启一次领一次赏金。
+		String prevStatus = e.status;
 		e.status = BoardStore.Status.CANCELLED.name();
-		BoardStore.save();
-		BalanceService.add(p.getUuid(), e.bounty, Ledger.TYPE_BOARD, "board:cancel:" + e.id);
+		if (!BoardStore.saveChecked()) {
+			e.status = prevStatus;
+			src.sendError(Text.literal(Lang.msg("market.err.saveFail")));
+			return 0;
+		}
+		try {
+			BalanceService.add(p.getUuid(), e.bounty, Ledger.TYPE_BOARD, "board:cancel:" + e.id);
+		} catch (Throwable t) {
+			// 退款失败 ⇒ 条目退回 OPEN，避免「单子没了、钱也没了」
+			e.status = prevStatus;
+			BoardStore.saveChecked();
+			RedtaleEconomy.LOGGER.error("[board] 撤销退款失败，已恢复挂单：{}", t.toString(), t);
+			src.sendError(Text.literal(Lang.msg("market.err.saveFail")));
+			return 0;
+		}
 		src.sendFeedback(() -> Text.literal(Lang.msg("board.cancelled", e.id,
 				BalanceService.format(e.bounty), BalanceService.format(e.fee))), false);
 		return 1;
@@ -266,6 +317,15 @@ public final class BoardCommands {
 			if (!st.isEmpty() && st.getItem() == item) n += st.getCount();
 		}
 		return n;
+	}
+
+	/** 交付失败回填：先塞背包，塞不下就丢在脚下（不允许凭空消失）。 */
+	private static void giveBack(ServerPlayerEntity p, Item item, int count) {
+		if (item == null || count <= 0) return;
+		ItemStack back = new ItemStack(item, count);
+		p.getInventory().insertStack(back);
+		if (!back.isEmpty()) p.dropItem(back, false);
+		p.getInventory().markDirty();
 	}
 
 	private static void removeFrom(ServerPlayerEntity p, Item item, int count) {

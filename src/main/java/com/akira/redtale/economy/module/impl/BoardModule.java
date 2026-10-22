@@ -105,14 +105,29 @@ public final class BoardModule implements RedtaleModule {
 		for (BoardStore.Entry e : list) {
 			if (!BoardStore.Status.OPEN.name().equals(e.status)) continue;
 			if (e.expiresAt <= 0 || e.expiresAt > now) continue;
+			// ★R129：先落盘「已撤销」再退钱★ 原来「退钱 → save()」，保存失败时条目重启后还是 OPEN，
+			// 每次重启再退一次 = 反复领赏金。
+			String prev = e.status;
 			e.status = BoardStore.Status.CANCELLED.name();
-			com.akira.redtale.economy.economy.BalanceService.add(java.util.UUID.fromString(e.poster),
-					e.bounty, com.akira.redtale.economy.storage.Ledger.TYPE_BOARD,
-					"board:expire:" + e.id);
+			if (!BoardStore.saveChecked()) {
+				e.status = prev;
+				RedtaleEconomy.LOGGER.error("[board] 超时撤销落盘失败，跳过本条（不退款）：{}", e.id);
+				continue;
+			}
+			try {
+				com.akira.redtale.economy.economy.BalanceService.add(java.util.UUID.fromString(e.poster),
+						e.bounty, com.akira.redtale.economy.storage.Ledger.TYPE_BOARD,
+						"board:expire:" + e.id);
+			} catch (Throwable t) {
+				// 退款没成功 ⇒ 把条目放回 OPEN，下一轮扫描再试，不能让赏金消失
+				e.status = prev;
+				BoardStore.saveChecked();
+				RedtaleEconomy.LOGGER.error("[board] 超时退款失败，已恢复挂单：{}", t.toString(), t);
+				continue;
+			}
 			n++;
 		}
 		if (n > 0) {
-			BoardStore.save();
 			RedtaleEconomy.LOGGER.info("[board] {} 条委托超时撤销，赏金已退回", n);
 		}
 		return n;

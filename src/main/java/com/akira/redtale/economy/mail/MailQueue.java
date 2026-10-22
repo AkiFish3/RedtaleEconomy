@@ -84,8 +84,18 @@ public final class MailQueue {
 	}
 
 	public void save() {
+		saveChecked();
+	}
+
+	/**
+	 * 落盘并返回是否真的写成功。
+	 *
+	 * <p>★R129：领钱/领物之前必须看返回值★ {@link #save()} 是 void 且吞 IOException，
+	 * 调用方「以为队列已经清空」继续发钱发物，重启后队列原封不动 = 重复领取。
+	 */
+	public boolean saveChecked() {
 		Path f = file(uuid);
-		if (f == null) return;
+		if (f == null) return false;
 		JsonObject o = new JsonObject();
 		o.addProperty("_version", 1);
 		o.addProperty("uuid", uuid.toString());
@@ -111,8 +121,10 @@ public final class MailQueue {
 				Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING);
 			}
 			dirty = false;
+			return true;
 		} catch (IOException e) {
 			RedtaleEconomy.LOGGER.error("[mail] 写入 {} 失败：{}", uuid, e.getMessage());
+			return false;
 		}
 	}
 
