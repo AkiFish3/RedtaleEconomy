@@ -26,8 +26,12 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
 
     @Override
     protected void drawBackground(DrawContext context, float delta, int mouseX, int mouseY) {
-        int x = (this.width - this.backgroundWidth) / 2;
-        int y = (this.height - this.backgroundHeight) / 2;
+        // ★锚点统一读 this.x/this.y★（第 43 轮）：`HandledScreen.init()` 已经算好居中值，
+        // 这里（以及 hoveredIndex / mouseClicked）原来各自再算一遍 `(width - backgroundWidth) / 2`
+        // ⇒ 只要哪天给本界面也加"装不下就钳到 0"的兜底，背景、悬停、点击三处就会分叉，
+        // 症状正是第 39~42 轮反复踩的「底图画在 A、点击判在 B」。三处都跟 this.x/this.y 走。
+        int x = this.x;
+        int y = this.y;
 
         // 槽位坐标来自 handler（x=8+col*18, y=17+row*18）⇒ 背景必须从 y+17 开始画，
         // 旧值 y+16 让每一行都压到上一行 1px，物品图标看起来偏下。
@@ -72,8 +76,8 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
 
     /** 鼠标位置 → 候选格 index；不在格子区域或超出实际物品数返回 -1。 */
     private int hoveredIndex(double mouseX, double mouseY) {
-        int slotsStartX = (this.width - this.backgroundWidth) / 2 + 8;
-        int slotsStartY = (this.height - this.backgroundHeight) / 2 + 17;
+        int slotsStartX = this.x + 8;
+        int slotsStartY = this.y + 17;
         int slotsEndY = slotsStartY + handler.rows * 18;
         if (mouseX < slotsStartX || mouseX >= slotsStartX + 162 || mouseY < slotsStartY || mouseY >= slotsEndY) {
             return -1;
@@ -91,8 +95,8 @@ public class PackageChooseScreen extends HandledScreen<PackageChooseHandler> {
         if (button != 0) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
-        int slotsStartX = (this.width - this.backgroundWidth) / 2 + 8;
-        int slotsStartY = (this.height - this.backgroundHeight) / 2 + 17;
+        int slotsStartX = this.x + 8;
+        int slotsStartY = this.y + 17;
         int slotsEndY = slotsStartY + handler.rows * 18;
 
         if (mouseX >= slotsStartX && mouseX < slotsStartX + 162 && mouseY >= slotsStartY && mouseY < slotsEndY) {
