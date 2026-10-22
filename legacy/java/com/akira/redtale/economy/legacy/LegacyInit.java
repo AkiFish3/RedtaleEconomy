@@ -43,6 +43,7 @@ public class LegacyInit implements ModInitializer {
 		invokeDev("com.akira.redtale.economy.legacy.dev.TooltipShotHarness");
 		invokeDev("com.akira.redtale.economy.legacy.dev.EditShotHarness");
 		invokeDev("com.akira.redtale.economy.legacy.dev.FontShotHarness");
+		invokeDev("com.akira.redtale.economy.legacy.dev.ItemShotHarness");
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				RECommands.register(dispatcher));
