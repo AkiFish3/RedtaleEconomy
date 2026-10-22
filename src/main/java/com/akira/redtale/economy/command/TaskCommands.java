@@ -36,13 +36,15 @@ public final class TaskCommands {
 		d.register(CommandManager.literal("tasks").requires(src -> Permissions.has(src, Permissions.NODE_USE))
 				.executes(TaskCommands::list)
 				.then(CommandManager.literal("refresh").executes(TaskCommands::refresh))
+				// T06：周任务 slot 从 100 起 ⇒ 上界必须覆盖 100+tasksPerWeek-1，
+				// 原来写死 63 会让所有周任务无法 submit/claim（界面按钮走的就是这两条命令）
 				.then(CommandManager.literal("submit")
-						.then(CommandManager.argument("slot", IntegerArgumentType.integer(0, 63))
-								.suggests(Suggest.slots(taskSlots()))
+						.then(CommandManager.argument("slot", IntegerArgumentType.integer(0, MAX_SLOT))
+								.suggests(Suggest.taskSlots(taskSlots(), weeklySlots()))
 								.executes(TaskCommands::submit)))
 				.then(CommandManager.literal("claim")
-						.then(CommandManager.argument("slot", IntegerArgumentType.integer(0, 63))
-								.suggests(Suggest.slots(taskSlots()))
+						.then(CommandManager.argument("slot", IntegerArgumentType.integer(0, MAX_SLOT))
+								.suggests(Suggest.taskSlots(taskSlots(), weeklySlots()))
 								.executes(TaskCommands::claim))));
 	}
 
@@ -50,6 +52,14 @@ public final class TaskCommands {
 	private static int taskSlots() {
 		return (int) com.akira.redtale.economy.module.impl.TaskModule.settings().getLong("tasksPerDay", 3);
 	}
+
+	/** T06：周任务条数（slot 从 100 起编号）。 */
+	private static int weeklySlots() {
+		return (int) com.akira.redtale.economy.module.impl.TaskModule.settings().getLong("tasksPerWeek", 3);
+	}
+
+	/** slot 上界：日 0..63 + 周 100..163 都得住，留一点余量给上限调大。 */
+	private static final int MAX_SLOT = TaskModule.WEEKLY_SLOT_BASE + 63;
 
 	/**
 	 * T56：统一回显出口。

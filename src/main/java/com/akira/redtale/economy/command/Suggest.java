@@ -33,4 +33,20 @@ public final class Suggest {
 			return CommandSource.suggestMatching(out, builder);
 		};
 	}
+
+	/**
+	 * 日 + 周两段槽位（T06）：日 {@code 0..daily-1}、周 {@code 100..100+weekly-1}。
+	 *
+	 * <p>只补日任务的话，周任务的 slot 永远不会出现在补全里 —— 玩家照着补全点，周任务永远点不到。
+	 */
+	public static SuggestionProvider<ServerCommandSource> taskSlots(int daily, int weekly) {
+		return (ctx, builder) -> {
+			List<String> out = new ArrayList<>();
+			for (int i = 0; i < Math.max(0, daily); i++) out.add(String.valueOf(i));
+			for (int i = 0; i < Math.max(0, weekly); i++) {
+				out.add(String.valueOf(com.akira.redtale.economy.module.impl.TaskModule.WEEKLY_SLOT_BASE + i));
+			}
+			return CommandSource.suggestMatching(out, builder);
+		};
+	}
 }

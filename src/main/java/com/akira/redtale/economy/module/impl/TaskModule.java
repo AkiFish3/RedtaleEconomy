@@ -754,15 +754,25 @@ public final class TaskModule implements RedtaleModule {
 		PROGRESS.put(ckey, fresh);
 		DIRTY.remove(ckey);
 
-		List<JsonObject> defs = definitionsFor(p);
+		List<JsonObject> defs = new ArrayList<>(definitionsFor(p));
 		int slots = (int) settings().getLong(PERIOD_DAILY.equals(p) ? "tasksPerDay" : "tasksPerWeek", 3);
 		long defaultReward = settings().getPathLong("defaultReward.money", 100);
 		Random rnd = new Random(uuid.getMostSignificantBits() ^ key.hashCode());
 		int base = PERIOD_WEEKLY.equals(p) ? WEEKLY_SLOT_BASE : 0;
 
-		for (int i = 0; i < slots && !defs.isEmpty(); i++) {
-			JsonObject def = defs.get(rnd.nextInt(defs.size()));
-			int slot = base + i;
+		// 同一批里**不重复模板**：以前是每次从池里随机抽一条（有放回），
+		// 抽到同一条就会给玩家两条一模一样的任务（周任务只有 2 条模板时实际每次都撞）。
+		// 现在先洗牌、逐个尝试，坏模板（池空/事件缺 target）跳过时**不占槽位**，
+		// 槽位仍然从 base 连续编号 —— 否则会出现「#100 不存在、只有 #101/#102」的空洞。
+		Collections.shuffle(defs, rnd);
+		int want = Math.min(slots, defs.size());
+		if (slots > defs.size()) {
+			RedtaleEconomy.LOGGER.warn("[tasks] {} 模板不足：需要 {} 条{}任务，只有 {} 条模板 ⇒ 只生成 {} 条",
+					uuid, slots, PERIOD_WEEKLY.equals(p) ? "周" : "日", defs.size(), want);
+		}
+		for (int i = 0; i < defs.size() && d.tasks.size() < want; i++) {
+			JsonObject def = defs.get(i);
+			int slot = base + d.tasks.size();
 			Task t = def.has("event") ? buildEvent(def, slot) : build(def, slot, rnd);
 			if (t == null) continue;
 			t.period = p;
