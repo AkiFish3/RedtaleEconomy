@@ -30,7 +30,9 @@ public final class HubPayPage {
 			String name, String amount, int focus, double mouseX, double mouseY) {
 		dc.drawText(tr, Text.literal("转账"), x, y, HubTheme.TITLE, false);
 		// T55：余额走图标 + 三段（右对齐；放不下就紧贴标题右侧，绝不与标题压字）
-		long bal = com.akira.redtale.economy.client.balance.BalanceClientNetworking.RAW;
+		// ★和侧栏读同一个显示值★：两处各自读 RAW 会出现「侧栏还在滚、这里已经跳过去」，
+		// 以及失败转账时的闪烁只在一处可见（A 第 N+78 轮）。
+		long bal = BalanceDisplay.value(System.currentTimeMillis());
 		String lbl = "余额";
 		int bw = bal < 0 ? tr.getWidth("…") : HubMoney.fullWidth(tr, bal);
 		int bx = Math.max(x + 80, x + w - bw);

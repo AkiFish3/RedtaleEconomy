@@ -28,11 +28,6 @@ public final class HubSidebar {
 	private long rippleAt;
 	private double rippleX;
 	private double rippleY;
-	/** 余额数字滚动动画（250ms）。 */
-	private long shownRaw = -1;
-	private long rawTarget = -1;
-	private long rawAnimAt;
-
 	private List<Text> pendingTooltip;
 	/** 紧凑模式悬停头像时的自绘余额浮层（T55：浮层里也要有硬币图标）。 */
 	private boolean moneyTooltip;
@@ -145,20 +140,11 @@ public final class HubSidebar {
 			dc.drawText(tr, Text.literal(HubText.trim(tr, name, sidebarW - 44)),
 					x + 42, y + 8, HubTheme.TEXT, false);
 			long raw = BalanceClientNetworking.RAW;
-			// 余额变化时做 250ms 数字滚动（l1ght 的 animatedBalance 同款手感）
+			// 余额变化只在「服务端确认后」才动：下跌先沉降 300ms，失败回滚永远落不到屏幕上
+			// （A 第 N+78 轮：转账失败时金额先掉一截再弹回，就是这里直接拿 RAW 插值造成的）
 			long now = System.currentTimeMillis();
-			if (raw != rawTarget) {
-				rawTarget = raw;
-				if (shownRaw < 0) shownRaw = raw;
-				rawAnimAt = now;
-			}
-			long shown = rawTarget;
-			if (shownRaw >= 0 && now - rawAnimAt < 250) {
-				float k = (now - rawAnimAt) / 250f;
-				shown = shownRaw + (long) ((rawTarget - shownRaw) * k);
-			} else if (shownRaw >= 0) {
-				shownRaw = rawTarget;
-			}
+			BalanceDisplay.feed(raw, now);
+			long shown = BalanceDisplay.value(now);
 			drawCoins(dc, tr, x + 4, y + 40, sidebarW - 8, shown);
 		}
 		boolean hoverHead = !withText
@@ -167,7 +153,7 @@ public final class HubSidebar {
 		if (hoverHead) {
 			MinecraftClient mc2 = MinecraftClient.getInstance();
 			moneyName = mc2.player == null ? "—" : mc2.player.getGameProfile().getName();
-			moneyRaw = BalanceClientNetworking.RAW;
+			moneyRaw = BalanceDisplay.value(System.currentTimeMillis());
 			moneyTooltip = true;
 		}
 		dc.fill(x, y, x + sidebarW, y + 1, HubTheme.LINE);                        // 顶边
@@ -177,31 +163,25 @@ public final class HubSidebar {
 	}
 
 	/**
-	 * 余额（T55）：图标 + 金/银/铜三段，<b>零值段不隐藏</b>（Aki 口径：余额要能看出「我有多少铜」，
+	 * 余额（T55）：金币/银币/铜币三段，<b>零值段不隐藏</b>（Aki 口径：余额要能看出「我有多少铜」，
 	 * 而不是「1金」剩下的部分让人猜）。
 	 *
-	 * <p>图标是几何绘制（{@link HubMoney}），不再依赖 Numismatic 的物品贴图 ——
-	 * 以前没装那个模组就退化成一串「12银30铜」，两套观感割裂。
+	 * <p>A 第 N+78 轮：<b>必须带币种单位</b>。11px 的三枚硬币只能靠颜色区分币种，
+	 * 玩家看到的是「91 / 66 / 40」三个数字加三个圆片，读不出「66 是银还是铜」。
+	 * 这里先试「图标 + 数字 + 单位」，放不下就整行退成 {@code 91金66银40铜}（同样是三段全显）。
 	 */
 	private void drawCoins(DrawContext dc, TextRenderer tr, int x, int y, int w, long raw) {
 		if (raw < 0) {
 			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.TEXT, false);
 			return;
 		}
-		// ★三段放不下时退化成紧凑文字★：drawFull 放不下会静默少画一段，
-		// 余额少画一个币种比「字挤一点」严重得多（玩家会误判自己有多少钱）。
-		// T67：退化优先用硬币字形（asText），字体缺失时它自己回落纯文字。
-		if (HubMoney.fullWidth(tr, raw) > w) {
-			Text compact = HubMoney.asText(raw, true);
-			if (tr.getWidth(compact) <= w) {
-				dc.drawText(tr, compact, x, y, HubTheme.TEXT, false);
-				return;
-			}
-			dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.text(raw), w)), x, y,
-					HubTheme.TEXT, false);
+		if (HubMoney.labeledWidth(tr, raw) <= w) {
+			HubMoney.drawLabeled(dc, tr, x, y, raw, w);
 			return;
 		}
-		HubMoney.drawFull(dc, tr, x, y, raw, w);
+		// 带单位也放不下 ⇒ 整行纯文字兜底（仍有金/银/铜三个字，绝不退化成一串裸数字）
+		dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.fullText(raw), w)), x, y,
+				HubTheme.TEXT, false);
 	}
 
 	/** 玩家头像（用皮肤贴图的 8×8 脸部放大）。 */

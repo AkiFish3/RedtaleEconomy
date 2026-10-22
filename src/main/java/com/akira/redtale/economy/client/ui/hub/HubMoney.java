@@ -222,6 +222,61 @@ public final class HubMoney {
 		return drawInternal(dc, tr, x, y, raw, maxW, true);
 	}
 
+	/** 币种单位字（与 {@link #split} 的下标对齐）。 */
+	private static final String[] UNIT = {"金", "银", "铜"};
+	/** 数字与单位之间的最小间距。 */
+	private static final int UNIT_GAP = 1;
+
+	/**
+	 * 带单位的三段宽度：{@code 金币91金 银币66银 铜币40铜}。
+	 *
+	 * <p>为什么必须有这一档：只有图标时，三枚币在 11px 下靠<b>颜色</b>区分币种 ——
+	 * 新玩家（或色弱）看不出「66 是银还是铜」。头像卡余额是玩家判断「我有多少钱」的主视图，
+	 * 币种必须能读出来，不能靠猜。
+	 */
+	public static int labeledWidth(TextRenderer tr, long raw) {
+		long[] p = split(raw);
+		int ic = iconW();
+		int w = 0;
+		for (int i = 0; i < 3; i++) {
+			if (i > 0) w += SEG_GAP;
+			w += ic + ICON_TEXT + tr.getWidth(Long.toString(p[i])) + UNIT_GAP + tr.getWidth(UNIT[i]);
+		}
+		return w;
+	}
+
+	/**
+	 * 画「图标 + 数字 + 单位」三段（零值段也画）。
+	 *
+	 * @param maxW 可用宽度（≤0 = 不限）；放不下就少画，调用方需先用 {@link #labeledWidth} 判断
+	 */
+	public static int drawLabeled(DrawContext dc, TextRenderer tr, int x, int y, long raw, int maxW) {
+		if (raw < 0) {
+			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.MUTED, false);
+			return tr.getWidth("…");
+		}
+		long[] p = split(raw);
+		int ic = iconW();
+		int cx = x;
+		int drawn = 0;
+		for (int i = 0; i < 3; i++) {
+			String n = Long.toString(p[i]);
+			int uni = tr.getWidth(UNIT[i]);
+			int seg = ic + ICON_TEXT + tr.getWidth(n) + UNIT_GAP + uni;
+			int need = seg + (drawn > 0 ? SEG_GAP : 0);
+			if (maxW > 0 && cx - x + need > maxW) break;
+			if (drawn > 0) cx += SEG_GAP;
+			coin(dc, cx, y - 1, i);
+			int nx = cx + ic + ICON_TEXT;
+			dc.drawText(tr, Text.literal(n), nx, y, i == 0 ? HubTheme.GOLD : HubTheme.TEXT, false);
+			dc.drawText(tr, Text.literal(UNIT[i]), nx + tr.getWidth(n) + UNIT_GAP, y,
+					HubTheme.MUTED, false);
+			cx += seg;
+			drawn++;
+		}
+		return cx - x;
+	}
+
 	private static int drawInternal(DrawContext dc, TextRenderer tr, int x, int y, long raw,
 			int maxW, boolean full) {
 		if (raw < 0) {
