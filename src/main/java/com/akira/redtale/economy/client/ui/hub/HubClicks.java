@@ -47,8 +47,12 @@ final class HubClicks {
 			if (idx >= 0 && idx < all.length) {
 				if (host.page != all[idx]) ClientUiConfig.click();
 				host.searchFocused = false;
+				// 跨帧展开态跟着页面走：排行下拉留在别的页上会在回来时凭空展开
+				host.rankDropdown = false;
 				if (host.page == HubPage.STORAGE && all[idx] != HubPage.STORAGE) {
 					HubStoragePage.confirmUpgrade = false;
+					// 分类下拉是跨帧静态态：离开仓储页必须收起，否则回到该页时凭空展开
+					HubStoragePage.catOpen = false;
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
 				}
 				host.page = all[idx];

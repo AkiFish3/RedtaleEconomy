@@ -216,13 +216,26 @@ public final class HubStoragePage {
 		return catOpenNow;
 	}
 
+	/**
+	 * 分类下拉列表的顶边（统一口径：绘制与命中都取这里）。
+	 *
+	 * <p>★原来写死 {@code y + 240} 当内容区底边★：真实内容高是 {@code h}（427×240 窗口下只有
+	 * 160），240 是小窗口的假设值 —— 一旦面板更矮、或以后有人调 BOTTOM_BAR，这个判断就永远
+	 * 成立，列表朝下展开顶出内容区。
+	 */
+	private static int catListTop(int y, int h) {
+		int sy = y + 16;
+		int listH = CATS.length * 16;
+		return (sy + 16 + listH <= y + h) ? sy + 16 : sy - listH;
+	}
+
 	/** 分类下拉列表：在底栏/内容之后画，保证在最上层。 */
-	public static void drawCatDropdown(DrawContext dc, TextRenderer tr, int x, int y, int w,
+	public static void drawCatDropdown(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			int cat, double mouseX, double mouseY) {
 		int bw = 88;
 		int bx = x + w - bw;
 		int listH = CATS.length * 16;
-		int by = (y + 16 + listH <= y + 240) ? y + 16 : y - listH;
+		int by = catListTop(y, h);
 		dc.fill(bx, by, bx + bw, by + listH, HubTheme.PANEL);
 		HubWidgets.outline(dc, bx, by, bw, listH, 2, HubTheme.OUTLINE);
 		for (int i = 0; i < CATS.length; i++) {
@@ -237,24 +250,54 @@ public final class HubStoragePage {
 		}
 	}
 
-	/** 分类下拉命中：-2=开/关，0..n-1=选中，-1=无。 */
-	public static int hitCat(double mx, double my, int x, int y, int w) {
+	/**
+	 * 展开的分类列表命中：{@code 0..n-1} = 该行，{@code -1} = 不在列表里。
+	 *
+	 * <p>★以前根本没有这条路径★ —— {@link #hitCat} 只在「CAT 按钮那 16px」被调用，
+	 * 列表行落进了下方的仓储网格判定 ⇒ 点分类等于抓起/放下物品（格子是搬东西的地方，
+	 * 误触就是搬错东西）。浮层「最后画」必须配「最先命中」。
+	 */
+	public static int catRowAt(double mx, double my, int x, int y, int w, int h) {
+		if (!catOpen) return -1;
 		int bw = 88;
 		int bx = x + w - bw;
-		int sy = y + 16;
-		if (mx >= bx && mx < bx + bw && my >= sy && my < sy + 16) return -2;
-		if (catOpen) {
-			int listH = CATS.length * 16;
-			int by = (sy + 16 + listH <= y + 240) ? sy + 16 : sy - listH;
-			for (int i = 0; i < CATS.length; i++) {
-				if (mx >= bx && mx < bx + bw && my >= by + i * 16 && my < by + i * 16 + 16) return i;
-			}
+		int by = catListTop(y, h);
+		if (mx < bx || mx >= bx + bw) return -1;
+		for (int i = 0; i < CATS.length; i++) {
+			if (my >= by + i * 16 && my < by + i * 16 + 16) return i;
 		}
 		return -1;
 	}
 
+	/** 仅 dev 夹具：CAT 开/关按钮的中心（与 {@link #click} 的按钮带同一几何）。 */
+	public static double[] catButtonCenter(int x, int y, int w) {
+		return new double[]{x + w - 44, y + 24};
+	}
+
+	/** 仅 dev 夹具：展开列表第 {@code cat} 行的中心；越界返回 null。 */
+	public static double[] catRowCenter(int cat, int x, int y, int w, int h) {
+		if (cat < 0 || cat >= CATS.length) return null;
+		int by = catListTop(y, h);
+		double my = by + cat * 16 + 8;
+		if (my < y || my >= y + h) return null;
+		return new double[]{x + w - 44, my};
+	}
+
+	/** 点击点是否落在展开列表的矩形内（含边框）—— 落在里面却没命中行 = 空白，应吞掉。 */
+	public static boolean inCatList(double mx, double my, int x, int y, int w, int h) {
+		if (!catOpen) return false;
+		int bw = 88;
+		int bx = x + w - bw;
+		int by = catListTop(y, h);
+		return mx >= bx && mx < bx + bw && my >= by && my < by + CATS.length * 16;
+	}
+
 	public enum Hit { NONE, STORAGE, INV, UPGRADE, SORT, CAT, CONFIRM_YES, CONFIRM_NO }
 
+	/**
+	 * 命中结果。{@code index} 的语义按 {@link Hit} 分：网格 = 格号，背包 = 显示序号，
+	 * {@code CAT} = -2 开/关 或 {@code >=0} 选中的分类下标。
+	 */
 	public record Result(Hit hit, int index) {
 	}
 
@@ -286,7 +329,14 @@ public final class HubStoragePage {
 	public static Result click(double mx, double my, int x, int y, int w, int h, int button,
 			int scrollRows) {
 		int bx = x + w - 132;
-		scrollRows = Math.max(0, Math.min(scrollRows, maxScrollRows(w, h)));
+		// ★展开的分类列表是浮层：命中必须先于网格★（它盖在网格上，先判网格就会搬错东西）
+		// 返回值约定：CAT 的 index = -2 表示「开/关按钮」，>=0 表示选中的分类下标。
+		if (catOpen) {
+			int row = catRowAt(mx, my, x, y, w, h);
+			if (row >= 0) return new Result(Hit.CAT, row);
+			if (inCatList(mx, my, x, y, w, h)) return new Result(Hit.NONE, -1);
+			catOpen = false; // 点列表外 = 收起，然后照常处理这次点击
+		}
 		if (confirmUpgrade && my >= y + 18 && my < y + 32) {
 			final int cw2 = Math.min(w, 300);
 			if (mx >= x + cw2 - 74 && mx < x + cw2 - 40) return new Result(Hit.CONFIRM_YES, -1);
@@ -296,7 +346,12 @@ public final class HubStoragePage {
 		if (mx >= bx + 70 && mx < bx + 122 && my >= y - 1 && my < y + 13) return new Result(Hit.SORT, -1);
 
 		int sy = y + 16;
-		if (mx >= x + w - 88 && mx < x + w && my >= sy && my < sy + 16) return new Result(Hit.CAT, -1);
+		if (mx >= x + w - 88 && mx < x + w && my >= sy && my < sy + 16) {
+			return new Result(Hit.CAT, -2);
+		}
+
+		// 以下才需要网格几何（含仓储格数）—— 上面前置分支不碰客户端状态，可 headless 测
+		scrollRows = Math.max(0, Math.min(scrollRows, maxScrollRows(w, h)));
 
 		int slotCount = WarehouseClientNetworking.SLOT_COUNT;
 		int cols = cols(w);

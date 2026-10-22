@@ -46,14 +46,17 @@ final class HubStorageClicks {
 			}
 			if (r.hit() == HubStoragePage.Hit.CAT) {
 				if (button == 0) {
-					int hit = HubStoragePage.hitCat(mouseX, mouseY, cx, cy, cw);
-					if (hit == -2) {
+					// ★index 已由点击一起带回：-2 = 展开/收起按钮，>=0 = 列表中选中的分类★
+					// 以前这里再调一次 hitCat(mx,my)：列表行的命中根本走不到这条分支
+					// （click 先判网格）⇒ 点分类变成抓物品；且几何算了两遍容易分叉。
+					if (r.index() == -2) {
 						HubStoragePage.catOpen = !HubStoragePage.catOpen;
 						ClientUiConfig.click();
-					} else if (hit >= 0) {
-						host.storageCat = hit;
+					} else if (r.index() >= 0) {
+						host.storageCat = r.index();
 						HubStoragePage.catOpen = false;
 						ClientUiConfig.click();
+						host.storageScroll = 0;
 					}
 				}
 				return HubClicks.R.HANDLED;

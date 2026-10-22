@@ -66,7 +66,7 @@ final class HubRender {
 		}
 		tickDrag(host, mouseX, mouseY);
 		if (host.page == HubPage.STORAGE && HubStoragePage.needsCatOverlay()) {
-			HubStoragePage.drawCatDropdown(dc, host.text(), cx, cy, cw, host.storageCat,
+			HubStoragePage.drawCatDropdown(dc, host.text(), cx, cy, cw, ch, host.storageCat,
 					mouseX, mouseY);
 		}
 		// ★光标物品永远在最上层★

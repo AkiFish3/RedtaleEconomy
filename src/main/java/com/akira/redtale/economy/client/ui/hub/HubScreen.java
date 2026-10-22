@@ -141,6 +141,8 @@ public class HubScreen extends Screen {
 		statusLine.clear();
 		this.searchFocused = false;
 		this.rankDropdown = false;
+		// 跨帧静态展开态必须跟着页面走（深链进别的页时仓储分类下拉还在开）
+		HubStoragePage.catOpen = false;
 		pullData(p);
 	}
 
@@ -252,6 +254,7 @@ public class HubScreen extends Screen {
 		// 关闭界面时把光标里的东西退回背包，避免物品卡在服务端
 		if (page == HubPage.STORAGE) {
 			HubStoragePage.confirmUpgrade = false;
+			HubStoragePage.catOpen = false;
 			com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
 		}
 		super.removed();

@@ -149,6 +149,36 @@ public final class HubDev {
 		return host.mouseClicked(p[0], p[1], 0);
 	}
 
+	/**
+	 * 夹具：切到仓储页第 {@code cat} 个分类（0 全部 … 4 其他），全程走真实 mouseClicked：
+	 * 先点 CAT 按钮展开，再点列表里那一行 —— 命中几何由页面自己算，不手写坐标。
+	 *
+	 * <p>这条路径正是第 N+72 轮修的缺陷：列表行的点击原来落进网格判定（点分类＝抓物品）。
+	 */
+	public static boolean clickStorageCat(HubScreen host, int cat) {
+		if (host.page != HubPage.STORAGE) return false;
+		int cx = host.frame.contentX();
+		int cy = host.frame.contentY();
+		int cw = host.frame.contentW();
+		int ch = host.frame.contentH();
+		double[] btn = HubStoragePage.catButtonCenter(cx, cy, cw);
+		if (btn == null) return false;
+		if (!host.mouseClicked(btn[0], btn[1], 0)) return false;          // 展开
+		double[] row = HubStoragePage.catRowCenter(cat, cx, cy, cw, ch);
+		if (row == null) return false;
+		return host.mouseClicked(row[0], row[1], 0);
+	}
+
+	/** 夹具：当前仓储分类下标（-1 = 不在仓储页）。 */
+	public static int storageCatVal(HubScreen host) {
+		return host.page == HubPage.STORAGE ? host.storageCat : -1;
+	}
+
+	/** 夹具：分类下拉是否展开。 */
+	public static boolean storageCatOpenVal() {
+		return HubStoragePage.catOpen;
+	}
+
 	public static boolean clickRankToggle(HubScreen host) {
 		if (host.page != HubPage.RANK) return false;
 		int cx = host.frame.contentX();
