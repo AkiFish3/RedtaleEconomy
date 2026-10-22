@@ -2,7 +2,6 @@ package com.akira.redtale.economy.legacy.dev;
 
 import com.akira.redtale.economy.legacy.LegacyInit;
 import com.akira.redtale.economy.legacy.bound.BoundItemHandler;
-import com.akira.redtale.economy.legacy.init.REItems;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -98,7 +97,12 @@ final class TooltipShotClient {
 	}
 
 	private static void collect(MinecraftClient mc) {
-		ItemStack stack = new ItemStack(REItems.NORMAL_PACKAGE);
+		// ★不能写 REItems.NORMAL_PACKAGE★：T77 把包裹改成数据驱动后 REItems 只剩 `all()`，
+		// 那批常量已删。devsrc 不在正式源集里（`_javac_check --all` 默认不扫），
+		// 所以这个夹具**整整一轮都没编过**，直到第 50 轮整目录编译才炸出来。
+		// 按 id 取，与 packages.json 同源，不会再随常量改名失效。
+		ItemStack stack = new ItemStack(net.minecraft.registry.Registries.ITEM.get(
+				LegacyInit.id("package_normal")));
 		// 直接写 NBT：bindToPlayer 会先查 bound_items 白名单，夹具不该依赖玩家配置；
 		// 但显示层必须走生产代码（applyOwnerLore），否则测的是夹具自己的伪造值
 		stack.getOrCreateNbt().putString("BoundOwnerName", mc.player.getName().getString());

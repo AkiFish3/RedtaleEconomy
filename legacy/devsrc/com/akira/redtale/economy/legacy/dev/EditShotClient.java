@@ -24,6 +24,12 @@ import java.nio.file.StandardOpenOption;
  * <p>点击用 {@code screen.mouseClicked(x, y, button)}：这是 GuiScreen 的原始分发入口，
  * 命中判定（chip 区间 / 表格 +/- 热区）与真人点击走同一段代码。
  *
+ * <p>阶段一览（第 50 轮补齐规格 §七④⑤）：
+ * 0~11 开界面 / 换档 / 切模式 / 塞格 / 三次「+」；12~17 入口②（按钮 → 点格 → W 关）；
+ * 18~25 退出编辑态 / 三次「−」造权重 0 / 入口①（hover + W）；26 关窗（三保险第 1 层）；
+ * 27~30 **再开一次**（§七④：重开后客户端镜像与角标是否还是 4 金 / 0 灰）；
+ * 31~34 **原版背包**（§七⑤：W 不得在该界面被消费）；35~36 回读 + DONE。
+ *
  * <p>★★几何一律**运行期解析**，本文件不留任何面板坐标字面量★★（第 46 轮重写）：
  * 旧实现把 {@code PANEL_W=300 / PANEL_H=318 / MODE_Y=20 / TIER_Y=36 / TABLE_X=176} 抄了一份，
  * 而第 39~43 轮面板已改成 408×240 / MODE_Y=16 / TIER_Y=30 / TABLE_X=286、锚点还从「居中」改成了
@@ -405,19 +411,116 @@ final class EditShotClient {
 				}
 			}
 			case 27 -> {
-				if (++timer >= 40) {
+				// ——— 规格 §七④「关闭重开 → 权重仍在」：真的再开一次 ———
+				// 只读服务端 NBT（判据 4）证明不了这件事的另一半：**重开时客户端拿到的状态对不对**。
+				// `PackageEditClientState` 是静态镜像，只在 DISCONNECT 时 reset；重开时靠
+				// `PackageEditScreen.init()` 发 ACT_REQ_STATE 拉一份新的。若那条请求没发出去、
+				// 或服务端没回，界面会拿**上一件包裹**的权重画角标（看起来完全正常、零报错），
+				// 而且按「+」时以陈旧值为基数写回 ⇒ 静默改错数据。
+				if (++timer >= 30) {
 					timer = 0;
-					EditShotHarness.request = EditShotHarness.REQ_VERIFY;
+					log("INTERACT2 screen=" + screenName(mc) + " hand="
+							+ net.minecraft.registry.Registries.ITEM
+							.getId(mc.player.getMainHandStack().getItem()));
+					var result2 = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+					log("INTERACT2 result=" + result2);
 					phase = 28;
 				}
 			}
 			case 28 -> {
+				if (++timer >= 25) {
+					timer = 0;
+					log("REOPEN screen=" + screenName(mc));
+					save(mc, "b31-edit-09-reopen");
+					phase = 29;
+				}
+			}
+			case 29 -> {
+				// 客户端镜像的权重（公开静态方法，直接读；不碰 private 字段）
+				if (++timer >= 4) {
+					timer = 0;
+					int w0 = -1;
+					int w1 = -1;
+					long rev = -1L;
+					try {
+						w0 = com.akira.redtale.economy.legacy.screen.client.PackageEditClientState.weight(0);
+						w1 = com.akira.redtale.economy.legacy.screen.client.PackageEditClientState.weight(1);
+						rev = com.akira.redtale.economy.legacy.screen.client.PackageEditClientState.revision();
+					} catch (Throwable t) {
+						log("STATE-UNAVAILABLE " + t);
+					}
+					log("T80 reopen w0=" + w0 + " w1=" + w1 + " rev=" + rev);
+					phase = 30;
+				}
+			}
+			case 30 -> {
+				// 关掉重开的编辑器（第二次 onClosed 也要正常走一遍）
+				if (++timer >= 8) {
+					timer = 0;
+					log("CLOSE2 screen=" + screenName(mc));
+					if (mc.currentScreen != null) {
+						mc.currentScreen.close();
+					}
+					phase = 31;
+				}
+			}
+			case 31 -> {
+				// ——— 规格 §七⑤「普通箱子/背包行为完全不变」：打开**原版背包** ———
+				// 走与玩家按 E 完全相同的路径 `new InventoryScreen(player)`；handler 就是
+				// `playerScreenHandler`，与我们一行关系都没有。这里要证的是**键位没被全局劫持**：
+				// 我们的 W 只在本界面里消费，原版界面上必须返回 false。
+				if (++timer >= 12) {
+					timer = 0;
+					try {
+						mc.setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(mc.player));
+						log("T80 vanilla screen=" + screenName(mc));
+					} catch (Throwable t) {
+						log("VANILLA-UNAVAILABLE " + t);
+					}
+					phase = 32;
+				}
+			}
+			case 32 -> {
+				if (++timer >= 8) {
+					timer = 0;
+					boolean handled = mc.currentScreen != null
+							&& mc.currentScreen.keyPressed(KEY_W, 0, 0);
+					log("T80 vanilla keyW=" + handled);
+					phase = 33;
+				}
+			}
+			case 33 -> {
+				if (++timer >= 6) {
+					timer = 0;
+					save(mc, "b31-edit-10-vanilla");
+					phase = 34;
+				}
+			}
+			case 34 -> {
+				if (++timer >= 6) {
+					timer = 0;
+					if (mc.currentScreen != null) {
+						mc.currentScreen.close();
+					}
+					log("CLOSE3 screen=" + screenName(mc));
+					phase = 35;
+				}
+			}
+			case 35 -> {
+				if (++timer >= 40) {
+					timer = 0;
+					EditShotHarness.request = EditShotHarness.REQ_VERIFY;
+					phase = 36;
+				}
+			}
+			case 36 -> {
 				if (++timer >= 20) {
+					timer = 0;
 					log("DONE screen=" + screenName(mc)
 							+ " hand=" + net.minecraft.registry.Registries.ITEM
 							.getId(mc.player.getMainHandStack().getItem()));
 					mc.scheduleStop();
-					phase = 29;
+					phase = 37;
 				}
 			}
 			default -> {
