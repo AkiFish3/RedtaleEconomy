@@ -292,9 +292,11 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
      *       （{@code sx-1 .. sx+17}），只压 0~1px 的格线，与原版 3 位数量（{@code x-1 .. x+17}）同款。</li>
      * </ol>
      *
-     * <p>★不要为了"更清楚"把这段挪回 {@code drawForeground} 并加 z★：{@code HandledScreen.render}
-     * 在进槽位循环前就 {@code RenderSystem.disableDepthTest()}，z 只对**自带深度状态**的图层
-     * （文字层就是）生效，挪到别处会退回"被物品遮一半"。
+     * <p>★本方法是**在 {@link #drawForeground} 里被调**、用面板相对坐标（第 60 轮修正注释）★：
+     * 第 52 轮的旧注释写「不要挪回 drawForeground」，但代码一直就在 drawForeground ——
+     * 那段话真正要禁止的是「挪进 {@link #render} 的 super.render 之后」（那里已经 pop 了
+     * 面板 translate ⇒ 传进来的相对坐标会整体错位、且没有任何图层/深度保证）。
+     * 留在 drawForeground 的好处是几何与 {@code drawBackground} 的底槽共用同一份面板相对坐标。
      */
     private void drawWeightBadge(DrawContext context, int sx, int sy, int weight, boolean editing) {
         String text = String.valueOf(weight);
@@ -648,16 +650,16 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             int slot = tableEntrySlot(row);
             if (slot >= 0) {
                 double relX = mouseX - (x + TABLE_X);
-                int weight = PackageEditClientState.weight(slot);
+                // ★四条调权重的路必须共用 stepSize()/stepWeight()★（第 60 轮）：表格的 −/＋
+                // 旧实现把 `weight - 1` / `weight + 1` 各写一遍（连钳位也各写一遍），于是
+                // 「按住 Shift 点表格的 ＋ 也还是 +1」，而同一个动作在气泡里是 +10 —— 同一个语义
+                // 两种手感，且零报错、截图完全看不出。这里改走 stepWeight（内部统一钳位 + 值没变不发包）。
                 if (button == 0 && relX >= BTN_MINUS_X && relX < BTN_MINUS_X + BTN_W) {
-                    RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
-                            buf -> { buf.writeVarInt(slot); buf.writeVarInt(Math.max(0, weight - 1)); });
+                    stepWeight(slot, -stepSize());
                     return true;
                 }
                 if (button == 0 && relX >= BTN_PLUS_X && relX < BTN_PLUS_X + BTN_W) {
-                    RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
-                            buf -> { buf.writeVarInt(slot); buf.writeVarInt(Math.min(
-                                    PackageEditClientState.maxWeight(), weight + 1)); });
+                    stepWeight(slot, stepSize());
                     return true;
                 }
                 if (button == 1) {
@@ -685,12 +687,12 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         // 网格上滚动 = 调权重（★只对已有物品生效★：空格子滚轮会变成"给未来物品预设权重"，很反直觉）
         int slot = gridSlotAt(mouseX, mouseY);
         if (slot >= 0 && !this.handler.getSlot(slot).getStack().isEmpty()) {
-            int weight = PackageEditClientState.weight(slot);
-            int next = Math.max(0, Math.min(PackageEditClientState.maxWeight(),
-                    weight + (int) Math.signum(amount)));
-            if (next != weight) {
-                RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
-                        buf -> { buf.writeVarInt(slot); buf.writeVarInt(next); });
+            // ★滚轮也要吃 Shift★（第 60 轮）：旧实现固定 `weight + signum(amount)` = 永远 ±1，
+            // 而 `_WEIGHT_EDITOR.md` §九 的结论段明写「网格滚轮 ±1 / Shift ±10」—— 文档与代码
+            // 各说一套，实机上只是"滚起来特别慢"，零报错、零日志。现在与气泡/表格同为 stepSize()。
+            int dir = (int) Math.signum(amount);
+            if (dir != 0) {
+                stepWeight(slot, dir * stepSize());
             }
             return true;
         }
@@ -773,6 +775,11 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
      * 所以它不会让任何检查变红，只会被当成"手感差"。
      * 判定不能用 `mouseClicked` 的 modifiers（1.20.1 的 `Screen#mouseClicked` 根本没有 modifiers 参数），
      * 走 `Screen.hasShiftDown()`（本实例 javap 实证存在，static）。
+     *
+     * <p>★四条调权重的路必须都读它★（第 60 轮收口）：① 气泡 −/＋ 单击、② 气泡长按连发、
+     * ③ 网格滚轮、④ 表格行的 −/＋。①② 从第 45 轮起就是 ±10，③④ 一直写死 ±1 ——
+     * 同一个"改权重"动作两种手感，而规格 `_WEIGHT_EDITOR.md` §二/§六 是统一的步长语义。
+     * 回归门：`_b60_weight_step.py`。
      */
     private static int stepSize() {
         return Screen.hasShiftDown() ? STEP_SHIFT : STEP_TAP;
