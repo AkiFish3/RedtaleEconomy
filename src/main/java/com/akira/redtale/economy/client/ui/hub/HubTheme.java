@@ -82,6 +82,13 @@ public final class HubTheme {
 	public static int DANGER_HOVER = 0xFFD05050;
 	/** 描边 */
 	public static int OUTLINE = 0xFF3A3A3A;
+	/**
+	 * 交互控件的常态描边（描边按钮）。
+	 *
+	 * <p>必须与 {@link #PRIMARY} 明确区分：金色只表示「鼠标停在这里 / 已激活」，
+	 * 常态描边用中性灰。原来描边按钮常态就用 PRIMARY ⇒ 用户分不清是样式还是悬停。
+	 */
+	public static int EDGE_IDLE = 0xFF4E4E4E;
 	/** T55：硬币图标面/描边（金）。几何绘制，不走字形也不依赖 Numismatic 贴图。 */
 	public static int COIN_GOLD = 0xFFFFCC33;
 	public static int COIN_GOLD_EDGE = 0xFF8A6410;
@@ -135,6 +142,7 @@ public final class HubTheme {
 			DANGER = 0xFFC05A5A;
 			DANGER_HOVER = 0xFFD97A7A;
 			OUTLINE = 0x66FFFFFF;
+			EDGE_IDLE = 0x77FFFFFF;
 			COIN_GOLD = 0xFFFFD54A;
 			COIN_GOLD_EDGE = 0xFF8A6410;
 			COIN_SILVER = 0xFFE8EFF8;
@@ -179,6 +187,7 @@ public final class HubTheme {
 			DANGER = 0xFF8B2F2F;
 			DANGER_HOVER = 0xFFA63C3C;
 			OUTLINE = 0xFF7A7A7A;
+			EDGE_IDLE = 0xFF8A8A8A;
 			// 原版灰底上要更暗一档，否则金色发白
 			COIN_GOLD = 0xFFE0A81E;
 			COIN_GOLD_EDGE = 0xFF7A5A00;
@@ -223,6 +232,7 @@ public final class HubTheme {
 			DANGER = 0xFFB84242;
 			DANGER_HOVER = 0xFFD05050;
 			OUTLINE = 0xFF3A3A3A;
+			EDGE_IDLE = 0xFF4E4E4E;
 			COIN_GOLD = 0xFFFFCC33;
 			COIN_GOLD_EDGE = 0xFF8A6410;
 			COIN_SILVER = 0xFFDCE3EC;

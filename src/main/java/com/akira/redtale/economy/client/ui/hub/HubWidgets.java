@@ -49,11 +49,63 @@ public final class HubWidgets {
 		outline(dc, x, y, w, h, 3, HubTheme.OUTLINE);
 	}
 
+	/**
+	 * 圆角描边的全部像素段：每 4 个 int 一段 {@code (x1, y1, x2, y2)}，均为 1px 宽。
+	 *
+	 * <p>★真缺陷（第 N+73 轮）★：原来只画四条直边，四角（半径 r 的阶梯）一个像素都不画
+	 * ⇒ 每个角缺一个 <b>L 形缺口</b>，描边断成四段。灰描边在暗底上不明显，
+	 * 但 {@code Variant.OUTLINE} 的金色描边一眼就是「半截高亮」，被误读成悬停/聚焦态。
+	 *
+	 * <p>四角必须沿 {@link #roundRect} <b>同一条轮廓</b>补 1px 阶梯：第 i 行（顶/底对称）
+	 * 的最外像素是 {@code x + (r-1-i)} / {@code x + w - r + i}，补完才闭合成一整圈。
+	 * 几何抽成纯函数（不碰 DrawContext），{@code HubWidgetsEdgeTest} 直接验闭合性。
+	 */
+	public static int[] outlineSegments(int x, int y, int w, int h, int r) {
+		if (w <= 0 || h <= 0) return new int[0];
+		r = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+		int n = 4 + (r > 0 ? 4 * r : 0);
+		int[] seg = new int[n * 4];
+		int k = 0;
+		// 四条直边：r=0 时它们自己就把四角包住（重叠绘制无害）
+		seg[k++] = x + r; seg[k++] = y; seg[k++] = x + w - r; seg[k++] = y + 1;
+		seg[k++] = x + r; seg[k++] = y + h - 1; seg[k++] = x + w - r; seg[k++] = y + h;
+		seg[k++] = x; seg[k++] = y + r; seg[k++] = x + 1; seg[k++] = y + h - r;
+		seg[k++] = x + w - 1; seg[k++] = y + r; seg[k++] = x + w; seg[k++] = y + h - r;
+		// 四个圆角：逐行 1px，与 roundRect 的阶梯轮廓完全重合
+		for (int i = 0; i < r; i++) {
+			int lx = x + (r - 1 - i);
+			int rx = x + w - r + i;
+			seg[k++] = lx; seg[k++] = y + i; seg[k++] = lx + 1; seg[k++] = y + i + 1;
+			seg[k++] = rx; seg[k++] = y + i; seg[k++] = rx + 1; seg[k++] = y + i + 1;
+			seg[k++] = lx; seg[k++] = y + h - 1 - i; seg[k++] = lx + 1; seg[k++] = y + h - i;
+			seg[k++] = rx; seg[k++] = y + h - 1 - i; seg[k++] = rx + 1; seg[k++] = y + h - i;
+		}
+		return seg;
+	}
+
+	/** 圆角描边（闭合的一整圈 1px）。 */
 	public static void outline(DrawContext dc, int x, int y, int w, int h, int r, int color) {
-		dc.fill(x + r, y, x + w - r, y + 1, color);
-		dc.fill(x + r, y + h - 1, x + w - r, y + h, color);
-		dc.fill(x, y + r, x + 1, y + h - r, color);
-		dc.fill(x + w - 1, y + r, x + w, y + h - r, color);
+		int[] seg = outlineSegments(x, y, w, h, r);
+		for (int i = 0; i < seg.length; i += 4) {
+			dc.fill(seg[i], seg[i + 1], seg[i + 2], seg[i + 3], color);
+		}
+	}
+
+	/**
+	 * 按钮边框色（{@code 0} = 不画边）。
+	 *
+	 * <p>★语义唯一化（第 N+73 轮）★：金色 <b>只属于交互态</b> —— 常态描边一律中性灰，
+	 * 悬停才转金。原来 {@code OUTLINE} 变体常态就用 {@code PRIMARY} 画边，
+	 * 与悬停色 {@code PRIMARY_HOVER} 几乎分不出 ⇒ 用户看到的金框究竟是「描边样式」
+	 * 还是「鼠标停在这里」在视觉上无法区分（正是这次要消掉的歧义）。
+	 */
+	static int edgeColor(Variant variant, boolean hover, boolean enabled) {
+		if (!enabled) return HubTheme.OUTLINE;
+		return switch (variant) {
+			case OUTLINE -> hover ? HubTheme.PRIMARY : HubTheme.EDGE_IDLE;
+			case SECONDARY -> hover ? HubTheme.EDGE_HOVER : HubTheme.OUTLINE;
+			default -> 0;
+		};
 	}
 
 	/** 按钮（含变体配色 + 悬停/按下/禁用）。 */
@@ -61,45 +113,38 @@ public final class HubWidgets {
 			String label, Variant variant, boolean hover, boolean pressed, boolean enabled) {
 		int bg;
 		int fg;
-		int edge;
 		if (!enabled) {
 			bg = HubTheme.CARD;
 			fg = HubTheme.MUTED;
-			edge = HubTheme.OUTLINE;
 		} else {
 			switch (variant) {
 				case PRIMARY -> {
 					bg = hover ? HubTheme.PRIMARY_HOVER : HubTheme.PRIMARY;
 					fg = HubTheme.ON_PRIMARY;
-					edge = 0;
 				}
 				case DESTRUCTIVE -> {
 					bg = hover ? HubTheme.DANGER_HOVER : HubTheme.DANGER;
 					fg = 0xFFFFFFFF;
-					edge = 0;
 				}
 				case OUTLINE -> {
 					bg = hover ? HubTheme.HOVER : HubTheme.PANEL;
 					fg = HubTheme.TEXT;
-					edge = HubTheme.PRIMARY;
 				}
 				case GHOST -> {
 					bg = hover ? HubTheme.HOVER : 0;
 					fg = HubTheme.MUTED;
-					edge = 0;
 				}
 				case TOGGLE -> {
 					bg = hover ? HubTheme.PRIMARY_HOVER : HubTheme.PRIMARY;
 					fg = HubTheme.ON_PRIMARY;
-					edge = 0;
 				}
 				default -> { // SECONDARY
 					bg = hover ? HubTheme.HOVER : HubTheme.CARD;
 					fg = HubTheme.TEXT;
-					edge = HubTheme.OUTLINE;
 				}
 			}
 		}
+		int edge = edgeColor(variant, hover, enabled);
 		if (bg != 0) roundRect(dc, x, y, w, h, 3, bg);
 		if (edge != 0) outline(dc, x, y, w, h, 3, edge);
 		int ty = y + (h - 8) / 2;
