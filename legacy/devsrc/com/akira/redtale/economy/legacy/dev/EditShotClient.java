@@ -214,7 +214,14 @@ final class EditShotClient {
 					if (g == null) {
 						return;
 					}
-					int bx = g.weightButtonX(mc);
+					int bx;
+					try {
+						bx = panelInt(mc.currentScreen, "weightBtnX");
+					} catch (Throwable t) {
+						log("GEOM-UNAVAILABLE phase=" + phase + " (weightBtnX: " + t + ")");
+						mc.scheduleStop();
+						return;
+					}
 					int cx = g.left + bx + g.weightBtnW / 2;
 					int cy = g.top + g.weightBtnY + g.weightBtnH / 2;
 					click(mc, cx, cy, 0);
@@ -375,6 +382,18 @@ final class EditShotClient {
 		}
 	}
 
+	/**
+	 * 反射调用 {@code PackageEditScreen} 的**无参 private 实例方法**并取 int 返回值。
+	 *
+	 * <p>用于 `weightBtnX()` 这类「几何由状态算出来」的方法（它依赖窗口宽度与锚点钳位）：
+	 * 夹具复刻一份公式就会在窄屏路径上和生产分叉，而窄屏恰恰是最容易错的那一档。
+	 */
+	private static int panelInt(Object screen, String method) throws Exception {
+		java.lang.reflect.Method m = Class.forName(SCREEN_CLASS).getDeclaredMethod(method);
+		m.setAccessible(true);
+		return (Integer) m.invoke(screen);
+	}
+
 	/** 读 {@code PackageEditScreen} 的 {@code private static final int}（常量表达式有 ConstantValue，反射可取）。 */
 	private static int constInt(Class<?> c, String name) throws Exception {
 		java.lang.reflect.Field f = c.getDeclaredField(name);
@@ -417,16 +436,8 @@ final class EditShotClient {
 					   int weightBtnX, int weightBtnY, int weightBtnW, int weightBtnH,
 					   int gridX, int gridY) {
 
-		/**
-		 * 右上角「权重」按钮的实际面板相对 X。
-		 *
-		 * <p>必须复刻 {@code PackageEditScreen.weightBtnX()} 的**窄屏左移**逻辑：面板 408 宽在 320/341
-		 * 逻辑宽下会被右缘裁掉，按钮会贴到可见右缘。这里只做「取最小值」这一步（与生产同式），
-		 * 不引入任何新的坐标字面量。
-		 */
-		int weightButtonX(MinecraftClient mc) {
-			int visibleRight = mc.getWindow().getScaledWidth() - left - 2 - weightBtnW;
-			return Math.max(0, Math.min(weightBtnX, visibleRight));
-		}
+		// ★「权重」按钮的可见右缘钳位（weightBtnX()）不在夹具里复刻★：
+		// 那是**窄屏才生效**的分支，复刻一份等于又埋一个"改一边忘一边"的坑
+		// ⇒ 直接反射调用生产方法 `panelInt(screen, "weightBtnX")`。
 	}
 }
