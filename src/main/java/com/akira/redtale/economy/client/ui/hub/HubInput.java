@@ -212,9 +212,10 @@ final class HubInput {
 			return true;
 		}
 		if (inContent && host.page == HubPage.STORAGE) {
-			host.storageScroll = Math.max(0, Math.min(
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.SLOT_COUNT,
-					host.storageScroll + dir));
+			// ★上限只能按「总行数 − 屏内行数」★：原来按 SLOT_COUNT 钳，滚轮能滚到远超真实上限，
+			// 渲染又自己钳了一次 ⇒ 看到的窗口与命中的行错位（搬错格）。
+			int max = HubStoragePage.maxScrollRows(host.frame.contentW(), host.frame.contentH());
+			host.storageScroll = Math.max(0, Math.min(max, host.storageScroll + dir));
 			return true;
 		}
 		if (inContent && host.page == HubPage.SETTINGS) {

@@ -71,8 +71,7 @@ public final class HubStoragePage {
 		int gridBottom = y + h - 92;
 		int visibleRows = Math.max(1, (gridBottom - gy) / (CELL + GAP));
 		int totalRows = (slots + cols - 1) / cols;
-		scrollRows = Math.max(0, Math.min(scrollRows, Math.max(0, totalRows - visibleRows)));
-		List<ItemStack> stacks = WarehouseClientNetworking.SLOTS;
+		scrollRows = Math.max(0, Math.min(scrollRows, Math.max(0, totalRows - visibleRows)));		List<ItemStack> stacks = WarehouseClientNetworking.SLOTS;
 		dc.enableScissor(x, gy, x + w, Math.max(gy + 1, gridBottom));
 		for (int i = 0; i < slots; i++) {
 			int cx = x + (i % cols) * (CELL + GAP);
@@ -258,9 +257,25 @@ public final class HubStoragePage {
 	public record Result(Hit hit, int index) {
 	}
 
+	/**
+	 * 仓储网格的滚动上限（行数）。
+	 *
+	 * <p>★渲染原来自己 clamp、命中用未 clamp 的值★ ⇒ 滚轮下滑几次之后
+	 * `host.storageScroll` 已经超过真实上限，渲染显示的是钳位后的窗口、点击却按
+	 * 原始值算行 ⇒ 点到的格子与看到的错位（仓储是搬物品的地方，错位会搬错东西）。
+	 * 现在滚轮、渲染、命中三处都走这一个函数。
+	 */
+	public static int maxScrollRows(int w, int h) {
+		int cols = cols(w);
+		int visibleRows = Math.max(1, ((h - 92) - (16 + 22)) / (CELL + GAP));
+		int totalRows = (WarehouseClientNetworking.SLOT_COUNT + cols - 1) / cols;
+		return Math.max(0, totalRows - visibleRows);
+	}
+
 	public static Result click(double mx, double my, int x, int y, int w, int h, int button,
 			int scrollRows) {
 		int bx = x + w - 132;
+		scrollRows = Math.max(0, Math.min(scrollRows, maxScrollRows(w, h)));
 		if (confirmUpgrade && my >= y + 18 && my < y + 32) {
 			final int cw2 = Math.min(w, 300);
 			if (mx >= x + cw2 - 74 && mx < x + cw2 - 40) return new Result(Hit.CONFIRM_YES, -1);
