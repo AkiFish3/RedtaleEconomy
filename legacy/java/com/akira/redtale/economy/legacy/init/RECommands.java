@@ -417,10 +417,15 @@ public class RECommands {
     }
 
     /**
-     * {@code /redtale bound ownerprobe}：归属判定「名字 / UUID」自检（B57）。
+     * {@code /redtale bound ownerprobe}：归属判定「名字即钥匙」自检。
      *
      * <p>判据全部走 {@link com.akira.redtale.economy.legacy.bound.BoundItemHandler#ownerMatches}
-     * （生产代码同一个方法），因此能证伪「UUID 写了但判定不看」这种假修复。</p>
+     * （生产代码同一个方法），因此能证伪「写了但判定不看」这种假修复。</p>
+     *
+     * <p>★口径反转（2026-10-23 Aki 定案）★：B57 曾改成「UUID 优先 + 旧档补 UUID」，
+     * 现回退为**只认名字**（本服自用，正版/盗版存档迁移都是手动，UUID 兜底只会把手动迁移后的物品锁死）。
+     * 代价是改名/重名即易主，由 OP 手动处理。断言里「改名后不可用 / 同名异 UUID 可用」是这条口径的锚点，
+     * 删掉它们等于让未来的人可以静默改回 UUID 而全套测试仍是绿的。</p>
      */
     private static int ownerProbe(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
@@ -428,50 +433,41 @@ public class RECommands {
         java.util.UUID bob = java.util.UUID.fromString("00000000-0000-4000-8000-0000000000b2");
         int[] c = new int[]{0, 0}; // [fail, total]
 
-        // ① 绑定必须双写（旧实现只写名字）
+        // ① 绑定只写名字（★不再写 UUID★）
         ItemStack bound = new ItemStack(Items.DIAMOND);
-        com.akira.redtale.economy.legacy.bound.BoundItemHandler.writeOwner(bound, alice, "Alice");
+        com.akira.redtale.economy.legacy.bound.BoundItemHandler.writeOwner(bound, "Alice");
         check(source, c, "绑定后 hasOwner", true,
                 com.akira.redtale.economy.legacy.bound.BoundItemHandler.hasOwner(bound));
-        check(source, c, "绑定后 uuid=Alice", true,
-                alice.equals(com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerUuid(bound)));
         check(source, c, "绑定后 name=Alice", true,
                 "Alice".equals(com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerName(bound)));
+        check(source, c, "绑定不写UUID", true,
+                com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerUuid(bound) == null);
 
-        // ② 正常路径：本人 / 改名（UUID 不变）
+        // ② 名字即钥匙：本人可用；★改名后不可用★（这是「只认 ID」口径的锚点）
         check(source, c, "本人可用", true, matches(bound, alice, "Alice"));
-        check(source, c, "改名后仍可用", true, matches(bound, alice, "Alice2"));
+        check(source, c, "改名后不可用", false, matches(bound, alice, "Alice2"));
 
-        // ③ ★核心负样本★ 同名但 UUID 不同 ⇒ 必须拒绝
-        //    旧实现按名字判 ⇒ 这里会 true（旧名字被抢注即可易主，改名则本人永久锁死）
-        check(source, c, "同名异UUID被拒", false, matches(bound, bob, "Alice"));
+        // ③ ★同名即可用★：本服自用、存档迁移手动，重名不设防
+        //    （B57 时期这里断言的是「必须拒绝」，2026-10-23 定案后反转）
+        check(source, c, "同名异UUID可用", true, matches(bound, bob, "Alice"));
 
-        // ④ 旧档（只有名字）：仍要能用，且迁移后升级成 UUID
-        ItemStack legacy = new ItemStack(Items.DIAMOND);
-        legacy.getOrCreateNbt().putString("BoundOwnerName", "Alice");
-        check(source, c, "旧档(仅名字)本人可用", true, matches(legacy, alice, "Alice"));
-        // 旧档没有 UUID，名字是唯一钥匙 ⇒ 这里必须换**不同的名字**才算「他人」；
-        // 用「同名不同 UUID」测旧档永远是 true（旧档压根没有 UUID 可比），那会把判据本身写错。
-        check(source, c, "旧档(仅名字)他人被拒", false, matches(legacy, bob, "Bob"));
-        com.akira.redtale.economy.legacy.bound.BoundItemHandler.adoptOwner(legacy, alice);
-        check(source, c, "迁移后 uuid 已写入", true,
-                alice.equals(com.akira.redtale.economy.legacy.bound.BoundItemHandler.getOwnerUuid(legacy)));
-        check(source, c, "迁移后同名异UUID被拒", false, matches(legacy, bob, "Alice"));
+        // ④ 精确匹配，不忽略大小写
+        check(source, c, "大小写不同被拒", false, matches(bound, alice, "alice"));
 
-        // ⑤ 无主 = 公共；只有 UUID 没有名字也照样按 UUID 判
+        // ⑤ 无主 = 公共；只有 UUID 没有名字 = 也算公共（没有钥匙的锁不成立）
         ItemStack free = new ItemStack(Items.DIAMOND);
         check(source, c, "无主=公共", true, matches(free, bob, "Bob"));
         ItemStack uuidOnly = new ItemStack(Items.DIAMOND);
         uuidOnly.getOrCreateNbt().putUuid("BoundOwnerUuid", alice);
-        check(source, c, "仅UUID本人可用", true, matches(uuidOnly, alice, "Whatever"));
-        check(source, c, "仅UUID他人被拒", false, matches(uuidOnly, bob, "Alice"));
+        check(source, c, "仅UUID无名字=公共", true, matches(uuidOnly, bob, "Bob"));
 
-        // ⑥ 损坏的 UUID 不能变成永久锁死 ⇒ 回退名字
-        ItemStack broken = new ItemStack(Items.DIAMOND);
-        NbtCompound btag = broken.getOrCreateNbt();
+        // ⑥ 老物品上残留的 UUID（B57 写过，甚至可能写的是别人）不得影响判定
+        ItemStack legacy = new ItemStack(Items.DIAMOND);
+        NbtCompound btag = legacy.getOrCreateNbt();
         btag.putString("BoundOwnerName", "Alice");
-        btag.putString("BoundOwnerUuid", "not-a-uuid");
-        check(source, c, "UUID损坏回退名字", true, matches(broken, alice, "Alice"));
+        btag.putUuid("BoundOwnerUuid", bob);
+        check(source, c, "残留UUID不影响(同名可用)", true, matches(legacy, bob, "Alice"));
+        check(source, c, "残留UUID不影响(异名被拒)", false, matches(legacy, bob, "Bob"));
 
         final int failures = c[0];
         final int total = c[1];

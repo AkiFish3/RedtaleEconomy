@@ -17,10 +17,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class BoundItemHandler {
     private static final String OWNER_NAME_KEY = "BoundOwnerName";
-    /** 归属人的 UUID（{@code NbtCompound.putUuid} 的 `[I;` 四段式）。
-     *  ★必须与名字并存、且判定以 UUID 为准★：只存名字时，玩家改名（正版改名 / 离线服改 usercache）
-     *  会让绑定物永久锁死；更糟的是旧名字被别人抢占后，**别人能直接拿走你的绑定物**（名字即钥匙）。
-     *  名字保留只用于 tooltip / 旧档回退。 */
+    /** 历史遗留键：B57 曾双写 UUID 并以 UUID 判定；**2026-10-23 Aki 定案回退为「只认名字」**
+     *  （本服自用，正版/盗版的存档迁移都是手动操作，UUID 兜底没有收益，反而把手动迁移后的物品锁死）。
+     *  该键现在**只作诊断读取，不参与任何归属判定**；老物品上残留的值不清洗、也不影响结果。
+     *  ★不要恢复双写 / UUID 优先★ —— 闸门 `_b57_owner_uuid.py` 已按新口径反向看守。 */
     private static final String OWNER_UUID_KEY = "BoundOwnerUuid";
 
     public static final String MSG_NOT_OWNER = "bound.error.not_owner";
@@ -42,37 +42,31 @@ public class BoundItemHandler {
     }
 
     /**
-     * 为物品绑定所有者（名字 + UUID 双写）
+     * 为物品绑定所有者（**只写名字**，见类内 UUID 键的说明）
      */
     public static void bindToPlayer(ItemStack stack, PlayerEntity player) {
         if (stack.isEmpty()) return;
         if (!BoundItemsConfig.isBoundItem(stack)) return;
         if (hasOwner(stack)) return;
 
-        writeOwner(stack, player.getUuid(), player.getName().getString());
+        writeOwner(stack, player.getName().getString());
         applyOwnerLore(stack);
-        LegacyInit.LOGGER.info("Bound item {} to player {} ({})", stack.getItem().getTranslationKey(),
-                player.getName().getString(), player.getUuid());
+        LegacyInit.LOGGER.info("Bound item {} to player {}", stack.getItem().getTranslationKey(),
+                player.getName().getString());
     }
 
     /**
-     * 写归属（UUID + 名字）。
+     * 写归属（**只写名字**）。
      *
      * <p>抽成不依赖 {@code PlayerEntity} 的纯写入方法，是为了让
-     * {@code /redtale bound ownerprobe} 能在没有真人/实体的情况下断言
-     * 「UUID 真的写进去了」（B57）。</p>
+     * {@code /redtale bound ownerprobe} 能在没有真人/实体的情况下断言写入结果。</p>
+     *
+     * <p>★签名故意不带 UUID★：带了就会有人顺手 putUuid —— 而判定已经不看了，写进去只会制造死数据。</p>
      */
-    public static void writeOwner(ItemStack stack, UUID uuid, String name) {
+    public static void writeOwner(ItemStack stack, String name) {
         if (stack.isEmpty()) return;
-        NbtCompound tag = stack.getOrCreateNbt();
-        if (uuid != null) tag.putUuid(OWNER_UUID_KEY, uuid);
-        if (name != null && !name.isEmpty()) tag.putString(OWNER_NAME_KEY, name);
-    }
-
-    /** 旧档迁移用：只补 UUID，不动名字/lore。 */
-    public static void adoptOwner(ItemStack stack, UUID uuid) {
-        if (stack.isEmpty() || uuid == null) return;
-        stack.getOrCreateNbt().putUuid(OWNER_UUID_KEY, uuid);
+        if (name == null || name.isEmpty()) return;
+        stack.getOrCreateNbt().putString(OWNER_NAME_KEY, name);
     }
 
     /**
@@ -103,12 +97,14 @@ public class BoundItemHandler {
     }
 
     /**
-     * 检查物品是否已绑定所有者（名字或 UUID 任一存在即算有主）
+     * 检查物品是否已绑定所有者（**只认名字**）。
+     *
+     * <p>★UUID 不算有主★：只写了 UUID 没有名字的物品按「公共」处理 —— 判定口径只有名字，
+     * 保留一个没有钥匙的锁只会让物品永远说不清归谁。</p>
      */
     public static boolean hasOwner(ItemStack stack) {
         if (!stack.hasNbt()) return false;
-        NbtCompound tag = stack.getNbt();
-        return tag.contains(OWNER_NAME_KEY) || tag.containsUuid(OWNER_UUID_KEY);
+        return stack.getNbt().contains(OWNER_NAME_KEY);
     }
 
     /**
@@ -120,15 +116,17 @@ public class BoundItemHandler {
     }
 
     /**
-     * 获取物品的归属 UUID；旧存档（只有名字）返回 {@code null}。
+     * 获取物品的归属 UUID（**仅诊断/日志用，不参与判定**）。
+     *
+     * <p>这是 B57 时期写入的历史字段。现在归属只看名字，这里留着是为了：① 排查老存档时能看出
+     * 「这件物品当初被谁绑过」；② 探针能断言「新绑定不再写 UUID」。返回 {@code null} 是常态。</p>
      */
     public static UUID getOwnerUuid(ItemStack stack) {
         if (!stack.hasNbt() || !stack.getNbt().containsUuid(OWNER_UUID_KEY)) return null;
         try {
             return stack.getNbt().getUuid(OWNER_UUID_KEY);
         } catch (RuntimeException e) {
-            // 损坏的 UUID 不能变成"永久锁死"：当作没有，回退到名字判定
-            LegacyInit.LOGGER.warn("Malformed {} on {}, falling back to name", OWNER_UUID_KEY,
+            LegacyInit.LOGGER.warn("Malformed {} on {} (ignored)", OWNER_UUID_KEY,
                     stack.getItem().getTranslationKey());
             return null;
         }
@@ -137,17 +135,20 @@ public class BoundItemHandler {
     /**
      * **纯判定**：不判 OP、不写盘、不补 lore（供 {@code isOwner} 与探针共用）。
      *
-     * <p>口径（B57）：</p>
+     * <p>口径（2026-10-23 Aki 定案）：**名字是唯一钥匙**。</p>
      * <ol>
      *   <li>无主 ⇒ true（公共物品）</li>
-     *   <li>有 UUID ⇒ **只认 UUID**。名字不参与，否则改名/重名就能易主</li>
-     *   <li>只有名字（旧档）⇒ 按名字，且首次交互会补 UUID（{@link #adoptOwner}）</li>
+     *   <li>有主 ⇒ {@code ownerName.equals(name)}；条目里没有名字的一律当公共</li>
      * </ol>
+     *
+     * <p>★为什么回退★：本服自用，正版/盗版的存档迁移都是**手动**的。UUID 优先带来的收益
+     * （防改名易主）在这里不存在，代价却是「手动搬档后 UUID 变了 ⇒ 玩家自己的绑定物全部锁死」。
+     * 改名/重名即易主是可接受的，由 OP 手动处理。</p>
+     *
+     * <p>{@code uuid} 参数保留只为不打断探针的调用签名，**函数体内不得读取它**（闸门 O1 看守）。</p>
      */
     public static boolean ownerMatches(ItemStack stack, UUID uuid, String name) {
         if (!hasOwner(stack)) return true;
-        UUID ownerUuid = getOwnerUuid(stack);
-        if (ownerUuid != null) return ownerUuid.equals(uuid);
         String ownerName = getOwnerName(stack);
         if (ownerName == null || ownerName.isEmpty()) return true;
         return ownerName.equals(name);
@@ -171,17 +172,11 @@ public class BoundItemHandler {
         boolean result = ownerMatches(stack, player.getUuid(), playerName);
         // 只服务端写，避免客户端 NBT 抖动
         if (!player.getWorld().isClient()) {
-            if (result && getOwnerUuid(stack) == null) {
-                // 旧档（只有名字）第一次被合法主人碰到 ⇒ 补 UUID。之后改名/重名都不再改归属。
-                adoptOwner(stack, player.getUuid());
-                LegacyInit.LOGGER.info("Migrated bound owner name={} -> uuid={} on {}", playerName,
-                        player.getUuid(), stack.getItem().getTranslationKey());
-            }
             // 旧存档的绑定物品只有 BoundOwnerName、没有 lore ⇒ 首次被交互时补一次
             applyOwnerLore(stack);
         }
-        LegacyInit.LOGGER.debug("isOwner result: {} for player {} on item owned by {} (uuid {})", result,
-                playerName, getOwnerName(stack), getOwnerUuid(stack));
+        LegacyInit.LOGGER.debug("isOwner result: {} for player {} on item owned by {}", result,
+                playerName, getOwnerName(stack));
         return result;
     }
 
