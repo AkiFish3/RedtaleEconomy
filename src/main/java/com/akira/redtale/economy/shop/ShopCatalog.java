@@ -158,6 +158,8 @@ public final class ShopCatalog implements ShopSource {
 		ItemLang.clearCache();
 		// T08/T09：折扣与轮换表跟着商店数据一起重载，避免「改了 discounts.json 要重启」
 		ShopDiscounts.reload();
+		// T09：轮换配置本身带缓存（逐商品读盘会把 io 打满）⇒ 重载时必须显式清
+		ShopRotation.reload();
 		ROTATION.clear();
 		priceViolations = 0;
 		priceViolationSample = "";

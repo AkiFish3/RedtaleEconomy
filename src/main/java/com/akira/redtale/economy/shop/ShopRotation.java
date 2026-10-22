@@ -35,6 +35,11 @@ public final class ShopRotation {
 
 	public static final String FILE = "shop/rotation.json";
 
+	/** 配置缓存（见 {@link #reload()} 注释）；{@code null} = 未加载。 */
+	private static volatile JsonObject CACHE;
+	private static volatile Path CACHE_PATH;
+	private static volatile List<String> SHOPS_CACHE;
+
 	private ShopRotation() {
 	}
 
@@ -70,6 +75,8 @@ public final class ShopRotation {
 	}
 
 	public static List<String> shops() {
+		List<String> cached = SHOPS_CACHE;
+		if (cached != null) return cached;
 		List<String> out = new ArrayList<>();
 		try {
 			JsonElement el = root().get("shops");
@@ -81,13 +88,43 @@ public final class ShopRotation {
 		} catch (RuntimeException ignored) {
 			// 配置坏了就是「全部商店」
 		}
-		return out.isEmpty() ? List.of("*") : out;
+		List<String> built = out.isEmpty() ? List.of("*") : List.copyOf(out);
+		SHOPS_CACHE = built;
+		return built;
+	}
+
+	/**
+	 * 清缓存：{@code ShopCatalog.reload()}（含 {@code /shop reload}）调用。
+	 *
+	 * <p>★为什么必须缓存★：{@link #root()} 原来每次都 {@code Files.isRegularFile + readString +
+	 * JsonParser.parseString}，而 {@code enabled()}/{@code coversShop()} 在
+	 * {@code ShopCatalog.filtered()} 里是<b>逐商品</b>调用的 —— 一页 40 件就是 80 次磁盘
+	 * stat（+ 文件存在时 80 次读盘解析），2803 件的店翻 71 页 = 约 40 万次 syscall。
+	 * 实测 {@code ShopPagingPerfTest} 翻完全库 2378ms（预算 1000ms）。
+	 */
+	public static void reload() {
+		CACHE = null;
+		CACHE_PATH = null;
+		SHOPS_CACHE = null;
 	}
 
 	private static JsonObject root() {
 		Path f = path();
-		if (!Files.isRegularFile(f)) return new JsonObject();
+		JsonObject c = CACHE;
+		if (c != null && f.equals(CACHE_PATH)) return c;
+		synchronized (ShopRotation.class) {
+			if (CACHE != null && f.equals(CACHE_PATH)) return CACHE;
+			CACHE = read(f);
+			CACHE_PATH = f;
+			SHOPS_CACHE = null;
+			return CACHE;
+		}
+	}
+
+	/** 真正读盘（只在缓存未命中时走这里）。 */
+	private static JsonObject read(Path f) {
 		try {
+			if (!Files.isRegularFile(f)) return new JsonObject();
 			JsonElement el = JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8));
 			return el.isJsonObject() ? el.getAsJsonObject() : new JsonObject();
 		} catch (Exception e) {
