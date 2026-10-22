@@ -170,9 +170,29 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     }
 
     private void chip(DrawContext context, int x, int y, int w, int h, boolean active, boolean hover, int accent) {
-        int fill = active ? (0xFF000000 | accent) : (hover ? 0xFF3A3A44 : 0xFF26262E);
+        int fill = chipFill(active, hover, accent);
         context.fill(x, y, x + w, y + h, fill);
         context.fill(x, y, x + w, y + 1, active ? 0xFFFFFFFF : 0xFF4A4A55);
+    }
+
+    /** chip 底色 —— 绘制与文字取色共用这一份，避免"填充用 A 色、文字按 B 色算对比度"。 */
+    private static int chipFill(boolean active, boolean hover, int accent) {
+        return active ? (0xFF000000 | (accent & 0xFFFFFF)) : (hover ? 0xFF3A3A44 : 0xFF26262E);
+    }
+
+    /**
+     * 给定底色挑可读的文字色（亮度 ITU-R BT.601）。
+     *
+     * <p>★硬编码文字色是这类自绘面板的通病★：第 40 轮是「标题/物品栏用 vanilla 的 0x404040 压在 0xFF1B1B1F 上」，
+     * 本轮是「档位 chip 文字写死 0xFF101014，而未选中的 chip 底色是 0xFF26262E」——
+     * 表现都是"字看不见"，但零报错、截图里只是少了几行字，很容易被当成没画。
+     */
+    private static int textOn(int argb) {
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        int lum = (299 * r + 587 * g + 114 * b) / 1000;
+        return lum >= 128 ? 0xFF101014 : 0xFFEDEDF2;
     }
 
     private void slotBg(DrawContext context, int x, int y) {
@@ -187,8 +207,17 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         // 深灰字（64,64,64 on 27,27,31）几乎看不见 ⇒ 标题和「物品栏」都像丢了。
         // 这里按面板配色自己画，位置仍沿用 titleX/titleY 与 playerInventoryTitleX/Y（= 8 / INV_Y-12），
         // 与 HandledScreen 完全同口径，接入原版坐标体系不变。
-        int x = left();
-        int y = top();
+        // ★这里必须是「面板相对坐标」，不能加 left()/top()★（本轮 javap 实证）：
+        // HandledScreen.render 在调 drawForeground 之前已经 `matrices.translate(x, y)`（字节码
+        // 33..51 push+translate，drawForeground 在 179 调用，pop 在 467）⇒ 方法内部 (0,0) 就是面板左上角。
+        // 同时传进来的 mouseX/mouseY 是**绝对坐标**（字节码 177/178 直接 iload_2/iload_3）⇒
+        // 如果哪天要在这里做悬停判定，必须先 `mouseX - left()`，不能直接比面板相对坐标（门 B42 的 F2）。
+        // 旧实现错在绘制：`int x = left(); int y = top();` 让 chip 文案、权重表图标/数字/名字、总权重
+        // 全部整体右移 left()、下移 top()（9~36px / 0~15px，随分辨率变化）—— 底槽由 drawBackground 按
+        // 绝对坐标画、文字整体偏移 ⇒ 字与自己的格子错开一段，看起来像"标签串行/漏画"。
+        // 零报错、零日志、静态门原先也查不出（口径全在渲染期）。
+        final int x = 0;
+        final int y = 0;
         context.drawText(this.textRenderer, this.title, this.titleX, this.titleY, 0xFFEDEDF2, false);
         context.drawText(this.textRenderer, this.playerInventoryTitle,
                 this.playerInventoryTitleX, this.playerInventoryTitleY, 0xFF8E8E9A, false);
@@ -199,19 +228,26 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             int cx = x + 8 + i * (MODE_CHIP_W + MODE_CHIP_GAP);
             Text label = Text.translatable("screen.redtale_economy.edit.mode."
                     + modes[i].name().toLowerCase());
+            boolean active = PackageEditClientState.mode().equals(modes[i].name());
             context.drawText(this.textRenderer, label, cx + (MODE_CHIP_W - this.textRenderer.getWidth(label)) / 2,
-                    y + MODE_Y + 2, 0xFFEDEDF2, false);
+                    y + MODE_Y + 2, textOn(chipFill(active, false, 0xFF4A7BD0)), false);
         }
 
         // 档位 chip 文案
         List<PackageCatalog.Tier> tiers = editableTiers();
+        String currentTier = handler.currentTierId();
         for (int i = 0; i < tiers.size(); i++) {
             PackageCatalog.Tier tier = tiers.get(i);
             int cx = x + 8 + i * TIER_CHIP_W;
             String name = tier.nameZh();
+            // ★文字色必须跟着 chip 底色走★：旧实现写死 0xFF101014（近黑），而**未选中**的 chip 底色是
+            // 0xFF26262E ⇒ 六个档位里只有当前档那一个字看得见，其余五个是黑字压黑底（肉眼=标签缺失）。
+            // 与第 40 轮修过的「标题深灰压在深底」同一类问题，只是这次在 chip 上。
+            boolean active = tier.id().equals(currentTier);
+            int chipColor = 0xFF000000 | tier.color();
             context.drawText(this.textRenderer, name,
                     cx + (TIER_CHIP_W - 1 - this.textRenderer.getWidth(name)) / 2,
-                    y + TIER_Y + 2, 0xFF101014, false);
+                    y + TIER_Y + 2, textOn(chipFill(active, false, chipColor)), false);
         }
 
         // 权重表内容
