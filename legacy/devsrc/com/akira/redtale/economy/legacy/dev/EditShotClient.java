@@ -28,7 +28,7 @@ import java.nio.file.StandardOpenOption;
  * 0~11 开界面 / 换档 / 切模式 / 塞格 / 三次「+」；12~17 入口②（按钮 → 点格 → W 关）；
  * 18~25 退出编辑态 / 三次「−」造权重 0 / 入口①（hover + W）；26 关窗（三保险第 1 层）；
  * 27~30 **再开一次**（§七④：重开后客户端镜像与角标是否还是 4 金 / 0 灰）；
- * 31~34 **原版背包**（§七⑤：W 不得在该界面被消费）；35~36 回读 + DONE。
+ * 31~34 **原版箱子**（§七⑤：W 不得在该界面被消费；第 51 轮从背包改成箱子，见 phase 31 注释）；35~36 回读 + DONE。
  *
  * <p>★★几何一律**运行期解析**，本文件不留任何面板坐标字面量★★（第 46 轮重写）：
  * 旧实现把 {@code PANEL_W=300 / PANEL_H=318 / MODE_Y=20 / TIER_Y=36 / TABLE_X=176} 抄了一份，
@@ -468,14 +468,21 @@ final class EditShotClient {
 				}
 			}
 			case 31 -> {
-				// ——— 规格 §七⑤「普通箱子/背包行为完全不变」：打开**原版背包** ———
-				// 走与玩家按 E 完全相同的路径 `new InventoryScreen(player)`；handler 就是
-				// `playerScreenHandler`，与我们一行关系都没有。这里要证的是**键位没被全局劫持**：
-				// 我们的 W 只在本界面里消费，原版界面上必须返回 false。
+				// ——— 规格 §七⑤「普通箱子/背包行为完全不变」：打开**原版箱子界面** ———
+				// ★第 51 轮改法★：原先开 `new InventoryScreen(player)`，但**创造模式**下它在第一个 tick
+				// 就被原版 `InventoryScreen.handledScreenTick()` 自己换成 `CreativeInventoryScreen`
+				// （javap 实证：`hasCreativeInventory()` → `client.setScreen(new CreativeInventoryScreen(...))`），
+				// 而创造物品栏有**搜索框**，W 会被 TextFieldWidget 当成输入吞掉 ⇒ 量到的是原版搜索框，
+				// 不是我们的键位（判据 24 假红）。
+				// 改用规格原话「普通箱子」：`createGeneric9x3` + `GenericContainerScreen`（无文本框、不自替换）。
 				if (++timer >= 12) {
 					timer = 0;
 					try {
-						mc.setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(mc.player));
+						var handler = net.minecraft.screen.GenericContainerScreenHandler
+								.createGeneric9x3(1, mc.player.getInventory());
+						mc.setScreen(new net.minecraft.client.gui.screen.ingame.GenericContainerScreen(
+								handler, mc.player.getInventory(),
+								net.minecraft.text.Text.literal("vanilla chest")));
 						log("T80 vanilla screen=" + screenName(mc));
 					} catch (Throwable t) {
 						log("VANILLA-UNAVAILABLE " + t);
@@ -486,9 +493,16 @@ final class EditShotClient {
 			case 32 -> {
 				if (++timer >= 8) {
 					timer = 0;
+					String before = screenName(mc);
 					boolean handled = mc.currentScreen != null
 							&& mc.currentScreen.keyPressed(KEY_W, 0, 0);
-					log("T80 vanilla keyW=" + handled);
+					// ★第 51 轮：`handled` 不能当判据★ —— javap 实证 1.20.1 的
+					// `HandledScreen.keyPressed` 末尾是 `iconst_1 / ireturn`，**任何**容器界面
+					// 对任何键都返回 true（原版行为，不是我们的键位被劫持）。
+					// 真正要证的是「按完 W 之后界面还是原版那一屏，没有被我们接管/关掉」。
+					log("T80 vanilla keyW=" + handled
+							+ " after=" + screenName(mc)
+							+ " same=" + before.equals(screenName(mc)));
 					phase = 33;
 				}
 			}
