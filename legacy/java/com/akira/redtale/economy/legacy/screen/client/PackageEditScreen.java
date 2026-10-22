@@ -4,6 +4,7 @@ import com.akira.redtale.economy.legacy.data.PackageCatalog;
 import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.init.RENetworking;
 import com.akira.redtale.economy.legacy.screen.PackageEditHandler;
+import com.akira.redtale.economy.legacy.screen.WeightEcho;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.gui.screen.Screen;
@@ -107,6 +108,14 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private static final int STEP_TAP = 1;
     private static final int STEP_SHIFT = 10;
     private long holdNextMs = 0L;
+    /**
+     * 权重「乐观回显」：记住刚发出去、还没被服务端 state 包确认的值。
+     *
+     * <p>★没有它就是「连点/长按的步进静默丢失」★（见 {@link WeightEcho} 的类注释）：
+     * 回包最早也要下一 tick，而连发周期 HOLD_REPEAT_MS = 50ms = 一 tick ⇒ 同一基准被反复使用，
+     * 重复的值被 {@link #sendWeight} 的「值没变不发包」守卫丢掉。公网（FRP，RTT 80~150ms）更严重。
+     */
+    private final WeightEcho echo = new WeightEcho();
     /** 上一帧的鼠标位置（绝对逻辑坐标）——按 W 时用它决定气泡出现在哪里。 */
     private int lastMouseX = 0;
     private int lastMouseY = 0;
@@ -346,7 +355,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             if (stack.isEmpty()) continue;
             int sx = PackageEditHandler.GRID_X + (i % PackageEditHandler.GRID_COLS) * 18 + 1;
             int sy = PackageEditHandler.GRID_Y + (i / PackageEditHandler.GRID_COLS) * 18 + 1;
-            drawWeightBadge(context, sx, sy, PackageEditClientState.weight(i), weightMode);
+            drawWeightBadge(context, sx, sy, weightOf(i), weightMode);
         }
 
         // 模式 chip 文案
@@ -399,7 +408,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             // 图标（不缩放，16×16 正好塞进 18 行高）
             context.drawItem(stack, tx + 1, ry + 1);
 
-            int weight = PackageEditClientState.weight(slot);
+            int weight = weightOf(slot);
             context.drawText(this.textRenderer, "-", tx + BTN_MINUS_X + 3, ry + 5, 0xFFB9B9C4, false);
             String w = String.valueOf(weight);
             context.drawText(this.textRenderer, w, tx + WEIGHT_X + 17 - this.textRenderer.getWidth(w),
@@ -421,7 +430,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             rightColor = 0xFF58D6A8;
         } else {
             int total = 0;
-            for (int slot : entries) total += Math.max(0, PackageEditClientState.weight(slot));
+            for (int slot : entries) total += Math.max(0, weightOf(slot));
             right = Text.translatable("screen.redtale_economy.edit.total", total,
                     entries.size()).getString();
             rightColor = 0xFF8E8E9A;
@@ -455,6 +464,8 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         if (popup != null && this.handler.getSlot(popup.slot()).getStack().isEmpty()) {
             popup = null;
             clearHold();
+            // 目标格子已被清空 ⇒ 还没被服务端确认的待确认权重也一并作废（那条记录已不存在）
+            echo.clear();
         }
         // 长按连发（规格 §六 第 3 条）：0.3s 后每 50ms ±1。
         // ★不能用 tick() 当节拍器★：`HandledScreen.tick()` 是 **final**（javac 实测「无法覆盖」），
@@ -484,7 +495,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             if (!stack.isEmpty()) {
                 tip.add(stack.getName());
                 tip.add(Text.translatable("screen.redtale_economy.edit.weight",
-                        PackageEditClientState.weight(hoverGridSlot)).formatted(Formatting.GRAY));
+                        weightOf(hoverGridSlot)).formatted(Formatting.GRAY));
                 tip.add(Text.translatable("screen.redtale_economy.edit.hint").formatted(Formatting.DARK_GRAY));
             }
         } else if (hoverTableRow >= 0) {
@@ -517,7 +528,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             ItemStack stack = this.handler.getSlot(popup.slot()).getStack();
             if (!stack.isEmpty()) {
                 popup.draw(context, this.textRenderer, stack,
-                        PackageEditClientState.weight(popup.slot()), mouseX, mouseY);
+                        weightOf(popup.slot()), mouseX, mouseY);
             }
         }
     }
@@ -589,7 +600,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                 if (region == WeightPopup.ID_CONFIRM) {
                     // 「确认」= 把当前值再发一次（幂等）+ 关闭。规格 §四 是「改即发」，确认只是收尾动作，
                     // 但它必须是**能用的按钮**：旧式"只关不加"的假按钮点了没反应更让人困惑。
-                    sendWeight(popup.slot(), PackageEditClientState.weight(popup.slot()));
+                    sendWeight(popup.slot(), weightOf(popup.slot()));
                     closePopup();
                     return true;
                 }
@@ -664,6 +675,8 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                 }
                 if (button == 1) {
                     // 右键删条目（拖回背包也可以，但右键更快）
+                    // ★同时作废待确认权重★：服务端会把该格权重复位成 1，客户端若还攥着旧值会一直显示它
+                    echo.clear();
                     RENetworking.sendEditAction(RENetworking.ACT_CLEAR_SLOT, buf -> buf.writeVarInt(slot));
                     return true;
                 }
@@ -768,6 +781,16 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     }
 
     /**
+     * 该格当前应显示的权重 = 镜像 + 尚未确认的发送值（{@link WeightEcho}）。
+     *
+     * <p>★所有「显示」与「算步进基准」都必须走这里★：直接读镜像会让连点/长按的中间值不可见，
+     * 表现是「点了没反应，过一会儿才跳一下」。
+     */
+    private int weightOf(int slot) {
+        return echo.base(slot, PackageEditClientState.weight(slot));
+    }
+
+    /**
      * 当前步长：按住 Shift 走 ±10（规格 §二「单击 ±1；按住 Shift 单击 ±10」+ §六「Shift 时连发也是 ±10」）。
      *
      * <p>★第 44 轮的实现漏了这一条★：气泡的 ± 一律写死 ±1，长按也只是 ±1 —— 权重上限 999，
@@ -787,13 +810,20 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
 
     /** 发一条 SET_WEIGHT（钳到 [0, maxWeight]）。值没变就不发，避免长按到边界后每 50ms 刷包。 */
     private void stepWeight(int slot, int delta) {
-        int current = PackageEditClientState.weight(slot);
-        sendWeight(slot, current + delta);
+        sendWeight(slot, weightOf(slot) + delta);
     }
 
+    /**
+     * 唯一发包口 + 唯一钳位点。
+     *
+     * <p>基准取 {@link #weightOf}（含待确认值）而不是镜像 —— 否则回包未到时的连点/连发会算出
+     * 与服务端已有值相同的数字，被下面的「值没变」守卫丢掉，步进静默消失。
+     */
     private void sendWeight(int slot, int value) {
+        int mirror = PackageEditClientState.weight(slot);
         int clamped = Math.max(0, Math.min(PackageEditClientState.maxWeight(), value));
-        if (clamped == PackageEditClientState.weight(slot)) return;
+        if (clamped == echo.base(slot, mirror)) return;
+        echo.sent(slot, clamped, mirror);
         RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
                 buf -> { buf.writeVarInt(slot); buf.writeVarInt(clamped); });
     }

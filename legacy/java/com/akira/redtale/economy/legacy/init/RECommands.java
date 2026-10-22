@@ -280,14 +280,15 @@ public class RECommands {
             return 0;
         }
 
-        int fail = 0;
+        // ★分母由计数器算，不写死★（R113）：每加一条判据都得同步改字面量，漏改就说谎。
+        int[] c = new int[]{0, 0}; // [fail, total]
         // ① 拖出：Slot.onTakeItem → Inventory.removeStack(slot, amount)
         {
             com.akira.redtale.economy.legacy.misc.EditablePackageInventory inv = newProbeInventory(pkgItem);
             inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
             inv.setWeight(0, 42);
             inv.removeStack(0, 1);
-            fail += expect(source, "removeStack(slot,amount)", 1, inv.getWeight(0));
+            expect(c, source, "removeStack(slot,amount)", 1, inv.getWeight(0));
         }
         // ② removeStack(slot) 单参重载
         {
@@ -295,7 +296,7 @@ public class RECommands {
             inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
             inv.setWeight(0, 42);
             inv.removeStack(0);
-            fail += expect(source, "removeStack(slot)", 1, inv.getWeight(0));
+            expect(c, source, "removeStack(slot)", 1, inv.getWeight(0));
         }
         // ③ shift-click 移出：ScreenHandler.quickMove 里 `slot.setStack(ItemStack.EMPTY)`
         //    链路 Slot.setStack → setStackNoCallbacks → Inventory.setStack（不经过 removeStack）
@@ -304,7 +305,7 @@ public class RECommands {
             inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
             inv.setWeight(0, 42);
             inv.setStack(0, ItemStack.EMPTY);
-            fail += expect(source, "setStack(EMPTY)", 1, inv.getWeight(0));
+            expect(c, source, "setStack(EMPTY)", 1, inv.getWeight(0));
         }
         // ④ 负对照：格子仍有物品时**不许**重置（原位换物品 = 权重跟格子走，规格 §四）
         {
@@ -312,7 +313,7 @@ public class RECommands {
             inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
             inv.setWeight(0, 42);
             inv.setStack(0, new ItemStack(Items.APPLE, 1));
-            fail += expect(source, "setStack(non-empty)", 42, inv.getWeight(0));
+            expect(c, source, "setStack(non-empty)", 42, inv.getWeight(0));
         }
         // ⑤ 权重能真落进 NBT 并读回（前四条都靠内存数组，若不落盘则编辑器白改）
         {
@@ -322,7 +323,7 @@ public class RECommands {
             inv.saveToNbt();
             com.akira.redtale.economy.legacy.misc.EditablePackageInventory reread =
                     new com.akira.redtale.economy.legacy.misc.EditablePackageInventory(inv.boundStack());
-            fail += expect(source, "nbt-roundtrip", 77, reread.getWeight(0));
+            expect(c, source, "nbt-roundtrip", 77, reread.getWeight(0));
         }
 
         // ⑥ ALL 模式不看权重：weight=0 的条目**照样要发**（规格 §三「ALL = 全部给」；
@@ -338,13 +339,13 @@ public class RECommands {
             for (PackageData.PackageItem it : allItems) {
                 if (PackageEntity.shouldGiveInAll(it)) granted++;
             }
-            fail += expect(source, "all-mode 发放件数(0/5/空)", 2, granted);
+            expect(c, source, "all-mode 发放件数(0/5/空)", 2, granted);
         }
         // ⑦ 负对照：空物品即使权重很高也不能发（否则 ALL 包会发放"空气"并占一个发放节拍）
         {
             PackageData.PackageItem emptyItem =
                     new PackageData.PackageItem(ItemStack.EMPTY, 5);
-            fail += expectBool(source, "all-mode 空物品不发", false,
+            expectBool(c, source, "all-mode 空物品不发", false,
                     PackageEntity.shouldGiveInAll(emptyItem));
         }
 
@@ -353,7 +354,7 @@ public class RECommands {
         //    ±⑨ 反证这条判据不是恒 false（真实包裹必须判 true，否则会把正常包裹全拒了）。
         {
             PackageData bare = PackageData.fromNbt(null);
-            fail += expectBool(source, "空包裹(null NBT) 不可发", false, bare.hasGiveableItem());
+            expectBool(c, source, "空包裹(null NBT) 不可发", false, bare.hasGiveableItem());
         }
         {
             java.util.List<PackageData.PackageItem> mixed = java.util.List.of(
@@ -361,12 +362,57 @@ public class RECommands {
                     new PackageData.PackageItem(ItemStack.EMPTY, 1),
                     new PackageData.PackageItem(new ItemStack(Items.DIAMOND, 1), 0));
             PackageData data = new PackageData(PackageData.PackageMode.ALL, mixed);
-            fail += expectBool(source, "有 1 条非空即可发", true, data.hasGiveableItem());
+            expectBool(c, source, "有 1 条非空即可发", true, data.hasGiveableItem());
         }
 
-        final int failures = fail;
-        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / 9", failures);
-        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / 9"), false);
+        // ——————— ⑩~⑱ 权重「乐观回显」（第 61 轮） ———————
+        // 病灶：state 回包最早下一 tick 才处理，而长按连发周期 HOLD_REPEAT_MS = 50ms = 一 tick
+        // ⇒ 同一基准被反复使用，算出的重复值被「值没变不发包」守卫丢弃 ⇒ **连点/长按的步进静默消失**
+        // （公网 FRP 场景 RTT 80~150ms，实际只有 1/2~1/3 的步进落地，零报错零日志）。
+        // 修法：把「刚发出、还没被确认」的值当基准（WeightEcho）。下面用显式时间戳钉住四种时序。
+        {
+            com.akira.redtale.economy.legacy.screen.WeightEcho e =
+                    new com.akira.redtale.economy.legacy.screen.WeightEcho();
+            e.sent(0, 5, 4, 0L); // 镜像 4，发 5，回包未到
+            expect(c, source, "echo 回包前基准=待确认值", 5, e.base(0, 4, 10L));
+            e.sent(0, 6, 4, 10L); // 回包仍未到，再点一次（旧实现会算成 5 并被吞）
+            expect(c, source, "echo 连点第二次到 6", 6, e.base(0, 4, 20L));
+        }
+        {
+            com.akira.redtale.economy.legacy.screen.WeightEcho e =
+                    new com.akira.redtale.economy.legacy.screen.WeightEcho();
+            e.sent(0, 6, 4, 0L);
+            expect(c, source, "echo 回包滞后(5) 不回跳", 6, e.base(0, 5, 10L));
+            expect(c, source, "echo 回包追平后回落镜像", 6, e.base(0, 6, 10L));
+            expectBool(c, source, "echo 追平后 pending 清空", false, e.pending());
+        }
+        {
+            // 反向：从 10 减到 7 时，一个迟到的中间回包(9) 不许把基准弹回 9
+            com.akira.redtale.economy.legacy.screen.WeightEcho e =
+                    new com.akira.redtale.economy.legacy.screen.WeightEcho();
+            e.sent(0, 7, 10, 0L);
+            expect(c, source, "echo 反向不中途回弹(镜像 9)", 7, e.base(0, 9, 10L));
+        }
+        {
+            // 服务端否决（条目被删/包裹换走）⇒ 那个值永远不会回包，必须靠 TTL 回落，否则界面谎报
+            com.akira.redtale.economy.legacy.screen.WeightEcho e =
+                    new com.akira.redtale.economy.legacy.screen.WeightEcho();
+            e.sent(0, 6, 4, 0L);
+            expect(c, source, "echo 超时回落镜像", 4,
+                    e.base(0, 4, com.akira.redtale.economy.legacy.screen.WeightEcho.TTL_MS + 1));
+            expectBool(c, source, "echo 超时后 pending 清空", false, e.pending());
+        }
+        {
+            com.akira.redtale.economy.legacy.screen.WeightEcho e =
+                    new com.akira.redtale.economy.legacy.screen.WeightEcho();
+            e.sent(0, 6, 4, 0L);
+            expect(c, source, "echo 别格不受影响", 3, e.base(1, 3, 10L));
+        }
+
+        final int failures = c[0];
+        final int probes = c[1];
+        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / {}", failures, probes);
+        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / " + probes), false);
         return failures == 0 ? 1 : 0;
     }
 
@@ -609,18 +655,27 @@ public class RECommands {
         return new com.akira.redtale.economy.legacy.misc.EditablePackageInventory(stack);
     }
 
-    /** 打印一条判据，返回失败计数（0/1）。 */
-    private static int expect(ServerCommandSource source, String name, int want, int got) {
+    /**
+     * 打印一条判据并累加计数器（{@code c[0]=fail / c[1]=total}）。
+     *
+     * <p>★分母必须由这里累加★（R113）：以前写成 {@code fail=0; expect(...)} 再加一句
+     * 「fail={} / 9」的字面量，加判据时忘改就变成「18 条断言报 / 9」——探针自己说谎。
+     */
+    private static int expect(int[] c, ServerCommandSource source, String name, int want, int got) {
         boolean ok = want == got;
+        c[1]++;
+        if (!ok) c[0]++;
         LegacyInit.LOGGER.info("[dev][wprobe] {} expect={} actual={} {}", name, want, got, ok ? "PASS" : "FAIL");
         source.sendFeedback(() -> Text.literal("[dev][wprobe] " + name + " expect=" + want
-                + " actual=" + got + (want == got ? " PASS" : " FAIL")), false);
+                + " actual=" + got + (ok ? " PASS" : " FAIL")), false);
         return ok ? 0 : 1;
     }
 
-    /** 布尔版判据（⑥⑦ 用），日志口径与 {@link #expect} 一致。 */
-    private static int expectBool(ServerCommandSource source, String name, boolean want, boolean got) {
+    /** 布尔版判据，口径与 {@link #expect} 一致。 */
+    private static int expectBool(int[] c, ServerCommandSource source, String name, boolean want, boolean got) {
         boolean ok = want == got;
+        c[1]++;
+        if (!ok) c[0]++;
         LegacyInit.LOGGER.info("[dev][wprobe] {} expect={} actual={} {}", name, want, got, ok ? "PASS" : "FAIL");
         source.sendFeedback(() -> Text.literal("[dev][wprobe] " + name + " expect=" + want
                 + " actual=" + got + (ok ? " PASS" : " FAIL")), false);
