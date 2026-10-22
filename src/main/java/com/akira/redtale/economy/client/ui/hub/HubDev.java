@@ -221,4 +221,28 @@ public final class HubDev {
 	public static int passScrollVal(HubScreen host) {
 		return host.passScroll;
 	}
+
+	/**
+	 * 夹具：用真实 {@code mouseScrolled} 路径滚当前页（{@code dir > 0} 向下）。
+	 *
+	 * <p>★别直接改字段★：字段能改不代表滚轮接了线 —— 第 N+70 轮邮件页就是
+	 * 「有 scrollRow、clamp 也对，就是 mouseScrolled 没分支」的死滚动，
+	 * 改字段的夹具照样"验证通过"。这里走 host 回调，滚不动就证明分支缺失。
+	 */
+	public static boolean scrollPage(HubScreen host, int dir) {
+		if (host == null || dir == 0) return false;
+		double mx = host.frame.contentX() + host.frame.contentW() / 2.0;
+		double my = host.frame.contentY() + host.frame.contentH() / 2.0;
+		// 原版：amount > 0 = 向上 ⇒ 想向下滚就传负值
+		host.mouseScrolled(mx, my, -dir);
+		return true;
+	}
+
+	/** 夹具探针：各页当前滚动行（截图轮用它断言「滚轮真的进了页面」）。 */
+	public static String scrollProbe() {
+		return "bounty=" + HubBountyPage.scrollRow()
+				+ " guild=" + HubGuildPage.scrollRow()
+				+ " rank=" + HubRankPage.scrollRow()
+				+ " board=" + HubBoardPage.devScrollRow();
+	}
 }
