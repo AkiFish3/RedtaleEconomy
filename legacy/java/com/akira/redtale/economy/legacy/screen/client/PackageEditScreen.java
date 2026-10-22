@@ -5,6 +5,7 @@ import com.akira.redtale.economy.legacy.data.PackageData;
 import com.akira.redtale.economy.legacy.init.RENetworking;
 import com.akira.redtale.economy.legacy.screen.PackageEditHandler;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
@@ -101,6 +102,9 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private int holdRegion = WeightPopup.ID_NONE;
     private static final long HOLD_DELAY_MS = 300L;
     private static final long HOLD_REPEAT_MS = 50L;
+    /** 步长（规格 §二 / §六）：单击 ±1，按住 Shift ±10；连发与单击同一个步长。 */
+    private static final int STEP_TAP = 1;
+    private static final int STEP_SHIFT = 10;
     private long holdNextMs = 0L;
     /** 上一帧的鼠标位置（绝对逻辑坐标）——按 W 时用它决定气泡出现在哪里。 */
     private int lastMouseX = 0;
@@ -129,6 +133,10 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         this.y = Math.max(0, this.y);
         this.titleX = 8;
         this.titleY = 6;
+        // ★换分辨率/改窗口会重新走 init()，而气泡存的是创建时的**绝对坐标**★：不在这里关掉，
+        // 窗口一缩气泡就留在旧位置（可能整块在屏幕外 ⇒ 看得见格子点不到 ± ，且没有关闭入口，
+        // 只能靠再按 W / Esc）。连按状态也一并清，否则新尺寸下节拍器还指着旧热区。
+        closePopup();
         // 状态（mode/weights）不随槽位同步 —— 开界面主动要一份真值
         RENetworking.sendEditAction(RENetworking.ACT_REQ_STATE, null);
     }
@@ -252,7 +260,13 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
      */
     public static int weightColor(int weight, boolean editing) {
         if (editing) return 0xFF58D6A8;
-        return weight == 0 ? 0xFF8A8A8A : 0xFFD24A;
+        // ★金必须是 8 位的 0xFFFFD24A★：旧值 0xFFD24A 只有 6 位（alpha=0）。文字本身看不出来 ——
+        // `TextRenderer.tweakTransparency()` 会在 alpha 段 < 0x04 时强制 OR 上 0xFF000000（本实例
+        // javap 实证：掩码 -67108864 判零后 ior -16777216），所以金色字仍然是实的；但同一个值还要喂给
+        // {@link #darken} 推导描边，而 darken 取的是 `(c>>16)&0xFF` ⇒ 6 位时红色分量读成 0x00，
+        // 描边变成 RGB(0,94,33) 的墨绿（规格 §三 要求金 → #7A5E00 深金）—— 零报错、只在浅色物品上
+        // 显出一条颜色不对的暗边，肉眼很容易当成"描边就这样"。
+        return weight == 0 ? 0xFF8A8A8A : 0xFFFFD24A;
     }
 
     /**
@@ -443,7 +457,9 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         if (holdRegion != WeightPopup.ID_NONE && popup != null) {
             long now = System.currentTimeMillis();
             if (now >= holdNextMs) {
-                stepWeight(popup.slot(), holdRegion == WeightPopup.ID_PLUS ? 1 : -1);
+                // 每帧重新取 Shift 状态：按住过程中才按下 Shift 也要生效（规格「连发也是 ±10」）
+                int step = stepSize();
+                stepWeight(popup.slot(), holdRegion == WeightPopup.ID_PLUS ? step : -step);
                 holdNextMs = now + HOLD_REPEAT_MS;
             }
         }
@@ -472,10 +488,17 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                 }
             }
         }
+        // ★顺序：原版槽位 tooltip → 自定义提示 → 气泡★（第 45 轮修）
+        // 旧顺序是「自定义提示 → drawMouseoverTooltip」：鼠标停在有物品的网格格上时，
+        // `HandledScreen.render` 在字节码 56/133 处已经把 focusedSlot 设成那一格（javap 实证，按鼠标坐标
+        // 逐槽扫），所以 `drawMouseoverTooltip` **确实会**画一层物品名 tooltip —— 它画在同一个 (mouseX,
+        // mouseY) 锚点上，正好把先画的自定义提示盖住，只有下面多出来的「权重 / 滚轮调整」两行露在
+        // 原版框外面（无底色的悬空文字）。改后自定义提示带自己的底，盖在原版之上，信息以自定义为准。
+        // 表格行不在槽位上、原版不画东西，顺序对那边无影响，统一走一条路径更好查。
+        this.drawMouseoverTooltip(context, mouseX, mouseY);
         if (!tip.isEmpty()) {
             context.drawTooltip(this.textRenderer, tip, mouseX, mouseY);
         }
-        this.drawMouseoverTooltip(context, mouseX, mouseY);
 
         // ★气泡最后画★（规格 §六 第 1 条）：槽位 tooltip 由 drawMouseoverTooltip 画，
         // 气泡若先画会被"物品名/权重/滚轮调整"那三行压住（并且 tooltip 底是半透明黑，叠加后不可读）。
@@ -546,7 +569,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
                 int region = popup.hit(mouseX, mouseY);
                 if (region == WeightPopup.ID_MINUS || region == WeightPopup.ID_PLUS) {
                     boolean plus = region == WeightPopup.ID_PLUS;
-                    stepWeight(popup.slot(), plus ? 1 : -1);
+                    stepWeight(popup.slot(), plus ? stepSize() : -stepSize());
                     // 长按连发：按下时启动计时，tick() 里每 50ms 再来一次（规格 §六 第 3 条）
                     holdRegion = region;
                     holdNextMs = System.currentTimeMillis() + HOLD_DELAY_MS;
@@ -729,6 +752,19 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private void clearHold() {
         holdRegion = WeightPopup.ID_NONE;
         holdNextMs = 0L;
+    }
+
+    /**
+     * 当前步长：按住 Shift 走 ±10（规格 §二「单击 ±1；按住 Shift 单击 ±10」+ §六「Shift 时连发也是 ±10」）。
+     *
+     * <p>★第 44 轮的实现漏了这一条★：气泡的 ± 一律写死 ±1，长按也只是 ±1 —— 权重上限 999，
+     * 从 1 调到 500 要按 499 次（或按住 25 秒）。规格 §七 的验收清单没列这一项，静态门也没盯，
+     * 所以它不会让任何检查变红，只会被当成"手感差"。
+     * 判定不能用 `mouseClicked` 的 modifiers（1.20.1 的 `Screen#mouseClicked` 根本没有 modifiers 参数），
+     * 走 `Screen.hasShiftDown()`（本实例 javap 实证存在，static）。
+     */
+    private static int stepSize() {
+        return Screen.hasShiftDown() ? STEP_SHIFT : STEP_TAP;
     }
 
     /** 发一条 SET_WEIGHT（钳到 [0, maxWeight]）。值没变就不发，避免长按到边界后每 50ms 刷包。 */

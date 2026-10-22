@@ -23,11 +23,6 @@ public class PackageEditHandler extends ScreenHandler {
     private ItemStack originalStack;
     private final Hand hand;
     /**
-     * 网格 / 背包的**唯一几何真值**：槽位（服务端）与背景绘制 / 命中判定（客户端）都读这里。
-     * 之前两边各写一份常量，改布局时必然出现"图标在 A 处、点击判在 B 处"的错位。
-     */
-    public static final int EDITOR_SLOTS = 90;
-    /**
      * 网格是 <b>15 列 × 6 行</b>（仍是 90 格）。
      *
      * <p>★旧布局 9×10 的编辑器在常见分辨率下**装不下屏幕**★：面板高度 = GRID_Y 52 + 10×18 + 背包 76 ≈ 318，
@@ -40,6 +35,22 @@ public class PackageEditHandler extends ScreenHandler {
      */
     public static final int GRID_COLS = 15;
     public static final int GRID_ROWS = 6;
+    /**
+     * 可编辑格数 = 网格格数。
+     *
+     * <p>★必须是 {@code GRID_COLS * GRID_ROWS} 而不是写死 90★：本轮（第 45 轮）之前这里是字面量 90，
+     * 而 {@code PackageEditClientState.SLOTS} 又写了一次 90 ⇒ 三处（行列、格数、客户端镜像数组长度）
+     * 各有一份真值。Aki 待定项「320 宽是否把 90 格缩到 10×6」一旦落地，只改行列而漏改字面量会得到
+     * 「网格 60 格但服务端仍按 90 格校验 / 客户端镜像 90 长」—— 权重表与角标按 60 画、发包下标却按 90，
+     * 静默错位且零报错。现在三者同源。
+     *
+     * <p>★这是网格 / 背包的**唯一几何真值**★：槽位坐标（服务端）、背景绘制、命中判定（客户端）都读
+     * 这里的常量。之前两边各写一份，改布局时必然出现"图标在 A 处、点击判在 B 处"的错位。
+     *
+     * <p>★常量声明顺序有讲究★：{@code EDITOR_SLOTS} 必须在 {@code GRID_*} 之后，否则简单名前向引用
+     * 编译期就报非法前向引用（Java 常量表达式的规则，not just 风格问题）。
+     */
+    public static final int EDITOR_SLOTS = GRID_COLS * GRID_ROWS;
     public static final int GRID_X = 8;
     /**
      * 网格顶 = 44：标题 6..15、模式 chip 16..28、档位 chip 30..42，紧接网格 44..152。

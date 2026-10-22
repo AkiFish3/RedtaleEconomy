@@ -12,7 +12,13 @@ import net.minecraft.nbt.NbtIntArray;
  */
 public final class PackageEditClientState {
 
-    public static final int SLOTS = 90;
+    /**
+     * ★长度必须跟服务端的格数同源★：旧实现写死 90，与服务端 {@code EDITOR_SLOTS} 各有一份真值。
+     * Aki 待定项「320 宽是否缩到 10×6（60 格）」一旦落地，只改网格行列而漏改这里会得到
+     * 「服务端发 60 条权重、客户端数组按 90 读」的静默错位（越界格恒 1，越界的安全）。
+     * 现在直接引用 {@code PackageEditHandler.EDITOR_SLOTS}（常量表达式 ⇒ 编译期内联，无运行期依赖）。
+     */
+    public static final int SLOTS = com.akira.redtale.economy.legacy.screen.PackageEditHandler.EDITOR_SLOTS;
 
     private static String mode = "CHOOSE";
     /**
@@ -42,8 +48,13 @@ public final class PackageEditClientState {
         if (nbt.contains("weights")) {
             int[] parsed = new int[SLOTS];
             java.util.Arrays.fill(parsed, 1);
-            int[] raw = ((NbtIntArray) nbt.get("weights")).getIntArray();
-            for (int i = 0; i < SLOTS && i < raw.length; i++) parsed[i] = raw[i];
+            // ★必须判类型再转★：原来直接 `(NbtIntArray) nbt.get("weights")` —— 服务端若因未来改动
+            // 发了别的标签类型（或长数组被拆），客户端会吃 ClassCastException 崩在渲染线程里，
+            // 而这条路径每帧都在跑。非数组就保留默认 1（权重 1 = 权重中立，与未编辑等价）。
+            if (nbt.get("weights") instanceof NbtIntArray arr) {
+                int[] raw = arr.getIntArray();
+                for (int i = 0; i < SLOTS && i < raw.length; i++) parsed[i] = raw[i];
+            }
             weights = parsed;
         }
         if (nbt.contains("maxWeight")) {
