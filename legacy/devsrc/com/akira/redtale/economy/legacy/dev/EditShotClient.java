@@ -59,6 +59,9 @@ final class EditShotClient {
 	private static int ticks = 0;
 	/** 点击次数计数器（证明三次「+」真的各发一次动作）。 */
 	private static int plusClicks = 0;
+	private static int minusClicks = 0;
+	/** `GEOM` 行只写一次（判据要把逻辑坐标换算到截图像素）。 */
+	private static boolean geomLogged = false;
 	private static Path out;
 
 	private EditShotClient() {
@@ -285,30 +288,136 @@ final class EditShotClient {
 				}
 			}
 			case 18 -> {
+				// ——— 退出权重模式（下面两条规格都要「非编辑态」才成立）———
+				// 规格 §七③ 的三态是「0 灰 / 正常金 / 编辑绿」，而 weightColor() 里 editing 优先于
+				// weight==0 ⇒ 留在权重模式下永远看不到灰。规格 §七① 也要求「悬停按 W」这条路
+				// 与按钮模式分开验。所以先点回去。
+				if (++timer >= 6) {
+					timer = 0;
+					Geo g = geom(mc);
+					if (g == null) {
+						return;
+					}
+					int bx;
+					try {
+						bx = panelInt(mc.currentScreen, "weightBtnX");
+					} catch (Throwable t) {
+						log("GEOM-UNAVAILABLE phase=" + phase + " (weightBtnX: " + t + ")");
+						mc.scheduleStop();
+						return;
+					}
+					int cx = g.left + bx + g.weightBtnW / 2;
+					int cy = g.top + g.weightBtnY + g.weightBtnH / 2;
+					click(mc, cx, cy, 0);
+					log("T80 btn2 at=" + cx + "," + cy + " (退出权重模式)");
+					phase = 19;
+				}
+			}
+			case 19, 20, 21 -> {
+				// ——— 规格 §七③ 的「0 灰」：把 2 号条目（绿宝石，权重 1）按三次「−」降到 0 ———
+				// 走的是权重表第 1 行的「−」热区（与「+」同一段命中代码），不是直接改 NBT。
+				if (timer++ >= 5) {
+					timer = 0;
+					Geo g = geom(mc);
+					if (g == null) {
+						return;
+					}
+					int px = g.left + g.tableX + g.btnMinusX + BTN_HIT_PAD_X;
+					int py = g.top + g.gridY + g.tableRowH + ROW_HIT_PAD_Y;
+					click(mc, px, py, 0);
+					minusClicks++;
+					log("T80 minus#" + minusClicks + " at=" + px + "," + py);
+					phase++;
+				}
+			}
+			case 22 -> {
+				// 07-zero：0 号格权重 4（金）+ 1 号格权重 0（灰），同一张图两个颜色态
+				if (++timer >= 6) {
+					timer = 0;
+					save(mc, "b31-edit-07-zero");
+					phase = 23;
+				}
+			}
+			case 23 -> {
+				// ——— 规格 §七① 入口①：悬停某格按 W → 在鼠标处弹气泡 ———
+				// ★hover 状态在生产方法里算，夹具不自己赋值★：`updateHover(x, y)` 正是
+				// `render()` 每帧调的那个私有方法，它把 mouseX/mouseY 换算成 `hoverGridSlot`。
+				// 为什么不用「真的移动光标」：`Mouse.getX()` 由 GLFW 光标回调驱动，窗口失焦时
+				// `glfwSetCursorPos` 不保证生效（本机跑法不抢焦点）⇒ 拿不到 hover 就变成
+				// 「夹具缺陷伪装成产品缺陷」。这里注入的是**输入事件**（鼠标位置），
+				// 之后 `keyPressed` 读 `hoverGridSlot` 的那段是纯生产路径。
+				// ★必须与 keyPressed 同 tick★：`render()` 每帧都会用真实光标重算 hoverGridSlot，
+				// 跨 tick 注入会被下一秒的 render 覆盖。
+				if (++timer >= 6) {
+					timer = 0;
+					Geo g = geom(mc);
+					if (g == null) {
+						return;
+					}
+					int mx = g.left + g.gridX + 9;
+					int my = g.top + g.gridY + 9;
+					int hover = -1;
+					try {
+						Class<?> sc = Class.forName(SCREEN_CLASS);
+						java.lang.reflect.Method m =
+								sc.getDeclaredMethod("updateHover", double.class, double.class);
+						m.setAccessible(true);
+						m.invoke(mc.currentScreen, (double) mx, (double) my);
+						java.lang.reflect.Field f = sc.getDeclaredField("hoverGridSlot");
+						f.setAccessible(true);
+						hover = f.getInt(mc.currentScreen);
+					} catch (Throwable t) {
+						log("HOVER-UNAVAILABLE " + t);
+					}
+					log("T80 hover slot=" + hover + " at=" + mx + "," + my);
+					boolean handled = mc.currentScreen.keyPressed(KEY_W, 0, 0);
+					log("T80 hoverW ret=" + handled);
+					phase = 24;
+				}
+			}
+			case 24 -> {
+				if (++timer >= 6) {
+					timer = 0;
+					save(mc, "b31-edit-08-hoverpopup");
+					phase = 25;
+				}
+			}
+			case 25 -> {
+				// 再按一次 W = 关闭（入口① 自己的关闭路径，与 06 的入口② 关闭分开取证）
+				if (++timer >= 6) {
+					timer = 0;
+					boolean handled = mc.currentScreen == null
+							|| mc.currentScreen.keyPressed(KEY_W, 0, 0);
+					log("T80 hoverW close ret=" + handled);
+					phase = 26;
+				}
+			}
+			case 26 -> {
 				if (++timer >= 10) {
 					timer = 0;
-					log("CLOSE screen=" + screenName(mc) + " plusClicks=" + plusClicks);
+					log("CLOSE screen=" + screenName(mc) + " plusClicks=" + plusClicks
+							+ " minusClicks=" + minusClicks);
 					if (mc.currentScreen != null) {
 						// 真人按 Esc 的同一条路径 ⇒ 触发 onClosed ⇒ 三保险第 1 层
 						mc.currentScreen.close();
 					}
-					phase = 19;
+					phase = 27;
 				}
 			}
-			case 19 -> {
+			case 27 -> {
 				if (++timer >= 40) {
 					timer = 0;
 					EditShotHarness.request = EditShotHarness.REQ_VERIFY;
-					phase = 20;
+					phase = 28;
 				}
 			}
-			case 20 -> {
+			case 28 -> {
 				if (++timer >= 20) {
 					log("DONE screen=" + screenName(mc)
 							+ " hand=" + net.minecraft.registry.Registries.ITEM
 							.getId(mc.player.getMainHandStack().getItem()));
 					mc.scheduleStop();
-					phase = 21;
+					phase = 29;
 				}
 			}
 			default -> {
@@ -338,16 +447,31 @@ final class EditShotClient {
 				mc.scheduleStop();
 				return null;
 			}
-			return new Geo(anchor[0], anchor[1],
+			Geo geo = new Geo(anchor[0], anchor[1],
 					constInt(sc, "MODE_Y"), constInt(sc, "MODE_CHIP_W"), constInt(sc, "MODE_CHIP_H"),
 					constInt(sc, "TIER_Y"), constInt(sc, "TIER_CHIP_W"), constInt(sc, "TIER_CHIP_H"),
-					constInt(sc, "TABLE_X"), constInt(sc, "BTN_PLUS_X"),
+					constInt(sc, "TABLE_X"), constInt(sc, "BTN_PLUS_X"), constInt(sc, "BTN_MINUS_X"),
 					constInt(sc, "WEIGHT_BTN_X"), constInt(sc, "WEIGHT_BTN_Y"),
 					constInt(sc, "WEIGHT_BTN_W"), constInt(sc, "WEIGHT_BTN_H"),
 					// 网格坐标也走反射：`PackageEditHandler.GRID_X` 是编译期常量，直接写会**内联进夹具**，
 					// 下次改布局夹具依旧拿旧值（和本轮修掉的那 6 个常量是同一个陷阱）。
 					constInt(Class.forName(HANDLER_CLASS), "GRID_X"),
-					constInt(Class.forName(HANDLER_CLASS), "GRID_Y"));
+					constInt(Class.forName(HANDLER_CLASS), "GRID_Y"),
+					constInt(Class.forName(HANDLER_CLASS), "GRID_COLS"),
+					constInt(Class.forName(HANDLER_CLASS), "GRID_ROWS"),
+					constInt(sc, "TABLE_ROW_H"));
+			// ★角标颜色判据要把「逻辑坐标 → 截图像素」换算一遍★：截图是 **framebuffer 尺寸**（窗口像素），
+			// 面板坐标是 **scaled 尺寸**（逻辑像素），两者差一个 GUI 缩放。夹具把这两组数和网格矩形
+			// 一次性写进日志，判据就不用自己猜、也不用在 Python 里抄一份 GRID_X/GRID_COLS（= 又一个漂移源）。
+			if (!geomLogged) {
+				geomLogged = true;
+				log("GEOM w=" + mc.getWindow().getScaledWidth()
+						+ " h=" + mc.getWindow().getScaledHeight()
+						+ " left=" + geo.left + " top=" + geo.top
+						+ " grid=" + geo.gridX + "," + geo.gridY + ","
+						+ (geo.gridCols * 18) + "," + (geo.gridRows * 18));
+			}
+			return geo;
 		} catch (Throwable t) {
 			log("GEOM-UNAVAILABLE phase=" + phase + " (" + t + ")");
 			mc.scheduleStop();
@@ -432,9 +556,9 @@ final class EditShotClient {
 	private record Geo(int left, int top,
 					   int modeY, int modeChipW, int modeChipH,
 					   int tierY, int tierChipW, int tierChipH,
-					   int tableX, int btnPlusX,
+					   int tableX, int btnPlusX, int btnMinusX,
 					   int weightBtnX, int weightBtnY, int weightBtnW, int weightBtnH,
-					   int gridX, int gridY) {
+					   int gridX, int gridY, int gridCols, int gridRows, int tableRowH) {
 
 		// ★「权重」按钮的可见右缘钳位（weightBtnX()）不在夹具里复刻★：
 		// 那是**窄屏才生效**的分支，复刻一份等于又埋一个"改一边忘一边"的坑
