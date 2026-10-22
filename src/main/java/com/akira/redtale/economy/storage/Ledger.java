@@ -88,30 +88,42 @@ public final class Ledger {
 		return ready;
 	}
 
-	/** 记一笔流水；{@code after} 是写入后的余额快照值。 */
+	/**
+	 * 记一笔流水；{@code after} 是写入后的余额快照值。
+	 *
+	 * <p>★R128：本方法<b>绝不抛异常</b>★ 调用方（{@link BalanceService#add}/{@link BalanceService#take}）已经把
+	 * 余额改完了，这里抛出去会被业务层当成「钱没动」⇒ 商店出售/购买退款/重复发放物品。
+	 * 典型触发：关服后 {@code writer} 已 shutdown，{@code execute} 抛 {@link java.util.concurrent.RejectedExecutionException}，
+	 * 或 MysqlBackend 的异步队列被拒。审计流水写失败只能降级为 WARN + 计数，不能改变业务结果。
+	 */
 	public static void record(UUID uuid, long delta, long after, String type, String ref) {
-		if (!StorageConfig.ledgerEnabled()) return;
-		if (MysqlBackend.available()) {
-			MysqlBackend.appendLedgerAsync(uuid, delta, after, type, ref);
-			return;
+		try {
+			if (!StorageConfig.ledgerEnabled()) return;
+			if (MysqlBackend.available()) {
+				MysqlBackend.appendLedgerAsync(uuid, delta, after, type, ref);
+				return;
+			}
+			if (!ready) return;
+			JsonObject o = new JsonObject();
+			o.addProperty("ts", TimeUtil.nowIso());
+			o.addProperty("uuid", uuid.toString());
+			o.addProperty("delta", delta);
+			o.addProperty("after", after);
+			o.addProperty("type", type == null ? "unknown" : type);
+			o.addProperty("ref", ref == null ? "" : ref);
+			o.addProperty("server", serverId());
+			final String line = o.toString();
+			final Path file = fileFor(TimeUtil.businessDate(0));
+			ExecutorService w = writer;
+			if (w == null) {
+				append(file, line);
+				return;
+			}
+			w.execute(() -> append(file, line));
+		} catch (Throwable t) {
+			// 丢一行流水是可接受的；把异常抛回业务层会变成「钱货两空/双发」
+			RedtaleEconomy.LOGGER.warn("[ledger] 流水写入被跳过（不影响业务）：{}", t.toString());
 		}
-		if (!ready) return;
-		JsonObject o = new JsonObject();
-		o.addProperty("ts", TimeUtil.nowIso());
-		o.addProperty("uuid", uuid.toString());
-		o.addProperty("delta", delta);
-		o.addProperty("after", after);
-		o.addProperty("type", type == null ? "unknown" : type);
-		o.addProperty("ref", ref == null ? "" : ref);
-		o.addProperty("server", serverId());
-		final String line = o.toString();
-		final Path file = fileFor(TimeUtil.businessDate(0));
-		ExecutorService w = writer;
-		if (w == null) {
-			append(file, line);
-			return;
-		}
-		w.execute(() -> append(file, line));
 	}
 
 	private static String serverId() {

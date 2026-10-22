@@ -167,31 +167,38 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 		}
 
 		// 2) 发货 + 3) 提交库存/限购：任一步失败都要退款并留补偿记录（Q2）
+		// ★R128：try 的范围 = 「退款仍能撤销什么」★ 事务 commit() 之后的统计/事件一旦抛异常，
+		// 再退款就是「货已发、钱退回」= 免费拿货。所以只包到 commit 为止。
+		long left = stock;
 		try {
 			// T34：发货口径统一到 TxnRunner（塞不下就抛，由 catch 退款）
 			TxnRunner.deliver(player, new ItemStack(item, count));
 			addDailyLimit(player.getUuid(), key(shopId, itemId), count);
-			long left = stock;
 			if (stock > 0) {
 				left = stock - count;
 				ShopStock.set(shopId, itemId, left);
 			}
 			txn.state("delivered");
 			txn.commit();
-
-			long after = BalanceService.get(player.getUuid());
-			// T63：玩家交给系统的钱进资金池（含税，扣款已成功）
-			SystemAccount.income(price, Ledger.TYPE_SHOP_BUY, ref);
-			// T13：只发成功的成交（事务已 commit，钱货两清）
-			ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
-					price / Math.max(1, count), price, after, true));
-			return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
 		} catch (Throwable t) {
 			refundBuy(player, premium, price, ref, shopId, itemId, count, t);
 			txn.dismiss();
 			return new ShopProtocol.ActionResult(false, "shop.giveFailed",
 					BalanceService.get(player.getUuid()), stock);
 		}
+
+		// 事务已提交：钱货两清。以下两步纯统计/通知，失败只能记日志
+		long after = BalanceService.get(player.getUuid());
+		try {
+			// T63：玩家交给系统的钱进资金池（含税，扣款已成功）
+			SystemAccount.income(price, Ledger.TYPE_SHOP_BUY, ref);
+		} catch (Throwable t) {
+			RedtaleEconomy.LOGGER.warn("[shop] 资金池统计失败（交易已完成，不回滚）：{}", t.toString());
+		}
+		// T13：只发成功的成交（事务已 commit，钱货两清）
+		ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
+				price / Math.max(1, count), price, after, true));
+		return new ShopProtocol.ActionResult(true, "shop.buyOk", after, left);
 	}
 
 	@Override
@@ -240,6 +247,8 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 
 		remove(player, item, count);
 		txn.state("taken");
+		// ★R128：catch 只能包住「入账」——入了账之后再抛（统计/流水/事件）都不许退物品，
+		// 否则就是「物品退回 + 钱也到账」= 刷钱。Ledger 已改成不抛，这里再兜一层。
 		try {
 			BalanceService.add(player.getUuid(), income, Ledger.TYPE_SHOP_SELL,
 					shopId + "/" + itemId + "x" + count);
@@ -249,14 +258,6 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			save(player.getUuid(), l);
 			txn.state("paid");
 			txn.commit();
-
-			// T63：系统发给玩家的钱只统计、不扣资金池余额（支出不扣口径）
-			SystemAccount.spend(income, Ledger.TYPE_SHOP_SELL, shopId + "/" + itemId + "x" + count);
-
-			long after = BalanceService.get(player.getUuid());
-			ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
-					income / Math.max(1, count), income, after, false));
-			return new ShopProtocol.ActionResult(true, "shop.sellOk", after, -1);
 		} catch (Throwable t) {
 			// T34：物品回填与补偿记录都走 TxnRunner，失败不会被吞成「钱货两空」
 			int lost = TxnRunner.restore(player, new ItemStack(item, count));
@@ -267,6 +268,18 @@ public final class ShopTransactions implements ShopNetworking.TransactionHandler
 			return new ShopProtocol.ActionResult(false, "shop.sellFailed",
 					BalanceService.get(player.getUuid()), -1);
 		}
+
+		// 已入账并提交：以下纯统计/通知，失败只记日志（绝不回滚物品）
+		try {
+			// T63：系统发给玩家的钱只统计、不扣资金池余额（支出不扣口径）
+			SystemAccount.spend(income, Ledger.TYPE_SHOP_SELL, shopId + "/" + itemId + "x" + count);
+		} catch (Throwable t) {
+			RedtaleEconomy.LOGGER.warn("[shop] 资金池统计失败（交易已完成，不回滚）：{}", t.toString());
+		}
+		long afterSell = BalanceService.get(player.getUuid());
+		ShopEvents.fire(new ShopEvents.Transaction(player.getUuid(), shopId, itemId, count,
+				income / Math.max(1, count), income, afterSell, false));
+		return new ShopProtocol.ActionResult(true, "shop.sellOk", afterSell, -1);
 	}
 
 	/** 退款 + 补偿记录；退款本身失败只记 ERROR，钱仍需人工补。 */
