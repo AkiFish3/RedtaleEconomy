@@ -91,6 +91,17 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     @Override
     protected void init() {
         super.init();
+        // ★装不下时把锚点钳到 ≥0★（第 43 轮）：`HandledScreen.init()` 只做居中
+        // `x = (width - backgroundWidth) / 2`（javap：字节码 0..27，连 super.init() 都不调），
+        // 面板 408 宽在 320×240（guiScale 被 vanilla 限到"逻辑 ≥320×240"的最小档）/ 341×256（1024×768 gs3）
+        // 下居中会得到负的 x ⇒ **最左两列格子被顶出屏幕**（看得见点不到：`isPointWithinBounds`
+        // 用的是同一个 this.x，鼠标永远落不进那一列），模式 chip 也被切掉一截。
+        // 钳到 0 之后改为左上对齐：模式/档位 chip + 整块 90 格网格优先完整，代价是右侧权重表被屏幕
+        // 右缘裁掉一部分（权重仍可在网格上滚轮调、tooltip 里也能看到数值）。
+        // ★必须改 this.x/this.y 而不是只改 left()/top()★：槽位渲染与命中用的是 HandledScreen 自己的
+        // this.x/this.y，两处各钳一次就会出现"面板在 A、格子点不到"的错位。
+        this.x = Math.max(0, this.x);
+        this.y = Math.max(0, this.y);
         this.titleX = 8;
         this.titleY = 6;
         // 状态（mode/weights）不随槽位同步 —— 开界面主动要一份真值
@@ -99,12 +110,20 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
 
     // ————————————————————————— 绘制 —————————————————————————
 
+    /**
+     * 面板左上角（绝对坐标）。
+     *
+     * <p>★直接返回 {@code this.x/this.y}，不再自己算居中★：`init()` 里已把锚点钳到 ≥0，
+     * 这里若还写 `(width - backgroundWidth) / 2` 就会在窄屏上和服务端槽位坐标分叉
+     * （背景按钳后的位置画、格子按居中位置渲染）。`this.x/this.y` 是 HandledScreen 渲染槽位
+     * 与命中判定的同一份真值，跟着它走一定对得上。
+     */
     private int left() {
-        return (this.width - this.backgroundWidth) / 2;
+        return this.x;
     }
 
     private int top() {
-        return (this.height - this.backgroundHeight) / 2;
+        return this.y;
     }
 
     @Override
