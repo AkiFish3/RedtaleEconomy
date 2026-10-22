@@ -434,6 +434,12 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         // 长按连发（规格 §六 第 3 条）：0.3s 后每 50ms ±1。
         // ★不能用 tick() 当节拍器★：`HandledScreen.tick()` 是 **final**（javac 实测「无法覆盖」），
         // 而 render() 每帧都被调、且这些操作本来就只影响本客户端 UI（发包方式和 mouseClicked 一致）。
+        // ★鼠标离开按钮就停★：只在 mouseReleased 清按下状态不够 —— 按住 − 后把鼠标甩出窗口再松手，
+        // 释放事件可能丢失，连发会一路把权重降到 0（零报错、玩家以为"卡住了"）。
+        if (holdRegion != WeightPopup.ID_NONE && popup != null
+                && popup.hit(lastMouseX, lastMouseY) != holdRegion) {
+            clearHold();
+        }
         if (holdRegion != WeightPopup.ID_NONE && popup != null) {
             long now = System.currentTimeMillis();
             if (now >= holdNextMs) {

@@ -15,12 +15,23 @@ public final class PackageEditClientState {
     public static final int SLOTS = 90;
 
     private static String mode = "CHOOSE";
-    private static int[] weights = new int[SLOTS];
+    /**
+     * ★初值必须是 1，不能是 `new int[]` 的全 0★：编辑器开界面到第一份状态回包之间（1~2 帧）会按这个数组
+     * 画角标，全 0 ⇒ 90 格全部显示灰色「0」（权重 0 的语义是"该条目永远抽不到"），看起来像数据坏了。
+     * {@link #apply} / {@link #reset} 都已经填 1，只有静态初值漏了。
+     */
+    private static int[] weights = filledDefaults();
     private static int maxWeight = 999;
     /** 每次收到状态 +1：界面据此判断"需要重画/重排"，也方便夹具断言状态真的变化过。 */
     private static long revision = 0L;
 
     private PackageEditClientState() {
+    }
+
+    private static int[] filledDefaults() {
+        int[] w = new int[SLOTS];
+        java.util.Arrays.fill(w, 1);
+        return w;
     }
 
     public static void apply(NbtCompound nbt) {
@@ -44,8 +55,7 @@ public final class PackageEditClientState {
     /** 断线/退服时清空，避免下一次进服先闪一帧上一件包裹的权重。 */
     public static void reset() {
         mode = "CHOOSE";
-        weights = new int[SLOTS];
-        java.util.Arrays.fill(weights, 1);
+        weights = filledDefaults();
         maxWeight = 999;
         revision++;
     }
