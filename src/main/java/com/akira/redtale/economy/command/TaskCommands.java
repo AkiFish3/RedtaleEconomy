@@ -90,6 +90,22 @@ public final class TaskCommands {
 		if (d.tasks.isEmpty()) {
 			say(ctx, p, Text.literal(Lang.t("tasks.empty")), false);
 		}
+		// T06：周任务单独一节（slot ≥ 100，命令与界面都只用 slot 区分）
+		TaskModule.Daily w = TaskModule.loadWeekly(p.getUuid());
+		if (!w.tasks.isEmpty()) {
+			say(ctx, p, Text.literal("§6本周 §7" + w.date), false);
+			for (TaskModule.Task t : w.tasks) {
+				StringBuilder sb = new StringBuilder();
+				sb.append(t.claimed ? "§8✔ " : "§f").append("§e#").append(t.slot).append(" §7[")
+						.append(t.pool).append("] ");
+				for (TaskModule.ItemCount ic : t.items) {
+					sb.append("§f").append(displayName(ic.id)).append("§7×").append(ic.count).append("  ");
+				}
+				sb.append("§7→ §a").append(BalanceService.format(t.reward));
+				sb.append("§8 (").append(t.completion).append(")");
+				say(ctx, p, Text.literal(sb.toString()), false);
+			}
+		}
 		// U2：同时下发可视化面板（客户端没装本模组时会忽略这个包，聊天栏输出照常）
 		com.akira.redtale.economy.net.TaskNetworking.sendSnapshot(p);
 		return 1;
@@ -219,7 +235,7 @@ public final class TaskCommands {
 		// T05：事件型任务只认服务端记账，不数背包
 		if (t.event != null && !t.event.isBlank()) {
 			int need = TaskModule.needOf(t);
-			int have = TaskModule.eventHave(p.getUuid(), TaskModule.load(p.getUuid()), t);
+			int have = TaskModule.eventHave(p.getUuid(), t);
 			if (have < need) {
 				String lb = t.label == null || t.label.isBlank() ? t.event : t.label;
 				say(ctx, p, Text.literal(lb + " " + have + "/" + need), true);

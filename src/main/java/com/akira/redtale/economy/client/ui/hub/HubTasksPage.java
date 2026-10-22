@@ -12,10 +12,18 @@ import net.minecraft.util.Identifier;
 import java.util.List;
 
 /**
- * T56：Hub 的「每日任务」页（列表 + 进度 + 领取）。
+ * T56：Hub 的「任务」页（列表 + 进度 + 领取）；T06 加「每日 / 每周 / 活动」三个分栏。
  *
  * <p>数据只来自服务端的快照（{@link TasksHubClientNetworking#LAST}）：进度是服务端数的背包/记账，
  * 客户端不做任何本地推算 —— 否则界面会显示「可领取」而服务端拒绝。
+ *
+ * <p>分栏是纯展示过滤，不改数据：服务端一份快照里同时带 daily 与 weekly（见
+ * {@code TaskNetworking.build}），每条任务自带 {@code period}。三条栏的归属互斥：
+ * <ul>
+ *   <li>每日 = period=daily 且不是事件型</li>
+ *   <li>每周 = period=weekly 且不是事件型</li>
+ *   <li>活动 = 事件型（kill/mine/travel，服务端记账，不分日/周）</li>
+ * </ul>
  *
  * <p>领取/刷新都发命令（{@code /tasks claim|refresh}）：校验、扣物品、发奖励、写流水只有服务端一份代码。
  * 命令回显由服务端按 Hub 模式转 actionbar（见 {@code TaskCommands.say}），不会进聊天栏。
@@ -24,7 +32,18 @@ public final class HubTasksPage {
 
 	private static final int ROW_H = 34;
 	private static final int GAP = 4;
+	/** 分栏条高度（含 1px 分隔线）。 */
+	private static final int TAB_H = 15;
+	/** 分栏下方的信息行（日期 / 刷新次数），行高 12。 */
+	private static final int INFO_H = 12;
+	private static final String[] TABS = {"每日", "每周", "活动"};
+
+	public static final int TAB_DAILY = 0;
+	public static final int TAB_WEEKLY = 1;
+	public static final int TAB_EVENT = 2;
+
 	private static int scrollRow;
+	private static int tab = TAB_DAILY;
 
 	private HubTasksPage() {
 	}
@@ -42,21 +61,37 @@ public final class HubTasksPage {
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			double mouseX, double mouseY) {
 		TaskProtocol.Snapshot snap = TasksHubClientNetworking.LAST;
+		List<TaskProtocol.Task> tasks = visible();
 
-		// 顶部：日期 + 刷新剩余次数 + 刷新按钮
-		String head = snap.date().isEmpty() ? "每日任务" : ("每日任务 · " + snap.date());
-		dc.drawText(tr, Text.literal(head), x, y, HubTheme.TITLE, false);
-		String left = "可刷新 " + snap.refreshesLeft() + " 次";
-		dc.drawText(tr, Text.literal(left), x + w - 62 - tr.getWidth(left), y + 1,
-				HubTheme.MUTED, false);
-		drawMini(dc, tr, x + w - 56, y - 2, 56, 14, "刷新", mouseX, mouseY);
-		dc.fill(x, y + 14, x + w, y + 15, HubTheme.OUTLINE);
+		// 第一行：分栏
+		int cx = x;
+		for (int i = 0; i < TABS.length; i++) {
+			int cw = chipW(i, tr);
+			boolean on = i == tab;
+			boolean hover = mouseX >= cx && mouseX < cx + cw && mouseY >= y && mouseY < y + 13;
+			dc.fill(cx, y, cx + cw, y + 13, on ? HubTheme.PRIMARY_SOFT
+					: (hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.CARD));
+			dc.fill(cx, y + 12, cx + cw, y + 13, on ? HubTheme.GOLD : HubTheme.LINE);
+			dc.drawText(tr, Text.literal(TABS[i]), cx + 7, y + 3,
+					on ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
+			cx += cw + 3;
+		}
 
-		List<TaskProtocol.Task> tasks = snap.tasks();
-		int top = y + 19;
+		// 第二行：本栏的时间口径（日/周各一条）+ 刷新（只有日任务可刷）
+		int infoY = y + TAB_H;
+		dc.drawText(tr, Text.literal(infoLine(snap)), x, infoY + 1, HubTheme.MUTED, false);
+		if (tab == TAB_DAILY) {
+			String left = "可刷新 " + snap.refreshesLeft() + " 次";
+			dc.drawText(tr, Text.literal(left), x + w - 62 - tr.getWidth(left), infoY + 1,
+					HubTheme.MUTED, false);
+			drawMini(dc, tr, x + w - 56, infoY - 1, 56, 13, "刷新", mouseX, mouseY);
+		}
+		dc.fill(x, y + TAB_H - 1, x + w, y + TAB_H, HubTheme.OUTLINE);
+
+		int top = y + TAB_H + INFO_H + 3;
 		int bottom = y + h;
 		if (tasks.isEmpty()) {
-			dc.drawText(tr, Text.literal("今日没有任务"), x + 2, top + 6, HubTheme.MUTED, false);
+			dc.drawText(tr, Text.literal(emptyText()), x + 2, top + 6, HubTheme.MUTED, false);
 			dc.drawText(tr, Text.literal("管理员：检查 tasks/definitions 下的定义与 pools"),
 					x + 2, top + 20, HubTheme.HINT, false);
 			return;
@@ -79,6 +114,58 @@ public final class HubTasksPage {
 			dc.fill(x + w - 2, top, x + w - 1, bottom, HubTheme.LINE);
 			dc.fill(x + w - 2, barY, x + w - 1, barY + barH, HubTheme.MUTED);
 		}
+	}
+
+	private static String infoLine(TaskProtocol.Snapshot snap) {
+		return switch (tab) {
+			case TAB_WEEKLY -> "每周任务 · " + (snap.weekKey().isEmpty() ? "-" : snap.weekKey());
+			case TAB_EVENT -> "活动任务 · 自动计数";
+			default -> snap.date().isEmpty() ? "每日任务" : ("每日任务 · " + snap.date());
+		};
+	}
+
+	private static String emptyText() {
+		return switch (tab) {
+			case TAB_WEEKLY -> "本周没有任务";
+			case TAB_EVENT -> "没有进行中的活动任务";
+			default -> "今日没有任务";
+		};
+	}
+
+	/** 本栏可见的任务（纯过滤，顺序沿用快照）。 */
+	public static List<TaskProtocol.Task> visible() {
+		List<TaskProtocol.Task> out = new java.util.ArrayList<>();
+		for (TaskProtocol.Task t : TasksHubClientNetworking.LAST.tasks()) {
+			if (inTab(t)) out.add(t);
+		}
+		return out;
+	}
+
+	private static boolean inTab(TaskProtocol.Task t) {
+		String period = t.period() == null || t.period().isBlank() ? "daily" : t.period();
+		if (isEvent(t)) return tab == TAB_EVENT;
+		return tab == (("weekly".equals(period)) ? TAB_WEEKLY : TAB_DAILY);
+	}
+
+	/** 分栏 chip 的左边（相对 x）与宽度：渲染与命中共用，禁止两处各算一遍。 */
+	private static int chipRelX(int i, TextRenderer tr) {
+		int v = 0;
+		for (int k = 0; k < i; k++) v += chipW(k, tr) + 3;
+		return v;
+	}
+
+	private static int chipW(int i, TextRenderer tr) {
+		return tr.getWidth(TABS[i]) + 14;
+	}
+
+	/** 夹具用：直接选栏（不手算 chip 坐标）。 */
+	public static void selectTab(int index) {
+		tab = Math.max(0, Math.min(TABS.length - 1, index));
+		scrollRow = 0;
+	}
+
+	public static int tab() {
+		return tab;
 	}
 
 	private static void drawRow(DrawContext dc, TextRenderer tr, int x, int ry, int w,
@@ -130,6 +217,11 @@ public final class HubTasksPage {
 
 	private static boolean isSubmit(TaskProtocol.Task t) {
 		return "submit".equals(t.mode());
+	}
+
+	/** 事件型（kill/mine/travel）：服务端记账，归「活动」栏。 */
+	private static boolean isEvent(TaskProtocol.Task t) {
+		return "detect".equals(t.mode());
 	}
 
 	/** 进度文案：{@code 石头 3/10 · 缴纳}。 */
@@ -187,14 +279,30 @@ public final class HubTasksPage {
 	}
 
 	/**
-	 * 点击：行内「领取」→ {@link Action#CLAIM}（slot 经 {@code outSlot} 带回）；右上角「刷新」→ REFRESH。
+	 * 点击：分栏 chip → 切栏；右上角「刷新」→ REFRESH（仅每日栏）；
+	 * 行内按钮 → CLAIM/SUBMIT（slot 经 {@code outSlot} 带回）。
 	 */
 	public static Action click(double mx, double my, int x, int y, int w, int h, int[] outSlot) {
-		TaskProtocol.Snapshot snap = TasksHubClientNetworking.LAST;
-		if (my >= y - 2 && my < y + 14 && mx >= x + w - 56 && mx <= x + w) return Action.REFRESH;
-		List<TaskProtocol.Task> tasks = snap.tasks();
+		// 分栏（第一行，高 13）
+		if (my >= y && my < y + 13) {
+			net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+			if (mc != null && mc.textRenderer != null) {
+				for (int i = 0; i < TABS.length; i++) {
+					int cx = x + chipRelX(i, mc.textRenderer);
+					if (mx >= cx && mx < cx + chipW(i, mc.textRenderer)) {
+						selectTab(i);
+						return Action.NONE;
+					}
+				}
+			}
+		}
+
+		if (tab == TAB_DAILY && my >= y + TAB_H - 1 && my < y + TAB_H + 12
+				&& mx >= x + w - 56 && mx <= x + w) return Action.REFRESH;
+
+		List<TaskProtocol.Task> tasks = visible();
 		if (tasks.isEmpty()) return Action.NONE;
-		int top = y + 19;
+		int top = y + TAB_H + INFO_H + 3;
 		int bottom = y + h;
 		if (my < top || my >= bottom) return Action.NONE;
 		int row = (int) ((my - top) / (ROW_H + GAP));

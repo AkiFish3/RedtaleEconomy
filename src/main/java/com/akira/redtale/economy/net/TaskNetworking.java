@@ -107,8 +107,17 @@ public final class TaskNetworking {
 	}
 
 	private static TaskProtocol.Snapshot build(ServerPlayerEntity player) {
-		TaskModule.Daily d = TaskModule.load(player.getUuid());
+		// T06：日 + 周两套任务合并成一份快照下发（各自带 period，界面按它分栏）。
+		TaskModule.Daily daily = TaskModule.load(player.getUuid());
 		List<TaskProtocol.Task> tasks = new ArrayList<>();
+		collect(player, daily, tasks);
+		TaskModule.Daily weekly = TaskModule.loadWeekly(player.getUuid());
+		collect(player, weekly, tasks);
+		return new TaskProtocol.Snapshot(daily.date == null ? "" : daily.date, daily.refreshesLeft, tasks,
+				weekly.date == null ? "" : weekly.date);
+	}
+
+	private static void collect(ServerPlayerEntity player, TaskModule.Daily d, List<TaskProtocol.Task> out) {
 		for (TaskModule.Task t : d.tasks) {
 			List<TaskProtocol.Item> items = new ArrayList<>();
 			// T05：事件型任务（kill/mine/travel）的进度在服务端记账，不数背包
@@ -117,11 +126,10 @@ public final class TaskNetworking {
 				int have = evHave >= 0 ? evHave : countOf(player, ic.id);
 				items.add(new TaskProtocol.Item(ic.id, ic.count, have));
 			}
-			tasks.add(new TaskProtocol.Task(t.slot, t.reward,
+			out.add(new TaskProtocol.Task(t.slot, t.reward,
 					t.completion == null ? "submit" : t.completion, t.claimed, items,
-					TaskModule.labelOf(t.pool)));
+					TaskModule.labelOf(t.pool), d.period));
 		}
-		return new TaskProtocol.Snapshot(d.date == null ? "" : d.date, d.refreshesLeft, tasks);
 	}
 
 	/** 与 TaskCommands 同口径的背包计数（只读）。 */

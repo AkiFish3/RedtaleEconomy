@@ -20,13 +20,20 @@ public final class TaskProtocol {
 	public record Item(String id, int need, int have) {
 	}
 
-	/** {@code label} 是任务卡标题（池 displayName）；旧版本没有这个字段，客户端为空时退回 #slot。 */
-	public record Task(int slot, long reward, String mode, boolean claimed, List<Item> items, String label) {
+	/**
+	 * {@code label} 是任务卡标题（池 displayName）；旧版本没有这个字段，客户端为空时退回 #slot。
+	 *
+	 * <p>T06：{@code period} 是 {@code daily}/{@code weekly}，界面按它分栏；{@code slot} 已按周期分段
+	 * （周任务从 100 起），所以「每日 tab 里点领取」只会把当页那条任务的 slot 发回去。
+	 */
+	public record Task(int slot, long reward, String mode, boolean claimed, List<Item> items, String label,
+			String period) {
 	}
 
-	public record Snapshot(String date, int refreshesLeft, List<Task> tasks) {
+	/** {@code weekKey} 形如 {@code W2026-10-19}（本周起始日），仅用于页头展示。 */
+	public record Snapshot(String date, int refreshesLeft, List<Task> tasks, String weekKey) {
 		public static Snapshot empty() {
-			return new Snapshot("", 0, List.of());
+			return new Snapshot("", 0, List.of(), "");
 		}
 	}
 
@@ -49,6 +56,7 @@ public final class TaskProtocol {
 				buf.writeString(t.mode() == null ? "submit" : t.mode(), 16);
 				buf.writeString(t.label() == null ? "" : t.label(), 64);
 				buf.writeBoolean(t.claimed());
+				buf.writeString(t.period() == null ? "daily" : t.period(), 16);
 				Codecs.writeList(buf, t.items(), ITEM);
 			},
 			buf -> {
@@ -57,7 +65,9 @@ public final class TaskProtocol {
 				String mode = buf.readString(16);
 				String label = buf.readString(64);
 				boolean claimed = buf.readBoolean();
-				return new Task(slot, reward, mode, claimed, Codecs.readList(buf, MAX_ITEMS, ITEM), label);
+				String period = buf.readString(16);
+				return new Task(slot, reward, mode, claimed, Codecs.readList(buf, MAX_ITEMS, ITEM), label,
+						period);
 			});
 
 	private TaskProtocol() {
@@ -66,12 +76,14 @@ public final class TaskProtocol {
 	public static void write(PacketByteBuf buf, Snapshot s) {
 		buf.writeString(s.date() == null ? "" : s.date(), 32);
 		buf.writeVarInt(Math.max(0, s.refreshesLeft()));
+		buf.writeString(s.weekKey() == null ? "" : s.weekKey(), 32);
 		Codecs.writeList(buf, s.tasks(), TASK);
 	}
 
 	public static Snapshot read(PacketByteBuf buf) {
 		String date = buf.readString(32);
 		int refreshes = buf.readVarInt();
-		return new Snapshot(date, refreshes, Codecs.readList(buf, MAX_TASKS, TASK));
+		String weekKey = buf.readString(32);
+		return new Snapshot(date, refreshes, Codecs.readList(buf, MAX_TASKS, TASK), weekKey);
 	}
 }
