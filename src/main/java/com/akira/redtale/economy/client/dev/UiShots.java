@@ -60,7 +60,7 @@ public final class UiShots {
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
 	private static final int SETTLE = 25;
 	/** 最后一个拍照 step（U4 5 + U11 6 + U9 13 + U10 设置页 16 + R39 音效探针 2 + U13 9 + 非 OP 2 + T44 商店滚动 1，到 89）。 */
-	private static final int LAST_STEP = 241;
+	private static final int LAST_STEP = 247;
 	/**
 	 * 多人模式（连专用服务器）的起点 step。
 	 *
@@ -788,6 +788,28 @@ public final class UiShots {
 			// 末尾必须是纯 act 步：最后一步若是 shotKeep 的全屏态，客户端会卡在 toggle windowed 前（见 _LESSONS）
 			case 241 -> act(mc, () -> LOG.add("pass tail scroll="
 					+ (mc.currentScreen instanceof HubScreen hs ? HubDev.passScrollVal(hs) : -1)));
+			// ★发布门槛 §二 第 7 项「Hub 全部页面」★：老截图（u6-53-board / u6-54-ledger /
+			// u6-58-admin）拍摄于 10-21~10-22 凌晨，早于 T61 裁切修复与 T69b 双模式 ⇒ 不能当
+			// 当前版本的证据。这里补齐剩余 5 页，和 225~236 合起来正好 16 个 HubPage 全覆盖。
+			case 242 -> shotKeep(mc, "u6-82-hub-bounty.png",
+					() -> openFresh(mc, HubPage.BOUNTY, "rt bounty"));
+			// 委托页挂在根命令 /board（不在 PageCommands.PAGES 里），发的是 /board 不是 /rt board
+			case 243 -> shotKeep(mc, "u6-83-hub-board.png",
+					() -> openFresh(mc, HubPage.BOARD, "board"));
+			// 转账页没有「开页」子命令（/pay 是执行转账本身）⇒ 直接开 Hub 页，别让夹具真转一笔
+			case 244 -> shotKeep(mc, "u6-84-hub-pay.png", () -> {
+				mc.setScreen(null);
+				HubScreen.open(HubPage.PAY);
+			});
+			case 245 -> shotKeep(mc, "u6-85-hub-ledger.png",
+					() -> openFresh(mc, HubPage.LEDGER, "rt ledger"));
+			// 控制台页同理没有 /rt 子命令（105 步已证明 HubScreen.open 可直开）
+			case 246 -> shotKeep(mc, "u6-86-hub-admin.png", () -> {
+				mc.setScreen(null);
+				HubScreen.open(HubPage.ADMIN);
+			});
+			case 247 -> act(mc, () -> LOG.add("hub page sweep done (16 pages, last="
+					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()) + ")"));
 			// ★稀疏编号★：这个 step 号没有动作时直接跳下一个，不要 finish。
 			// 以前是 `default -> finish`，于是「在末尾追加 218+」会被 123 这个空号直接截断
 			// （整轮只跑到 122 就退出，新步骤永远不执行、也不报错）。
@@ -1000,7 +1022,7 @@ public final class UiShots {
 		}
 		if (whitelist != null && !actionRanThisStep) {
 			actionRanThisStep = true;
-			action.run();
+			safeRun(action);
 			stepAt = tick + SETTLE;
 			LOG.add("whitelist step " + step + " ran its own action at tick " + tick);
 			return;
@@ -1008,7 +1030,7 @@ public final class UiShots {
 		Screen cur = mc.currentScreen;
 		if (cur == null || !isOurs(cur)) {
 			// 还没开：这一 step 用来「打开」，再等 SETTLE
-			action.run();
+			safeRun(action);
 			stepAt = tick + SETTLE;
 			LOG.add("open for " + name + " at tick " + tick + " (world=" + inWorld + ")");
 			// ★界面迟迟不开（模块被关/权限不足/命令失败）不能死等★：超时跳过并继续下一步，
@@ -1037,14 +1059,14 @@ public final class UiShots {
 		}
 		if (whitelist != null && !actionRanThisStep) {
 			actionRanThisStep = true;
-			action.run();
+			safeRun(action);
 			stepAt = tick + SETTLE;
 			LOG.add("whitelist step " + step + " ran its own action at tick " + tick);
 			return;
 		}
 		Screen cur = mc.currentScreen;
 		if (cur == null || !isOurs(cur)) {
-			action.run();
+			safeRun(action);
 			stepAt = tick + SETTLE;
 			LOG.add("open for " + name + " at tick " + tick + " (world=" + inWorld + ")");
 			if (++attempts > MAX_ATTEMPTS) {
@@ -1247,9 +1269,28 @@ public final class UiShots {
 		return base.replace("mp", admin ? "op-mp" : "nonop-mp") + ".png";
 	}
 
+	/** 动作失败只记日志、绝不冒泡：没进世界时 mc.player 恒 null，一次 NPE 就整轮 0 图。 */
+	private static void safeRun(Runnable action) {
+		try {
+			action.run();
+		} catch (Exception e) {
+			LOG.add("action FAILED (step " + step + "): " + e);
+		}
+	}
+
 	/** 仅执行、不拍照（改配置/切主题/发命令），等 SETTLE 后进下一步。 */
 	private static void act(MinecraftClient mc, Runnable action) {
-		action.run();
+		// ★夹具永远不许把客户端搞崩★ 2026-10-22 实证：没进世界（停在标题页）时
+		// mc.player 恒 null，而绝大多数 act 都是 `mc.player.networkHandler.sendChatCommand(...)`
+		// ⇒ step 90 一次 NPE 直接把整轮带走，本轮 0 张新图、连 u6-fatal.txt 都没有。
+		// 夹具的失败必须是「记一条日志然后跳过」，不能是「游戏崩掉」。
+		try {
+			action.run();
+		} catch (Exception e) {
+			LOG.add("act FAILED (step " + step + "): " + e);
+			next(step + 1);
+			return;
+		}
 		if (stateOnly) {
 			// 白名单外：动作照跑（它是后面截图步骤的前置状态），但不等渲染
 			nextFast("act");
@@ -1266,10 +1307,11 @@ public final class UiShots {
 	 * 让「只补一张图」的成本从 5 分钟降到 1 分钟。
 	 */
 	private static void stateOnlyStep(MinecraftClient mc, String tag, Runnable action) {
-		Screen cur = mc.currentScreen;
-		if (action != null && (cur == null || !isOurs(cur))) {
-			action.run();
-		}
+		// ★白名单外一律不动动作★ 2026-10-22 实证：以前这里在「屏幕不是我们的」时会补跑一次
+		// action，于是 220 个 state-only 步把 /give、/tasks、/rt ... 全发了一遍 —— 屏幕被
+		// 搅成 TaskScreen（日志里 20+ 条 "click 市场 skipped: screen is TaskScreen"），
+		// 最后撞上 mc.player==null 的 act 把客户端崩了。
+		// 白名单步自己的 openFresh() 是自足的（先 setScreen(null) 再发命令），不需要前置走位。
 		nextFast(tag);
 	}
 
