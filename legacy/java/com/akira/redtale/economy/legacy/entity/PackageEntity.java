@@ -78,8 +78,10 @@ public class PackageEntity extends Entity implements GeoEntity {
 
     // ————————————————— T74 special（surprise 彩蛋） —————————————————
 
-    /** 蛋壳碎裂阶段长度（tick）。碎裂演完才切 open + 爆发，否则「先炸后裂」顺序反了。 */
-    private static final int CRACK_TICKS = 12;
+    /** 蛋壳碎裂阶段长度（tick）。碎裂演完才切 open + 爆发，否则「先炸后裂」顺序反了。
+     *  ★必须等于动画时长★：{@code surprise.animation.json} 的 crack = 1.2s = 24 tick（两下鼓胀 + 摇晃）。
+     *  旧值 12 tick 只够播第一下，0.6~1.2s 的第二下永远看不到 ⇒ 看起来像「抖一下就炸」。 */
+    private static final int CRACK_TICKS = 24;
     /** 开箱时随机决定的档位 id（只有 special 会填，其它包裹档位来自物品 id）。 */
     private String rolledTier = null;
     /** 正在播 crack：-1 = 不适用；>=0 = 已播的 tick 数。 */
@@ -474,6 +476,12 @@ public class PackageEntity extends Entity implements GeoEntity {
         // 且 crackTicks 归零会卡住 burst 门（burstDone 已 true，不会再炸）。
         this.eggCrackStarted = true;
         this.crackTicks = -1;
+        // ★状态也要跟着归一★：存档可能正好停在 "crack"（裂到一半区块卸载），而上面已把 crackTicks
+        // 置 -1、eggCrackStarted 置 true ⇒ tick 里再没有任何分支会把它推到 "open" ⇒ 实体永久停在裂壳帧
+        // （客户端 predicate 照这个状态播）。读到 crack 就当开箱已完成。
+        if ("crack".equals(this.getAnimationState())) {
+            this.setAnimationState("open");
+        }
         if (nbt.containsUuid("OwnerUUID")) {
             this.ownerUuid = nbt.getUuid("OwnerUUID");
         }
@@ -528,14 +536,21 @@ public class PackageEntity extends Entity implements GeoEntity {
         controllers.add(new AnimationController<>(this, "controller", 0, this::predicate));
     }
 
-    private <T extends GeoEntity> PlayState predicate(AnimationState<T> event) {
-        String target = "idle".equals(this.getAnimationState()) ? "idle" : "open";
-        if (!target.equals(this.appliedAnimation)) {
-            this.appliedAnimation = target;
-            event.getController().setAnimation("idle".equals(target)
-                    ? RawAnimation.begin().thenLoop("idle")
-                    : RawAnimation.begin().thenPlay("open"));
-        }
-        return PlayState.CONTINUE;
-    }
+	private <T extends GeoEntity> PlayState predicate(AnimationState<T> event) {
+		// ★三种状态都要映射★：旧实现只认 idle，其余一律当 open ⇒ T74 的 `crack` 永远播不到
+		// （beginOpenAnimation 明明设了 "crack"，surprise.animation.json 里也有 crack 键，
+		// 但客户端拿到的永远是 open ⇒ 蛋壳不裂直接炸，零报错）。这就是 T38 那类「代码里的动画名
+		// 与 json 键对不上」的同一个坑，只是这次是「映射表漏了一项」。
+		String state = this.getAnimationState();
+		String target = ("idle".equals(state) || "crack".equals(state)) ? state : "open";
+		if (!target.equals(this.appliedAnimation)) {
+			this.appliedAnimation = target;
+			event.getController().setAnimation(switch (target) {
+				case "idle" -> RawAnimation.begin().thenLoop("idle");
+				case "crack" -> RawAnimation.begin().thenPlay("crack");
+				default -> RawAnimation.begin().thenPlay("open");
+			});
+		}
+		return PlayState.CONTINUE;
+	}
 }
