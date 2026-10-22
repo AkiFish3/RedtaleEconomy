@@ -145,7 +145,7 @@ public final class HubSidebar {
 			long now = System.currentTimeMillis();
 			BalanceDisplay.feed(raw, now);
 			long shown = BalanceDisplay.value(now);
-			drawCoins(dc, tr, x + 4, y + 40, sidebarW - 8, shown);
+			drawCoins(dc, tr, x + 3, y + 38, sidebarW - 6, shown);
 		}
 		boolean hoverHead = !withText
 				&& mouseX >= headX && mouseX < headX + headSize
@@ -163,25 +163,31 @@ public final class HubSidebar {
 	}
 
 	/**
-	 * 余额（T55）：金币/银币/铜币三段，<b>零值段不隐藏</b>（Aki 口径：余额要能看出「我有多少铜」，
-	 * 而不是「1金」剩下的部分让人猜）。
+	 * 余额（A 第 N+79 轮）：<b>用 Numismatic 的原生硬币图标（16px）</b>，三列「图标在上、数字在下」。
 	 *
-	 * <p>A 第 N+78 轮：<b>必须带币种单位</b>。11px 的三枚硬币只能靠颜色区分币种，
-	 * 玩家看到的是「91 / 66 / 40」三个数字加三个圆片，读不出「66 是银还是铜」。
-	 * 这里先试「图标 + 数字 + 单位」，放不下就整行退成 {@code 91金66银40铜}（同样是三段全显）。
+	 * <p>★为什么不再是一行三段★：一行三段在 11px 的预算下要 85px，而侧栏内宽只有 80px ——
+	 * 放不下就静默换成了 T67 硬币<b>字形</b>（我们自己画的位图），Aki 一眼看出「不是 MOD 的图标」。
+	 * 三列布局把每段压到 24px，16px 贴图既能原样不缩放地画出来，又能带上金/银/铜。
 	 */
 	private void drawCoins(DrawContext dc, TextRenderer tr, int x, int y, int w, long raw) {
 		if (raw < 0) {
 			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.TEXT, false);
 			return;
 		}
-		if (HubMoney.labeledWidth(tr, raw) <= w) {
-			HubMoney.drawLabeled(dc, tr, x, y, raw, w);
-			return;
+		long[] p = HubMoney.split(raw);
+		int gap = 4;
+		int colW = Math.max(HubMoney.ICON_BIG + 2, (w - gap * 2) / 3);
+		int iconY = y + 2;
+		int textY = iconY + HubMoney.ICON_BIG + 1;
+		for (int i = 0; i < 3; i++) {
+			int cx = x + i * (colW + gap);
+			HubMoney.coinIcon(dc, cx + (colW - HubMoney.ICON_BIG) / 2, iconY, i);
+			String n = Long.toString(p[i]);
+			String s = tr.getWidth(n + HubMoney.unitOf(i)) <= colW ? n + HubMoney.unitOf(i) : n;
+			int nx = cx + Math.max(0, (colW - tr.getWidth(s)) / 2);
+			dc.drawText(tr, Text.literal(s), nx, textY,
+					i == 0 ? HubTheme.GOLD : HubTheme.TEXT, false);
 		}
-		// 带单位也放不下 ⇒ 整行纯文字兜底（仍有金/银/铜三个字，绝不退化成一串裸数字）
-		dc.drawText(tr, Text.literal(HubText.trim(tr, HubMoney.fullText(raw), w)), x, y,
-				HubTheme.TEXT, false);
 	}
 
 	/** 玩家头像（用皮肤贴图的 8×8 脸部放大）。 */

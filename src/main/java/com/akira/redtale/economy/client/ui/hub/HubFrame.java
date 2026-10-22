@@ -14,7 +14,8 @@ public final class HubFrame {
 	public static final int ROW_H = 24;
 	public static final int TOP_BAR = 24;
 	public static final int BOTTOM_BAR = 20;
-	public static final int PROFILE_H = 56;
+	/** 头像卡高度：32 头像 + 16px 硬币 + 9px 数字 + 边距。*/
+	public static final int PROFILE_H = 70;
 
 	/** 面板左上角与尺寸（屏幕坐标）。 */
 	public final int x;

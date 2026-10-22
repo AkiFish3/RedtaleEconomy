@@ -224,58 +224,85 @@ public final class HubMoney {
 
 	/** 币种单位字（与 {@link #split} 的下标对齐）。 */
 	private static final String[] UNIT = {"金", "银", "铜"};
-	/** 数字与单位之间的最小间距。 */
-	private static final int UNIT_GAP = 1;
 
-	/**
-	 * 带单位的三段宽度：{@code 金币91金 银币66银 铜币40铜}。
-	 *
-	 * <p>为什么必须有这一档：只有图标时，三枚币在 11px 下靠<b>颜色</b>区分币种 ——
-	 * 新玩家（或色弱）看不出「66 是银还是铜」。头像卡余额是玩家判断「我有多少钱」的主视图，
-	 * 币种必须能读出来，不能靠猜。
-	 */
-	public static int labeledWidth(TextRenderer tr, long raw) {
-		long[] p = split(raw);
-		int ic = iconW();
-		int w = 0;
-		for (int i = 0; i < 3; i++) {
-			if (i > 0) w += SEG_GAP;
-			w += ic + ICON_TEXT + tr.getWidth(Long.toString(p[i])) + UNIT_GAP + tr.getWidth(UNIT[i]);
-		}
-		return w;
+	/** 币种单位字：0 金 / 1 银 / 2 铜。 */
+	public static String unitOf(int kind) {
+		return UNIT[kind < 0 || kind > 2 ? 0 : kind];
 	}
 
 	/**
-	 * 画「图标 + 数字 + 单位」三段（零值段也画）。
+	 * 头像卡这类「主视图」的硬币边长：<b>原生 16px，绝不缩放</b>（A 第 N+79 轮）。
 	 *
-	 * @param maxW 可用宽度（≤0 = 不限）；放不下就少画，调用方需先用 {@link #labeledWidth} 判断
+	 * <p>★为什么不能缩到 11★：16×16 的硬币贴图用最近邻缩到 11×11 时，圆形边缘被啃成
+	 * 菱形/锯齿，看着像「手画的宝石」；而且三段的 11px 预算（85px）本来就塞不进侧栏内宽
+	 * （80px）—— 旧代码放不下就静默换成 T67 硬币字形，于是玩家看到的是<b>我们自绘的字形</b>，
+	 * 不是 Numismatic 的图标。Aki 一眼就看出来了。
 	 */
-	public static int drawLabeled(DrawContext dc, TextRenderer tr, int x, int y, long raw, int maxW) {
-		if (raw < 0) {
-			dc.drawText(tr, Text.literal("…"), x, y, HubTheme.MUTED, false);
-			return tr.getWidth("…");
+	public static final int ICON_BIG = 16;
+
+	/**
+	 * 画一枚硬币图标（<b>MOD 自己的图标</b>；缺失时才退回几何兜底）。
+	 *
+	 * <p>三档来源，按「最像背包里那枚币」排序：
+	 * <ol>
+	 *   <li>物品本体 {@code numismatic-overhaul:gold_coin} 走 {@code drawItem} —— 和背包/手上
+	 *       一模一样（模型带原生光影），这是 Aki 要的「MOD 的图标」；</li>
+	 *   <li>物品不在（模组没装）但贴图在 ⇒ 16px 原样贴图；</li>
+	 *   <li>都没有 ⇒ 几何兜底（明确是近似，不是 MOD 图标）。</li>
+	 * </ol>
+	 *
+	 * @param kind 0 金 / 1 银 / 2 铜
+	 */
+	public static void coinIcon(DrawContext dc, int x, int y, int kind) {
+		int k = kind < 0 || kind > 2 ? 0 : kind;
+		if (!coinProbeLogged) {
+			coinProbeLogged = true;
+			// 一次性探针：下次能从 latest.log 直接判「用的是物品模型/贴图/兜底」，不用猜色号
+			com.akira.redtale.economy.RedtaleEconomy.LOGGER.info(
+					"[hub] 头像卡硬币来源：{} item={}", texProbe(), coinItem(k) != null);
 		}
-		long[] p = split(raw);
-		int ic = iconW();
-		int cx = x;
-		int drawn = 0;
-		for (int i = 0; i < 3; i++) {
-			String n = Long.toString(p[i]);
-			int uni = tr.getWidth(UNIT[i]);
-			int seg = ic + ICON_TEXT + tr.getWidth(n) + UNIT_GAP + uni;
-			int need = seg + (drawn > 0 ? SEG_GAP : 0);
-			if (maxW > 0 && cx - x + need > maxW) break;
-			if (drawn > 0) cx += SEG_GAP;
-			coin(dc, cx, y - 1, i);
-			int nx = cx + ic + ICON_TEXT;
-			dc.drawText(tr, Text.literal(n), nx, y, i == 0 ? HubTheme.GOLD : HubTheme.TEXT, false);
-			dc.drawText(tr, Text.literal(UNIT[i]), nx + tr.getWidth(n) + UNIT_GAP, y,
-					HubTheme.MUTED, false);
-			cx += seg;
-			drawn++;
+		var item = coinItem(k);
+		if (item != null) {
+			dc.drawItem(new net.minecraft.item.ItemStack(item), x, y);
+			return;
 		}
-		return cx - x;
+		if (texOk(k)) {
+			dc.drawTexture(COIN_TEX[k], x, y, ICON_BIG, ICON_BIG, 0.0f, 0.0f,
+					TEX_W, TEX_H, TEX_W, TEX_H);
+			return;
+		}
+		coinGeometry(dc, x, y, k, ICON_BIG);
 	}
+
+	/** 硬币物品 id（顺序 = 金/银/铜）；解析一次就缓存，模组没装时全为 null。 */
+	private static final Identifier[] COIN_ITEM_ID = {
+			Identifier.tryParse("numismatic-overhaul:gold_coin"),
+			Identifier.tryParse("numismatic-overhaul:silver_coin"),
+			Identifier.tryParse("numismatic-overhaul:bronze_coin"),
+	};
+
+	private static net.minecraft.item.Item coinItem(int kind) {
+		if (!COIN_ITEM_RESOLVED[kind]) {
+			COIN_ITEM_RESOLVED[kind] = true;
+			net.minecraft.item.Item found = null;
+			try {
+				Identifier id = COIN_ITEM_ID[kind];
+				if (id != null) {
+					var it = net.minecraft.registry.Registries.ITEM.get(id);
+					if (it != null && it != net.minecraft.item.Items.AIR) found = it;
+				}
+			} catch (Exception ignored) {
+				found = null;
+			}
+			COIN_ITEM_CACHE[kind] = found;
+		}
+		return COIN_ITEM_CACHE[kind];
+	}
+
+	private static final net.minecraft.item.Item[] COIN_ITEM_CACHE = new net.minecraft.item.Item[3];
+	private static final boolean[] COIN_ITEM_RESOLVED = new boolean[3];
+
+	private static boolean coinProbeLogged;
 
 	private static int drawInternal(DrawContext dc, TextRenderer tr, int x, int y, long raw,
 			int maxW, boolean full) {
@@ -358,6 +385,12 @@ public final class HubMoney {
 
 	/** 几何硬币：1px 描边 + 实心面，边长 = {@link #ICON}，四角切掉（圆形近似）。 */
 	private static void coinGeometry(DrawContext dc, int x, int y, int kind) {
+		coinGeometry(dc, x, y, kind, ICON);
+	}
+
+	/** 几何硬币（指定边长；16px 时 2px 描边更接近原生贴图的厚重边）。 */
+	private static void coinGeometry(DrawContext dc, int x, int y, int kind, int size) {
+		int ring = size >= 16 ? 2 : 1;
 		int face = switch (kind) {
 			case 0 -> HubTheme.COIN_GOLD;
 			case 1 -> HubTheme.COIN_SILVER;
@@ -368,11 +401,12 @@ public final class HubMoney {
 			case 1 -> HubTheme.COIN_SILVER_EDGE;
 			default -> HubTheme.COIN_COPPER_EDGE;
 		};
-		// 外层（描边）
-		dc.fill(x + 1, y, x + ICON - 1, y + ICON, edge);
-		dc.fill(x, y + 1, x + ICON, y + ICON - 1, edge);
-		// 内层（面）
-		dc.fill(x + 2, y + 1, x + ICON - 2, y + ICON - 1, face);
-		dc.fill(x + 1, y + 2, x + ICON - 1, y + ICON - 2, face);
+		// 外层（描边）：两个互相垂直的矩形叠出「切角」
+		dc.fill(x + ring, y, x + size - ring, y + size, edge);
+		dc.fill(x, y + ring, x + size, y + size - ring, edge);
+		// 内层（面）：同样两块，内缩 ring + 1
+		int in = ring + 1;
+		dc.fill(x + ring, y + in, x + size - ring, y + size - in, face);
+		dc.fill(x + in, y + ring, x + size - in, y + size - ring, face);
 	}
 }
