@@ -311,9 +311,32 @@ public class RECommands {
             fail += expect(source, "nbt-roundtrip", 77, reread.getWeight(0));
         }
 
+        // ⑥ ALL 模式不看权重：weight=0 的条目**照样要发**（规格 §三「ALL = 全部给」；
+        //    weight 只在 RANDOM 里表示「跳过」）。旧实现两处 ALL 分支都带 `weight() > 0`
+        //    ⇒ 编辑器把某格调到 0 再切成 ALL，那件物品静默不发（条目还在 NBT 里，界面看不出来）。
+        //    这里按「三条目 ⇒ 应发 2 件」判，比单条断言更贴近真实发放循环（旧实现给 1 件）。
+        {
+            java.util.List<PackageData.PackageItem> allItems = java.util.List.of(
+                    new PackageData.PackageItem(new ItemStack(Items.DIAMOND, 1), 0),
+                    new PackageData.PackageItem(new ItemStack(Items.APPLE, 1), 5),
+                    new PackageData.PackageItem(ItemStack.EMPTY, 9));
+            int granted = 0;
+            for (PackageData.PackageItem it : allItems) {
+                if (PackageEntity.shouldGiveInAll(it)) granted++;
+            }
+            fail += expect(source, "all-mode 发放件数(0/5/空)", 2, granted);
+        }
+        // ⑦ 负对照：空物品即使权重很高也不能发（否则 ALL 包会发放"空气"并占一个发放节拍）
+        {
+            PackageData.PackageItem emptyItem =
+                    new PackageData.PackageItem(ItemStack.EMPTY, 5);
+            fail += expectBool(source, "all-mode 空物品不发", false,
+                    PackageEntity.shouldGiveInAll(emptyItem));
+        }
+
         final int failures = fail;
-        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / 5", failures);
-        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / 5"), false);
+        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / 7", failures);
+        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / 7"), false);
         return failures == 0 ? 1 : 0;
     }
 
@@ -335,6 +358,15 @@ public class RECommands {
         LegacyInit.LOGGER.info("[dev][wprobe] {} expect={} actual={} {}", name, want, got, ok ? "PASS" : "FAIL");
         source.sendFeedback(() -> Text.literal("[dev][wprobe] " + name + " expect=" + want
                 + " actual=" + got + (want == got ? " PASS" : " FAIL")), false);
+        return ok ? 0 : 1;
+    }
+
+    /** 布尔版判据（⑥⑦ 用），日志口径与 {@link #expect} 一致。 */
+    private static int expectBool(ServerCommandSource source, String name, boolean want, boolean got) {
+        boolean ok = want == got;
+        LegacyInit.LOGGER.info("[dev][wprobe] {} expect={} actual={} {}", name, want, got, ok ? "PASS" : "FAIL");
+        source.sendFeedback(() -> Text.literal("[dev][wprobe] " + name + " expect=" + want
+                + " actual=" + got + (ok ? " PASS" : " FAIL")), false);
         return ok ? 0 : 1;
     }
 }

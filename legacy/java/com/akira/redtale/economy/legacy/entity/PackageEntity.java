@@ -357,7 +357,7 @@ public class PackageEntity extends Entity implements GeoEntity {
                     // 掉落所有尚未给予的物品
                     while (currentGiveIndex < cachedData.items().size()) {
                         PackageData.PackageItem itemToGive = cachedData.items().get(currentGiveIndex);
-                        if (itemToGive.weight() > 0 && !itemToGive.item().isEmpty()) {
+                        if (shouldGiveInAll(itemToGive)) {
                             dropItemAsEntity(itemToGive.item().copy());
                         }
                         currentGiveIndex++;
@@ -370,7 +370,7 @@ public class PackageEntity extends Entity implements GeoEntity {
                     if (giveCounter % GIVE_INTERVAL == 0) {
                         if (currentGiveIndex < cachedData.items().size()) {
                             PackageData.PackageItem itemToGive = cachedData.items().get(currentGiveIndex);
-                            if (itemToGive.weight() > 0 && !itemToGive.item().isEmpty()) {
+                            if (shouldGiveInAll(itemToGive)) {
                                 ((ServerPlayerEntity) targetPlayer).getInventory().offerOrDrop(itemToGive.item().copy());
                                 playGiveSound((ServerPlayerEntity) targetPlayer);
                             }
@@ -397,6 +397,21 @@ public class PackageEntity extends Entity implements GeoEntity {
                 this.discard();
             }
         }
+    }
+
+    /**
+     * ALL 模式的一条该不该发：**只看物品是否为空，不看权重**。
+     *
+     * <p>★权重是 RANDOM 专属概念★（{@code _PACKAGE_SPEC.md} §三：ALL=全部给 / RANDOM=按 weight 抽 1 个；
+     * {@code PackageEditHandler.applySetWeight} 的注释也写明「0 = 该条目在 RANDOM 里被跳过（但仍留在包里）」）。
+     * 旧实现两处 ALL 分支都写了 {@code weight() > 0}，于是把权重调到 0 的条目在 ALL 包里**静默消失**：
+     * 编辑器照样画金色 0、NBT 里条目还在（总数没变），玩家只会看到「礼包少给了一件」，零报错零日志。
+     *
+     * <p>抽成方法是为了让 {@code /redtale bound weightprobe} 能纯逻辑断言（不需要客户端/实体），
+     * 也避免「两处 ALL 分支各写一遍判据」再次分叉。
+     */
+    public static boolean shouldGiveInAll(PackageData.PackageItem item) {
+        return item != null && !item.item().isEmpty();
     }
 
     private void playGiveSound(ServerPlayerEntity player) {
