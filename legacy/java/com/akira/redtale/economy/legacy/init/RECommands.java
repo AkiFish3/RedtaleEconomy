@@ -145,6 +145,13 @@ public class RECommands {
                 .then(literal("ownerprobe")
                         .executes(RECommands::ownerProbe)
                 )
+                // dev/运维命令：包裹目录全矩阵自检（B58）。
+                // 用途：22 个 id 的「目录 → 注册表 → 贴图/geo/动画 资源」整条链一次验完。
+                // 旧口径只抽样 4 个 id（B36），新增档位/系列后漏注册或漏打资源**零报错**
+                // （物品变空气 / 紫黑块），静态生成器 `_pkg_gen --check` 只看源码树、不看 jar。
+                .then(literal("pkgprobe")
+                        .executes(RECommands::pkgProbe)
+                )
                 .then(literal("list")
                         .executes(context -> {
                             ServerCommandSource source = context.getSource();
@@ -429,6 +436,156 @@ public class RECommands {
 
     private static boolean matches(ItemStack stack, java.util.UUID uuid, String name) {
         return com.akira.redtale.economy.legacy.bound.BoundItemHandler.ownerMatches(stack, uuid, name);
+    }
+
+    /**
+     * {@code /redtale bound pkgprobe}：包裹目录 **全矩阵** 自检（B58）。
+     *
+     * <p>为什么需要：22 个 id（3 系列 × 6 档 + surprise + 3 旧别名）的渲染链是
+     * 「packages.json → PackageCatalog → REItems 注册 → 模型/贴图/geo/动画」，
+     * 中间任何一环漏一个 id 都是**零报错**的：
+     * <ul>
+     *   <li>漏注册 ⇒ 物品 id 变空气（存档里那件直接消失）；</li>
+     *   <li>漏打贴图 ⇒ 紫黑块；漏 geo/动画 ⇒ 退回默认模型（三系列长得一样）。</li>
+     * </ul>
+     *
+     * <p>既往口径只抽样 4 个 id（B36），而 `_pkg_gen --check` 只读**源码树**、不验 jar 里到底有没有。
+     * 这里对**运行期注册表 + 类路径资源**逐个断言，期望值全部由 series × tiers 现场推导
+     * （不复用 {@code SKIN} 表，否则就是拿实现验实现）。
+     */
+    private static int pkgProbe(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        int[] c = new int[]{0, 0}; // [fail, total]
+        java.util.Set<String> checkedRes = new java.util.HashSet<>();
+
+        java.util.List<com.akira.redtale.economy.legacy.data.PackageCatalog.Series> series =
+                com.akira.redtale.economy.legacy.data.PackageCatalog.series();
+        java.util.List<com.akira.redtale.economy.legacy.data.PackageCatalog.Tier> tiers =
+                com.akira.redtale.economy.legacy.data.PackageCatalog.tiers();
+
+        // ① 目录规模：3 系列 × 7 档（含 special）+ surprise 单件 + 3 别名 = 22
+        pkgCheck(source, c, "目录 series=3", 3, series.size());
+        pkgCheck(source, c, "目录 tiers=7", 7, tiers.size());
+        pkgCheck(source, c, "目录 items=22", 22,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.items().size());
+
+        // ② 系列 × 非 special 档位：期望 id = <series>_<tier>
+        int expected = 0;
+        for (var s : series) {
+            for (var t : tiers) {
+                if (t.special()) continue;
+                expected++;
+                String id = s.id() + "_" + t.id();
+                Item item = Registries.ITEM.get(new Identifier(LegacyInit.MOD_ID, id));
+                pkgCheck(source, c, "已注册 " + id, true, item != Items.AIR && item instanceof
+                        com.akira.redtale.economy.legacy.item.PackageItem);
+                pkgCheck(source, c, "档位 " + id, t.id(),
+                        com.akira.redtale.economy.legacy.data.PackageCatalog.tierOf(id));
+                String[] skin = com.akira.redtale.economy.legacy.data.PackageCatalog.skinOf(id);
+                pkgCheck(source, c, "系列 " + id, s.id(), skin == null ? null : skin[0]);
+
+                var spec = com.akira.redtale.economy.legacy.data.PackageCatalog.renderOf(id);
+                pkgCheck(source, c, "渲染 " + id, true, spec != null);
+                if (spec != null) {
+                    // ★贴图目录来自**系列**、文件名来自**档位**★：两者串了就是「图在但贴错档」
+                    pkgCheck(source, c, "贴图 " + id, s.iconDir() + "/" + t.id() + ".png", spec.texturePath());
+                    pkgCheck(source, c, "geo " + id, s.geo(), spec.geo());
+                    pkgCheck(source, c, "动画 " + id, s.anim(), spec.anim());
+                    pkgRes(source, c, checkedRes, "贴图资源 " + id, spec.texturePath());
+                    pkgRes(source, c, checkedRes, "geo资源 " + id, plain(spec.geo()));
+                    pkgRes(source, c, checkedRes, "动画资源 " + id, plain(spec.anim()));
+                    pkgRes(source, c, checkedRes, "物品动画资源 " + id, plain(spec.animItem()));
+                }
+                // ③ 换档往返：同系列同档必须回到自己（换档链的真值）
+                pkgCheck(source, c, "换档往返 " + id, id,
+                        com.akira.redtale.economy.legacy.data.PackageCatalog.itemIdForTier(id, t.id()));
+            }
+        }
+        pkgCheck(source, c, "非 special 物品数=18", 18, expected);
+
+        // ④ special 单件
+        pkgCheck(source, c, "surprise 已注册", true,
+                Registries.ITEM.get(new Identifier(LegacyInit.MOD_ID, "surprise")) != Items.AIR);
+        pkgCheck(source, c, "surprise 是 special", true,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.isSpecial("surprise"));
+        pkgCheck(source, c, "普通包裹不是 special", false,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.isSpecial("package_normal"));
+        var sp = com.akira.redtale.economy.legacy.data.PackageCatalog.renderOf("surprise");
+        pkgCheck(source, c, "surprise 有独立渲染", true, sp != null);
+        if (sp != null) {
+            pkgCheck(source, c, "surprise 用蛋形 geo", "redtale_economy:geo/surprise.geo.json", sp.geo());
+            pkgRes(source, c, checkedRes, "surprise 贴图资源", sp.texturePath());
+            pkgRes(source, c, checkedRes, "surprise geo 资源", plain(sp.geo()));
+            pkgRes(source, c, checkedRes, "surprise 动画资源", plain(sp.anim()));
+        }
+        // special 不能从普通档「换进去」，也不接受换档（系列为空 ⇒ 返回 null）
+        pkgCheck(source, c, "special 换不进普通档", null,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.itemIdForTier("surprise", "rare"));
+        pkgCheck(source, c, "普通包裹换不进 special", null,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.itemIdForTier("package_normal", "surprise"));
+
+        // ⑤ 旧 id 别名（老存档 / 已售商品）：贴图挂到 package 系列，但换档必须落到**正式 id**
+        String[][] aliases = {
+                {"normal_package", "normal"}, {"rare_package", "rare"}, {"legendary_package", "legend"}};
+        for (String[] a : aliases) {
+            pkgCheck(source, c, "别名档位 " + a[0], a[1],
+                    com.akira.redtale.economy.legacy.data.PackageCatalog.tierOf(a[0]));
+            pkgCheck(source, c, "别名仍在注册表 " + a[0], true,
+                    Registries.ITEM.get(new Identifier(LegacyInit.MOD_ID, a[0])) != Items.AIR);
+            pkgCheck(source, c, "别名换档落正式 id " + a[0], "package_" + a[1],
+                    com.akira.redtale.economy.legacy.data.PackageCatalog.itemIdForTier(a[0], a[1]));
+        }
+
+        // ⑥ 档位元数据（粒子/颜色是「查表错就静默回落」的重灾区）
+        pkgCheck(source, c, "mythic 粒子倍率", 1.8,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.particleMultiplier("mythic"));
+        pkgCheck(source, c, "legend 档位色", 0xFFD24A,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.tierColor("legend"));
+        pkgCheck(source, c, "未知档位倍率回落 1.0", 1.0,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.particleMultiplier("nope"));
+        pkgCheck(source, c, "未知档位色回落米黄", 0xD8CBB0,
+                com.akira.redtale.economy.legacy.data.PackageCatalog.tierColor("nope"));
+
+        final int failures = c[0];
+        final int total = c[1];
+        LegacyInit.LOGGER.info("[dev][pkprobe] done fail={} / {}", failures, total);
+        source.sendFeedback(() -> Text.literal("[dev][pkprobe] fail=" + failures + " / " + total), false);
+        return failures == 0 ? 1 : 0;
+    }
+
+    /** {@code redtale_economy:geo/x.json} → {@code geo/x.json}（拼资源绝对路径用）。 */
+    private static String plain(String namespaced) {
+        if (namespaced == null) return null;
+        int i = namespaced.indexOf(':');
+        return i < 0 ? namespaced : namespaced.substring(i + 1);
+    }
+
+    /** 资料是否真的在**运行时类路径**里（`_pkg_gen --check` 只验源码树，验不到 jar 漏打包）。 */
+    private static void pkgRes(ServerCommandSource source, int[] c, java.util.Set<String> seen,
+                               String name, String relPath) {
+        if (relPath == null) {
+            pkgCheck(source, c, name, true, false);
+            return;
+        }
+        // geo/动画按系列共用，同一路径只查一次（名字里还带 id，但去重键用路径）
+        boolean first = seen.add(relPath);
+        if (!first) return;
+        boolean exists = RECommands.class.getResource(
+                "/assets/" + LegacyInit.MOD_ID + "/" + relPath) != null
+                || RECommands.class.getResource(
+                "/assets/" + LegacyInit.MOD_ID + "/textures/" + relPath) != null;
+        pkgCheck(source, c, name + " (" + relPath + ")", true, exists);
+    }
+
+    /** 全矩阵判据：只在**失败**时刷屏（正常时 200+ 条全打会把聊天框刷满，也让日志没法看）。 */
+    private static void pkgCheck(ServerCommandSource source, int[] c, String name, Object want, Object got) {
+        c[1]++;
+        boolean ok = java.util.Objects.equals(want, got);
+        if (ok) return;
+        c[0]++;
+        LegacyInit.LOGGER.warn("[dev][pkprobe] {} expect={} actual={} FAIL", name, want, got);
+        source.sendFeedback(() -> Text.literal("[dev][pkprobe] " + name + " expect=" + want
+                + " actual=" + got + " FAIL"), false);
     }
 
     /** 计数版判据：分母自动累加（R113：别写死分母）。 */
