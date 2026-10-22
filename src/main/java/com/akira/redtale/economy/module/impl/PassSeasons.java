@@ -59,6 +59,17 @@ public final class PassSeasons {
 
 	public enum ArchiveResult { OK, ALREADY, NO_DATA, ERROR }
 
+	/**
+	 * 清单缓存（★读盘不能在热路径★）。
+	 *
+	 * <p>{@code writable()} 被 {@code BattlePassModule.addXp} 调用，而 {@code addXp("playMinute")}
+	 * 是<b>每人在线每分钟一次</b>（END_SERVER_TICK 累计 1200 tick）⇒ 原来每次都读盘 + 解析
+	 * {@code seasons.json}，并且全程持有类锁。50 人在线 = 50 次读盘/分钟。
+	 * 现在只在 {@link #writeFile} 之后失效（写入是唯一变更入口）。
+	 */
+	private static volatile List<Entry> CACHE;
+	private static volatile Path CACHE_PATH;
+
 	private PassSeasons() {
 	}
 
@@ -77,18 +88,33 @@ public final class PassSeasons {
 
 	// ---------------------------------------------------------------- 清单
 
+	/** 清清单缓存（重载 / 数据目录重绑时调；手工改过 seasons.json 也能被读到）。 */
+	public static void reload() {
+		CACHE = null;
+		CACHE_PATH = null;
+	}
+
 	public static synchronized List<Entry> list() {
+		Path f = file();
+		List<Entry> cached = CACHE;
+		if (cached != null && java.util.Objects.equals(f, CACHE_PATH)) return cached;
 		List<Entry> out = new ArrayList<>();
 		JsonObject o = readFile();
 		JsonElement arr = o.get("seasons");
-		if (arr == null || !arr.isJsonArray()) return out;
+		if (arr == null || !arr.isJsonArray()) {
+			CACHE = List.copyOf(out);
+			CACHE_PATH = f;
+			return CACHE;
+		}
 		for (JsonElement e : arr.getAsJsonArray()) {
 			if (e == null || !e.isJsonObject()) continue;
 			JsonObject s = e.getAsJsonObject();
 			out.add(new Entry(
 					str(s, "id"), str(s, "name"), str(s, "startAt"), str(s, "endAt"), str(s, "archivedAt")));
 		}
-		return out;
+		CACHE = List.copyOf(out);
+		CACHE_PATH = f;
+		return CACHE;
 	}
 
 	public static synchronized Entry find(String id) {
@@ -315,6 +341,8 @@ public final class PassSeasons {
 	}
 
 	private static void writeFile(JsonObject o) {
+		CACHE = null;          // 唯一变更入口 ⇒ 写完（或写失败）都让缓存重读，避免读到旧清单
+		CACHE_PATH = null;
 		Path f = file();
 		if (f == null) return;
 		try {

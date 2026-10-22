@@ -141,6 +141,7 @@ public final class BattlePassModule implements RedtaleModule {
 		flushAll();
 		CACHE.clear();
 		resolveDir();
+		PassSeasons.reload();
 		PassSeasons.ensureCurrent(BattlePassConfig.seasonId(), BattlePassConfig.seasonName());
 	}
 
@@ -154,6 +155,7 @@ public final class BattlePassModule implements RedtaleModule {
 	public void rebindDataDir() {
 		resolveDir();
 		// T02：%world% 就绪后清单落在真正的数据根里，这里补登记一次
+		PassSeasons.reload();
 		PassSeasons.ensureCurrent(BattlePassConfig.seasonId(), BattlePassConfig.seasonName());
 	}
 
