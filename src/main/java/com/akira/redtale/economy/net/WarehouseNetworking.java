@@ -3,6 +3,7 @@ package com.akira.redtale.economy.net;
 import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.module.ModuleEvents;
 import com.akira.redtale.economy.warehouse.WarehouseData;
+import com.akira.redtale.economy.warehouse.OpThrottle;
 import com.akira.redtale.economy.warehouse.WarehouseSlots;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.ItemStack;
@@ -31,12 +32,9 @@ public final class WarehouseNetworking {
 	 *
 	 * <p>每次操作末尾都会 {@code d.save()}（整份 JSON 原子重写），所以「包频率」直接等于
 	 * 「磁盘写频率」。真人点击最多 10 次/秒，80 留足拖拽与连点的余量；改过的客户端刷包
-	 * 会在这一层被丢掉，不会把主线程和磁盘打满。
+	 * 会在这一层被丢掉，不会把主线程和磁盘打满。判定逻辑在 {@link OpThrottle}（纯函数，可单测）。
 	 */
-	private static final int OPS_PER_SEC = 80;
-
-	/** uuid → {当前秒, 本秒计数}。 */
-	private static final Map<UUID, int[]> OP_WINDOW = new HashMap<>();
+	private static final OpThrottle THROTTLE = OpThrottle.defaults();
 
 	private static final long THROTTLE_LOG_EVERY_MS = 30_000;
 	private static long lastThrottleLogAt;
@@ -53,7 +51,7 @@ public final class WarehouseNetworking {
 	 */
 	private static void op(ServerPlayerEntity player, String name, Runnable body) {
 		if (player == null) return;
-		if (!allowed(player.getUuid())) {
+		if (!THROTTLE.allow(player.getUuid(), System.currentTimeMillis())) {
 			long now = System.currentTimeMillis();
 			if (now - lastThrottleLogAt > THROTTLE_LOG_EVERY_MS) {
 				lastThrottleLogAt = now;
@@ -74,15 +72,6 @@ public final class WarehouseNetworking {
 		}
 	}
 
-	private static boolean allowed(UUID id) {
-		int sec = (int) (System.currentTimeMillis() / 1000L);
-		int[] w = OP_WINDOW.computeIfAbsent(id, k -> new int[]{-1, 0});
-		if (w[0] != sec) {
-			w[0] = sec;
-			w[1] = 0;
-		}
-		return ++w[1] <= OPS_PER_SEC;
-	}
 
 	public static void send(ServerPlayerEntity player) {
 		if (player == null) return;
@@ -189,7 +178,7 @@ public final class WarehouseNetworking {
 
 		// 断开时把光标里的东西塞回背包，避免丢物品
 		ModuleEvents.onQuit("warehouse.cursor", p -> {
-			OP_WINDOW.remove(p.getUuid());
+			THROTTLE.forget(p.getUuid());
 			ItemStack cur = CURSOR.remove(p.getUuid());
 			if (cur != null && !cur.isEmpty()) {
 				p.getInventory().offerOrDrop(cur);
