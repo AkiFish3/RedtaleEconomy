@@ -69,9 +69,10 @@ public final class HubStoragePage {
 		int cols = cols(w);
 		int gy = sy + 22;
 		int gridBottom = y + h - 92;
-		int visibleRows = Math.max(1, (gridBottom - gy) / (CELL + GAP));
+		int rows = visibleRows(h);
 		int totalRows = (slots + cols - 1) / cols;
-		scrollRows = Math.max(0, Math.min(scrollRows, Math.max(0, totalRows - visibleRows)));		List<ItemStack> stacks = WarehouseClientNetworking.SLOTS;
+		scrollRows = Math.max(0, Math.min(scrollRows, maxScrollRows(w, h)));
+		List<ItemStack> stacks = WarehouseClientNetworking.SLOTS;
 		dc.enableScissor(x, gy, x + w, Math.max(gy + 1, gridBottom));
 		for (int i = 0; i < slots; i++) {
 			int cx = x + (i % cols) * (CELL + GAP);
@@ -87,10 +88,10 @@ public final class HubStoragePage {
 					? "还没有仓储空间，点右上角「升级」购买"
 					: "正在读取仓储…";
 			dc.drawText(tr, Text.literal(msg), x + 2, gy + 4, HubTheme.MUTED, false);
-		} else if (totalRows > visibleRows) {
+		} else if (totalRows > rows) {
 			// 右侧细滚动条
-			int barH = Math.max(10, (gridBottom - gy) * visibleRows / totalRows);
-			int barY = gy + (gridBottom - gy - barH) * scrollRows / Math.max(1, totalRows - visibleRows);
+			int barH = Math.max(10, (gridBottom - gy) * rows / totalRows);
+			int barY = gy + (gridBottom - gy - barH) * scrollRows / Math.max(1, totalRows - rows);
 			dc.fill(x + w - 2, gy, x + w - 1, gridBottom, HubTheme.LINE);
 			dc.fill(x + w - 2, barY, x + w - 1, barY + barH, HubTheme.MUTED);
 		}
@@ -267,9 +268,19 @@ public final class HubStoragePage {
 	 */
 	public static int maxScrollRows(int w, int h) {
 		int cols = cols(w);
-		int visibleRows = Math.max(1, ((h - 92) - (16 + 22)) / (CELL + GAP));
 		int totalRows = (WarehouseClientNetworking.SLOT_COUNT + cols - 1) / cols;
-		return Math.max(0, totalRows - visibleRows);
+		return Math.max(0, totalRows - visibleRows(h));
+	}
+
+	/**
+	 * 网格区能放下的行数（与 {@link #render} 的 gridBottom/gy 同一口径：
+	 * {@code (y+h-92) - (y+16+22)}，y 抵消后只剩 h）。
+	 *
+	 * <p>★渲染曾经自己又写了一遍这个除法★：数值碰巧相等，但「三处共用一个函数」
+	 * 只是注释里的话 —— 下次改底部留白就会立刻分叉。现在渲染、滚轮、命中都从这里取。
+	 */
+	static int visibleRows(int h) {
+		return Math.max(1, ((h - 92) - (16 + 22)) / (CELL + GAP));
 	}
 
 	public static Result click(double mx, double my, int x, int y, int w, int h, int button,
