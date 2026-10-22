@@ -50,12 +50,12 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private static final int PANEL_W = 408;
     private static final int PANEL_H = 240;
 
-    private static final int MODE_Y = 20;
+    private static final int MODE_Y = 16;
     private static final int MODE_CHIP_W = 86;
     private static final int MODE_CHIP_H = 12;
     private static final int MODE_CHIP_GAP = 4;
 
-    private static final int TIER_Y = 36;
+    private static final int TIER_Y = 30;
     private static final int TIER_CHIP_W = 45;
     private static final int TIER_CHIP_H = 12;
 
@@ -147,8 +147,9 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         int tx = x + TABLE_X;
         context.fill(tx - 1, gy - 1, tx + TABLE_W + 1, gy + TABLE_ROWS * TABLE_ROW_H + 1, 0xFF141418);
         List<Integer> entries = occupiedSlots();
+        int scroll = tableScrollFor(entries.size());
         for (int i = 0; i < TABLE_ROWS; i++) {
-            int idx = tableScroll + i;
+            int idx = scroll + i;
             int ry = gy + i * TABLE_ROW_H;
             if (idx < entries.size()) {
                 boolean hover = inside(mouseX, mouseY, tx, ry, TABLE_W, TABLE_ROW_H);
@@ -179,10 +180,16 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
 
     @Override
     protected void drawForeground(DrawContext context, int mouseX, int mouseY) {
-        super.drawForeground(context, mouseX, mouseY);
-
+        // ★不调 super.drawForeground★：javap 实测它整个方法体只做两件事 —— 用 0x404040（vanilla
+        // 浅灰底用的深灰）画 `this.title` 与 `this.playerInventoryTitle`。本面板底色是 0xFF1B1B1F，
+        // 深灰字（64,64,64 on 27,27,31）几乎看不见 ⇒ 标题和「物品栏」都像丢了。
+        // 这里按面板配色自己画，位置仍沿用 titleX/titleY 与 playerInventoryTitleX/Y（= 8 / INV_Y-12），
+        // 与 HandledScreen 完全同口径，接入原版坐标体系不变。
         int x = left();
         int y = top();
+        context.drawText(this.textRenderer, this.title, this.titleX, this.titleY, 0xFFEDEDF2, false);
+        context.drawText(this.textRenderer, this.playerInventoryTitle,
+                this.playerInventoryTitleX, this.playerInventoryTitleY, 0xFF8E8E9A, false);
 
         // 模式 chip 文案
         PackageData.PackageMode[] modes = PackageData.PackageMode.values();
@@ -209,8 +216,9 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         int tx = x + TABLE_X;
         int gy = y + PackageEditHandler.GRID_Y;
         List<Integer> entries = occupiedSlots();
+        int scroll = tableScrollFor(entries.size());
         for (int i = 0; i < TABLE_ROWS; i++) {
-            int entryIndex = tableScroll + i;
+            int entryIndex = scroll + i;
             int ry = gy + i * TABLE_ROW_H;
             if (entryIndex >= entries.size()) break;
             int slot = entries.get(entryIndex);
@@ -331,7 +339,7 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         int row = tableRowAt(mouseX, mouseY);
         if (row >= 0) {
             List<Integer> entries = occupiedSlots();
-            int entryIndex = tableScroll + row;
+            int entryIndex = tableScrollFor(entries.size()) + row;
             if (entryIndex < entries.size()) {
                 int slot = entries.get(entryIndex);
                 double relX = mouseX - (x + TABLE_X);
@@ -365,7 +373,8 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         if (tableRowAt(mouseX, mouseY) >= 0) {
             int occupied = occupiedSlots().size();
             int maxScroll = Math.max(0, occupied - TABLE_ROWS);
-            tableScroll = Math.max(0, Math.min(maxScroll, tableScroll - (int) Math.signum(amount)));
+            tableScroll = Math.max(0, Math.min(maxScroll,
+                    tableScrollFor(occupied) - (int) Math.signum(amount)));
             return true;
         }
         // 网格上滚动 = 调权重（★只对已有物品生效★：空格子滚轮会变成"给未来物品预设权重"，很反直觉）
@@ -384,6 +393,21 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     }
 
     // ————————————————————————— 小工具 —————————————————————————
+
+    /**
+     * 表格滚动偏移（已按当前条目数钳位）。
+     *
+     * <p>★必须钳位★：滚动位置只在滚轮事件里更新，而条目数会因为「拖回背包 / 右键删 / （换档后重算）」
+     * 变少 ⇒ `tableScroll` 可能大于 maxScroll，此时 {@code drawForeground} 里
+     * {@code entryIndex >= entries.size()} 全部 break ⇒ 表格**整块空白**（物品还在，但一行不显示，
+     * 鼠标放上去也没有可点行），且零报错、零日志。每次使用前收敛到合法区间的做法把这条堵死。
+     */
+    private int tableScrollFor(int entries) {
+        int max = Math.max(0, entries - TABLE_ROWS);
+        if (tableScroll > max) tableScroll = max;
+        else if (tableScroll < 0) tableScroll = 0;
+        return tableScroll;
+    }
 
     /** 参与换档的档位（跳过 special：surprise 是全局单件，不随系列展开）。 */
     private static List<PackageCatalog.Tier> editableTiers() {

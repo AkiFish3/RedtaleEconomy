@@ -41,10 +41,19 @@ public class PackageEditHandler extends ScreenHandler {
     public static final int GRID_COLS = 15;
     public static final int GRID_ROWS = 6;
     public static final int GRID_X = 8;
-    public static final int GRID_Y = 52;
+    /**
+     * 网格顶 = 44：标题 6..15、模式 chip 16..28、档位 chip 30..42，紧接网格 44..152。
+     *
+     * <p>★高 240 的挤压版必须给「背包名」留一条带★：{@code HandledScreen.drawForeground} 会在
+     * {@code (playerInventoryTitleX, playerInventoryTitleY)} 画「物品栏」9px 高，而本界面的
+     * Y 取 {@code INV_Y - 12}。旧值 GRID_Y=52 / INV_Y=162 ⇒ 网格底 160、背包名带 150..159
+     * ⇒ 文字整个压在**最后一行格子上**（文字后画，直接盖住第 6 行的图标）。
+     * 现在网格上移 8px、背包下移 2px：网格底 152 = 背包名带起点，互不重叠。
+     */
+    public static final int GRID_Y = 44;
     public static final int INV_X = 8;
-    /** 网格底边 = 52+6×18 = 160，背包紧接其后：面板总高 240，刚好等于默认窗口的逻辑高度。 */
-    public static final int INV_Y = 162;
+    /** 网格底边 = 44+6×18 = 152，背包名带 152..161 独占一行，背包槽从 164 起（底 164+58+18 = 240 = 面板高）。 */
+    public static final int INV_Y = 164;
     /** 单条权重上限：防客户端塞 Integer.MAX_VALUE 让其它条目永远抽不到（也让 UI 放得下 3 位数）。 */
     public static final int MAX_WEIGHT = 999;
     private static final int PLAYER_INV_START = EDITOR_SLOTS;
