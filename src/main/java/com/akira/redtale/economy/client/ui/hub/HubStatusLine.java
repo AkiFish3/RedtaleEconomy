@@ -33,6 +33,11 @@ public final class HubStatusLine {
 		until = 0;
 	}
 
+	/** 当前状态文字（夹具取证用：截图里看不清的东西靠日志断言）。 */
+	public String text() {
+		return text;
+	}
+
 	public void render(DrawContext dc, TextRenderer tr, HubFrame f) {
 		int y = f.y + f.h - HubFrame.BOTTOM_BAR;
 		if (!"vanilla".equals(ClientUiConfig.theme)) {

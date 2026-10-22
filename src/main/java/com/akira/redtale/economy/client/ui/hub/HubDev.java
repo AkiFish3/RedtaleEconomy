@@ -22,6 +22,11 @@ public final class HubDev {
 		return host.pageId();
 	}
 
+	/** 状态栏文字（截图看不出「为什么落在这页」，用日志断言）。 */
+	public static String statusText(HubScreen host) {
+		return host.statusLine.text();
+	}
+
 	/**
 	 * 夹具专用：绕过 {@link HubPage#accessible} 直接落到指定页。
 	 *
@@ -29,10 +34,15 @@ public final class HubDev {
 	 * CHECKIN，于是截图文件名叫 {@code u6-86-hub-admin}、日志里 {@code page=checkin} ——
 	 * 文件名对、内容错，按文件名判绿的扫描器完全看不出来（2026-10-22 实证）。
 	 * 本方法只给 dev 夹具用，不进任何玩家可达路径。
+	 *
+	 * <p>★顺手清状态栏★ 回落时 {@code open()} 已经写了「需要管理员权限」；不清掉的话
+	 * 截图里控制台正文写着「需要管理员权限」、底栏还挂着上一页的提示，看起来像产品缺陷
+	 * （2026-10-22 u6-86 截图就是这样，白查一轮）。
 	 */
 	public static void forcePage(HubScreen host, HubPage page) {
 		if (host == null || page == null) return;
 		host.page = page;
+		host.statusLine.clear();
 	}
 
 	/**

@@ -28,7 +28,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -55,6 +59,8 @@ public final class UiShots {
 	private static final String STEPS_FILE = "u6-steps.txt";
 	/** 白名单外的 step 推进间隔（tick）。只够命令出队，不保证界面画好——反正不拍。 */
 	private static final int FAST_SETTLE = 2;
+	/** 保留多少份归档的 {@code u6-shots-<时间>.log}（证据够用又不占地方）。 */
+	private static final int KEEP_ARCHIVES = 12;
 	/** 等主世界加载的上限（tick），超时就在标题界面拍照。 */
 	private static final int JOIN_TIMEOUT = 400;
 	/** 每个界面渲染多少 tick 再拍（首帧字体/贴图还没绑好）。 */
@@ -170,6 +176,8 @@ public final class UiShots {
 		warnForeignFlags(gameDir);
 		readWhitelist(gameDir);
 		try {
+			// 先归档再清空：证据链不能只活到下一次启动
+			archivePrevLog(gameDir);
 			// 每轮从头记：不然上一轮的追加会混进来，pairs 统计就不可信了
 			Files.deleteIfExists(gameDir.resolve("u6-shots.log"));
 			// T52：上一轮的致命取证不能留到这一轮冒充（存在性就是「本轮失败」的判据）
@@ -199,6 +207,47 @@ public final class UiShots {
 			}
 		} catch (IOException e) {
 			LOG.add("WARN flag scan failed: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * 把上一轮的 {@code u6-shots.log} 归档成 {@code u6-shots-<yyyyMMdd-HHmmss>.log}。
+	 *
+	 * <p>★为什么★ {@code latest.log} 每次启动被重建、本文件每轮被清空 ⇒ 隔一轮就再也
+	 * 证明不了「某张图当时画的是哪一页」，验收只能退化成看文件名 —— 第 N+65 轮正是
+	 * 这样把 {@code u6-86-hub-admin}（内容其实是签到页）当成控制台放过去的。
+	 * 归档保留了 {@code page=} 行，{@code _rel_gate.py} 会按通配把全部归档一起扫。
+	 *
+	 * <p>只留最近 {@value #KEEP_ARCHIVES} 份，免得 {@code run/} 攒出几百个文件。
+	 */
+	private static void archivePrevLog(Path gameDir) {
+		Path prev = gameDir.resolve("u6-shots.log");
+		if (!Files.exists(prev)) {
+			return;
+		}
+		String stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
+		try {
+			Files.copy(prev, gameDir.resolve("u6-shots-" + stamp + ".log"),
+					StandardCopyOption.REPLACE_EXISTING);
+			try (var stream = Files.list(gameDir)) {
+				List<Path> old = stream.filter(p -> {
+					String n = p.getFileName().toString();
+					return n.startsWith("u6-shots-") && n.endsWith(".log");
+				}).sorted(Comparator.comparingLong(UiShots::mtime)).toList();
+				for (int i = 0; i < old.size() - KEEP_ARCHIVES; i++) {
+					Files.deleteIfExists(old.get(i));
+				}
+			}
+		} catch (IOException e) {
+			LOG.add("WARN archive prev shots log failed: " + e.getMessage());
+		}
+	}
+
+	private static long mtime(Path p) {
+		try {
+			return Files.getLastModifiedTime(p).toMillis();
+		} catch (IOException e) {
+			return 0L;
 		}
 	}
 
@@ -809,7 +858,13 @@ public final class UiShots {
 			case 246 -> shotKeep(mc, "u6-86-hub-admin.png", () -> {
 				mc.setScreen(null);
 				HubScreen.open(HubPage.ADMIN);
-				if (mc.currentScreen instanceof HubScreen hs) HubDev.forcePage(hs, HubPage.ADMIN);
+				if (mc.currentScreen instanceof HubScreen hs) {
+					// 取证：深链接落到哪页、状态栏说了什么。非 OP 环境应看到
+					// page=checkin + status=需要管理员权限（而不是含糊的「该模块未开启」）
+					LOG.add("admin deep link -> page=" + HubDev.pageId(hs)
+							+ " status=" + HubDev.statusText(hs));
+					HubDev.forcePage(hs, HubPage.ADMIN);
+				}
 			});
 			case 247 -> act(mc, () -> LOG.add("hub page sweep done (16 pages, last="
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()) + ")"));

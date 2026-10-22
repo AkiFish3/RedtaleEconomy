@@ -106,7 +106,7 @@ public class HubScreen extends Screen {
 		HubPage want = page == null ? HubPage.CHECKIN : page;
 		if (!HubPage.accessible(want)) {
 			s.page = HubPage.CHECKIN;
-			s.statusLine.set("该模块未开启");
+			s.statusLine.set(denyReason(want));
 		} else {
 			s.page = want;
 		}
@@ -118,11 +118,23 @@ public class HubScreen extends Screen {
 		s.pullData(s.page);
 	}
 
+	/**
+	 * 这个页面进不去的原因（给状态栏用）。
+	 *
+	 * <p>★别一律说「该模块未开启」★ {@link HubPage#ADMIN} 的 module 是 {@code null}（恒开），
+	 * 它进不去只可能是没权限。老代码把两种情况都写成「该模块未开启」，非 OP 的服主看到
+	 * 这句话会去翻 config 找那个根本不存在的开关 —— 2026-10-22 u6-86 截图抓到的。
+	 */
+	static String denyReason(HubPage p) {
+		if (p != null && p.adminOnly && !HubPage.canAdmin()) return "需要管理员权限";
+		return "该模块未开启";
+	}
+
 	/** U8b：/rt 切页时复用当前界面，别把搜索词和滚动位置清掉。 */
 	public void setPage(HubPage p) {
 		if (p == null || p == page) return;
 		if (!HubPage.accessible(p)) {
-			statusLine.set("该模块未开启");
+			statusLine.set(denyReason(p));
 			return;
 		}
 		this.page = p;
