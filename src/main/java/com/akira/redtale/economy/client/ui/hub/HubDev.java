@@ -23,6 +23,19 @@ public final class HubDev {
 	}
 
 	/**
+	 * 夹具专用：绕过 {@link HubPage#accessible} 直接落到指定页。
+	 *
+	 * <p>★为什么需要★ {@code HubScreen.open(ADMIN)} 在「没有玩家」时会被判成非 OP ⇒ 静默回落
+	 * CHECKIN，于是截图文件名叫 {@code u6-86-hub-admin}、日志里 {@code page=checkin} ——
+	 * 文件名对、内容错，按文件名判绿的扫描器完全看不出来（2026-10-22 实证）。
+	 * 本方法只给 dev 夹具用，不进任何玩家可达路径。
+	 */
+	public static void forcePage(HubScreen host, HubPage page) {
+		if (host == null || page == null) return;
+		host.page = page;
+	}
+
+	/**
 	 * 按页面点侧栏。
 	 *
 	 * <p>★别写死下标★：模块开关（T51）会让 {@link HubPage#visible()} 少一项，之后的每个下标都前移，

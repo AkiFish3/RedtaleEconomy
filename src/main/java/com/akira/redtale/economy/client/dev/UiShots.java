@@ -803,10 +803,13 @@ public final class UiShots {
 			});
 			case 245 -> shotKeep(mc, "u6-85-hub-ledger.png",
 					() -> openFresh(mc, HubPage.LEDGER, "rt ledger"));
-			// 控制台页同理没有 /rt 子命令（105 步已证明 HubScreen.open 可直开）
+			// 控制台页同理没有 /rt 子命令（105 步已证明 HubScreen.open 可直开）。
+			// ★但 open 会回落★：没有玩家时 canAdmin() 恒 false ⇒ accessible(ADMIN) false ⇒
+			// 静默落到 CHECKIN（文件名 admin、内容签到页）。夹具用 forcePage 直落。
 			case 246 -> shotKeep(mc, "u6-86-hub-admin.png", () -> {
 				mc.setScreen(null);
 				HubScreen.open(HubPage.ADMIN);
+				if (mc.currentScreen instanceof HubScreen hs) HubDev.forcePage(hs, HubPage.ADMIN);
 			});
 			case 247 -> act(mc, () -> LOG.add("hub page sweep done (16 pages, last="
 					+ (mc.currentScreen == null ? "null" : mc.currentScreen.getClass().getSimpleName()) + ")"));
