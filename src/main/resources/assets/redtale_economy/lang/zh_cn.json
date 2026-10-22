@@ -182,6 +182,7 @@
   "guild.perks": "§7当前特权：商店 -%s%% · 悬赏位 +%s",
   "guild.rankUp": "§6协会等级提升：%s（%s）",
   "guild.addOk": "已给 %s 增加 %s 声望（当前 %s）",
+  "guild.added": "§a已给 %s 增加 %s 声望（来源 admin，当前 %s）",
   "guild.rankDown": "协会等级下降：%s → %s（当前声望 %s）",
   "guild.repLost": "声望 -%s（来源 %s），当前 %s",
   "guild.repLossBlocked": "%s 本次未扣声望（冷却中 / 已达每日上限或下限），当前 %s",

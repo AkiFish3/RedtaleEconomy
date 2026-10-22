@@ -182,6 +182,7 @@
   "guild.perks": "§7Perks: shop -%s%% · bounty slots +%s",
   "guild.rankUp": "§6Guild rank up: %s (%s)",
   "guild.addOk": "Gave %s %s rep (now %s)",
+  "guild.added": "§aGave %s %s rep (source admin, now %s)",
   "guild.rankDown": "Guild rank down: %s -> %s (reputation %s)",
   "guild.repLost": "Reputation -%s (source %s), now %s",
   "guild.repLossBlocked": "%s lost no reputation this time (cooldown / daily cap or floor reached), now %s",

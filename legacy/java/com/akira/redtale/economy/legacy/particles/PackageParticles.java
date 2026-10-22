@@ -38,8 +38,21 @@ public final class PackageParticles {
 
     // ------------------------------------------------------------------ 数量
 
+    /**
+     * 粒子是否被配置关掉。
+     *
+     * <p>★{@code particles.enabled=false} 曾是死配置★：只有 `scaled()` 读 {@code density}，
+     * {@code PackageConfig.particlesEnabled()} 全仓零调用 ⇒ 把 enabled 写成 false 之后
+     * 待机/开箱/领取/滚动的粒子照旧全放（配置看起来生效、实际没有任何效果，零日志）。
+     * 现在两个开关在**同一处**收口：density=0 与 enabled=false 都当「关」。
+     */
+    private static boolean off() {
+        return !PackageConfig.particlesEnabled() || PackageConfig.density() == 0;
+    }
+
     /** {@code base × k(档位) × densityScale}，四舍五入且至少 1；关闭时返回 0。 */
     private static int scaled(double base, String tier) {
+        if (off()) return 0;
         double scale = PackageConfig.densityScale();
         if (scale <= 0) return 0;
         double k = PackageCatalog.particleMultiplier(tier);
@@ -64,7 +77,7 @@ public final class PackageParticles {
 
     /** 待机：每 5 tick 3~5 颗（规格表），ENCHANT / END_ROD 各半，余数补档位色 DUST。 */
     public static void idle(ServerWorld world, Vec3d pos, String tier) {
-        if (PackageConfig.density() == 0) return;
+        if (off()) return;
         Random random = world.getRandom();
         int n = scaled(3 + random.nextInt(3), tier); // 3/4/5
         if (n <= 0) return;
@@ -92,7 +105,7 @@ public final class PackageParticles {
 
     /** 开箱一次性爆发：60 颗外扩 + 20 颗上升，高级档（legend/mythic）额外 24 颗 FIREWORK 一圈。 */
     public static void openBurst(ServerWorld world, Vec3d pos, String tier) {
-        if (PackageConfig.density() == 0) return;
+        if (off()) return;
         Random random = world.getRandom();
         int outward = scaled(60, tier);
         for (int i = 0; i < outward; i++) {
@@ -130,7 +143,7 @@ public final class PackageParticles {
 
     /** 领取：25 颗 TOTEM_OF_UNDYING 上飘（每个包裹实体只放一次，见 PackageEntity）。 */
     public static void claim(ServerWorld world, Vec3d pos, String tier) {
-        if (PackageConfig.density() == 0) return;
+        if (off()) return;
         int n = scaled(25, tier);
         if (n <= 0) return;
         world.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING,
@@ -145,7 +158,7 @@ public final class PackageParticles {
      * 所以走 {@link World#addParticle} 而不是 server 的 spawnParticles。
      */
     public static void scroll(World world, Vec3d pos, String tier) {
-        if (PackageConfig.density() == 0) return;
+        if (off()) return;
         int n = scaled(8, tier);
         if (n <= 0) return;
         Random random = world.getRandom();

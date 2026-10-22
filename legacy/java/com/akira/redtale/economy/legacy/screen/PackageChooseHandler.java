@@ -113,7 +113,10 @@ public class PackageChooseHandler extends ScreenHandler {
         }
         if (!pkg.isChooseModeActive()) return false;
         if (pkg.getOwnerUuid() != null && !pkg.getOwnerUuid().equals(player.getUuid())) return false;
-        return player.squaredDistanceTo(pkg) <= 256.0;
+        // ★400.0（20 格）与 RENetworking 的 C2S 闸门、PackageEntity.tick 的超距离回收同口径★：
+        // 旧值 256.0（16 格）比另外两处更紧 ⇒ 玩家站在 17~19 格时服务端照收 select_item、
+        // 实体也不会被回收，但 canUse 每 tick 判 false ⇒ 界面被强行关掉（"点不到，界面自己没了"）。
+        return player.squaredDistanceTo(pkg) <= 400.0;
     }
     @Override
     public ItemStack quickMove(PlayerEntity player, int slotIndex) { return ItemStack.EMPTY; }

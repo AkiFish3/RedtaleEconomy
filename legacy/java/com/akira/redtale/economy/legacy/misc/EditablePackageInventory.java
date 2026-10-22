@@ -101,6 +101,39 @@ public class EditablePackageInventory extends SimpleInventory {
         return (slot >= 0 && slot < SIZE) ? this.weights[slot] : 1;
     }
 
+    /**
+     * 拖出即清权重（2026-10-22 第 32 轮）。
+     *
+     * <p>★权重数组按「格子」存，不按物品存★：右键删除走 {@link #setWeight} 复位了，但**把物品拖回背包**
+     * 走的是 {@code removeStack}（{@code Slot.onTakeItem} ⇒ {@code Inventory.removeStack}），
+     * 旧实现只留下一个空格子 + 旧权重。玩家随后往同一格拖入新物品 ⇒ 新物品**静默继承**上一件的权重
+     * （实测 RANDOM 包里把权重 50 的钻石拖走、换成苹果 ⇒ 苹果直接占 50/51 的抽取概率，界面看不出原因）。
+     *
+     * <p>两个重载都要覆盖：vanilla 的 {@code removeStack(slot)} 不走 {@code removeStack(slot, amount)}。
+     */
+    @Override
+    public ItemStack removeStack(int slot, int amount) {
+        ItemStack removed = super.removeStack(slot, amount);
+        resetWeightIfEmpty(slot);
+        return removed;
+    }
+
+    @Override
+    public ItemStack removeStack(int slot) {
+        ItemStack removed = super.removeStack(slot);
+        resetWeightIfEmpty(slot);
+        return removed;
+    }
+
+    /** 格子空了就把权重归 1（新物品进来时不会继承上一件的权重）。 */
+    private void resetWeightIfEmpty(int slot) {
+        if (slot < 0 || slot >= SIZE) return;
+        if (getStack(slot).isEmpty() && this.weights[slot] != 1) {
+            this.weights[slot] = 1;
+            this.dirty = true;
+        }
+    }
+
     // ———————— 模式操作 ———————— //
 
     public PackageData.PackageMode getMode() {
