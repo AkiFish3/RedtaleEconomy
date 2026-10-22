@@ -131,6 +131,13 @@ public class RECommands {
                                 })
                         )
                 )
+                // dev/运维命令：权重数组的「格子空了就归 1」三条入口自检（B53）。
+                // 用途：`EditablePackageInventory` 有三个清空格子的路径（removeStack×2 / setStack），
+                // 任何一个漏了清权重都会让新拖入的物品静默继承上一件的权重（零报错）。
+                // 不需要客户端、不需要 GUI，纯逻辑 ⇒ 用 RCON 就能取证。
+                .then(literal("weightprobe")
+                        .executes(RECommands::weightProbe)
+                )
                 .then(literal("list")
                         .executes(context -> {
                             ServerCommandSource source = context.getSource();
@@ -240,5 +247,94 @@ public class RECommands {
         wrapper.put("item", probe.writeNbt(new NbtCompound()));
         wrapper.putInt("weight", 1);
         return wrapper;
+    }
+
+    /**
+     * {@code /redtale bound weightprobe}：权重数组「格子空了就归 1」的三条路径自检（B53）。
+     *
+     * <p>为什么需要这条命令：权重按**格子**存，不按物品存。清空格子的路径有三条 ——
+     * {@code removeStack(slot, amount)}（拖出/右键删）、{@code removeStack(slot)}（部分原版分支）、
+     * {@code setStack(slot, EMPTY)}（{@code quickMove} 里 shift-click 移出的写法）。
+     * 任一条漏清 ⇒ 玩家 shift 移出后往同一格拖新物品，新物品静默继承旧权重
+     * （界面完全看不出来，只有抽取概率异常）。纯逻辑、不需要客户端 ⇒ RCON 就能判。
+     */
+    private static int weightProbe(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        Item pkgItem = Registries.ITEM.get(new Identifier(LegacyInit.MOD_ID, "package_normal"));
+        if (pkgItem == Items.AIR) {
+            source.sendError(Text.literal("[dev][wprobe] 找不到 package_normal（物品未注册）"));
+            return 0;
+        }
+
+        int fail = 0;
+        // ① 拖出：Slot.onTakeItem → Inventory.removeStack(slot, amount)
+        {
+            com.akira.redtale.economy.legacy.misc.EditablePackageInventory inv = newProbeInventory(pkgItem);
+            inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
+            inv.setWeight(0, 42);
+            inv.removeStack(0, 1);
+            fail += expect(source, "removeStack(slot,amount)", 1, inv.getWeight(0));
+        }
+        // ② removeStack(slot) 单参重载
+        {
+            com.akira.redtale.economy.legacy.misc.EditablePackageInventory inv = newProbeInventory(pkgItem);
+            inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
+            inv.setWeight(0, 42);
+            inv.removeStack(0);
+            fail += expect(source, "removeStack(slot)", 1, inv.getWeight(0));
+        }
+        // ③ shift-click 移出：ScreenHandler.quickMove 里 `slot.setStack(ItemStack.EMPTY)`
+        //    链路 Slot.setStack → setStackNoCallbacks → Inventory.setStack（不经过 removeStack）
+        {
+            com.akira.redtale.economy.legacy.misc.EditablePackageInventory inv = newProbeInventory(pkgItem);
+            inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
+            inv.setWeight(0, 42);
+            inv.setStack(0, ItemStack.EMPTY);
+            fail += expect(source, "setStack(EMPTY)", 1, inv.getWeight(0));
+        }
+        // ④ 负对照：格子仍有物品时**不许**重置（原位换物品 = 权重跟格子走，规格 §四）
+        {
+            com.akira.redtale.economy.legacy.misc.EditablePackageInventory inv = newProbeInventory(pkgItem);
+            inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
+            inv.setWeight(0, 42);
+            inv.setStack(0, new ItemStack(Items.APPLE, 1));
+            fail += expect(source, "setStack(non-empty)", 42, inv.getWeight(0));
+        }
+        // ⑤ 权重能真落进 NBT 并读回（前四条都靠内存数组，若不落盘则编辑器白改）
+        {
+            com.akira.redtale.economy.legacy.misc.EditablePackageInventory inv = newProbeInventory(pkgItem);
+            inv.setStack(0, new ItemStack(Items.DIAMOND, 1));
+            inv.setWeight(0, 77);
+            inv.saveToNbt();
+            com.akira.redtale.economy.legacy.misc.EditablePackageInventory reread =
+                    new com.akira.redtale.economy.legacy.misc.EditablePackageInventory(inv.boundStack());
+            fail += expect(source, "nbt-roundtrip", 77, reread.getWeight(0));
+        }
+
+        final int failures = fail;
+        LegacyInit.LOGGER.info("[dev][wprobe] done fail={} / 5", failures);
+        source.sendFeedback(() -> Text.literal("[dev][wprobe] fail=" + failures + " / 5"), false);
+        return failures == 0 ? 1 : 0;
+    }
+
+    /** 造一件带固定内容的探针包裹（RANDOM 模式、一条 items）。 */
+    private static com.akira.redtale.economy.legacy.misc.EditablePackageInventory newProbeInventory(Item pkgItem) {
+        ItemStack stack = new ItemStack(pkgItem);
+        NbtCompound nbt = new NbtCompound();
+        nbt.putString("mode", PackageData.PackageMode.RANDOM.name());
+        NbtList items = new NbtList();
+        items.add(probeItem("B53ProbeA"));
+        nbt.put("items", items);
+        stack.setNbt(nbt);
+        return new com.akira.redtale.economy.legacy.misc.EditablePackageInventory(stack);
+    }
+
+    /** 打印一条判据，返回失败计数（0/1）。 */
+    private static int expect(ServerCommandSource source, String name, int want, int got) {
+        boolean ok = want == got;
+        LegacyInit.LOGGER.info("[dev][wprobe] {} expect={} actual={} {}", name, want, got, ok ? "PASS" : "FAIL");
+        source.sendFeedback(() -> Text.literal("[dev][wprobe] " + name + " expect=" + want
+                + " actual=" + got + (want == got ? " PASS" : " FAIL")), false);
+        return ok ? 0 : 1;
     }
 }

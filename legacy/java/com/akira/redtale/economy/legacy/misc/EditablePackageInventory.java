@@ -135,6 +135,26 @@ public class EditablePackageInventory extends SimpleInventory {
         return removed;
     }
 
+    /**
+     * ★{@code setStack} 是第三条清权重入口，第 32 轮漏了★（第 53 轮）。
+     *
+     * <p>第 32 轮只覆盖了 {@link #removeStack} 的两个重载（拖出/右键删走 {@code Slot.onTakeItem}
+     * → {@code Inventory.removeStack}）。但 **shift-click 移出**走的是另一条：
+     * {@code ScreenHandler.quickMove} 在物品搬空后执行 `slot.setStack(ItemStack.EMPTY)`，
+     * 而 javap 实证 {@code Slot.setStack} → {@code setStackNoCallbacks} → {@code Inventory.setStack(index, stack)}
+     * （字节码 `invokeinterface #83 Inventory.setStack`），**完全不经过 removeStack**。
+     * ⇒ 同一个格子：shift 移出后权重仍是旧值，下一件拖进来的物品静默继承
+     * （与第 32 轮同一个症状，只是入口从"拖出"换成"shift 移出"，零报错、界面看不出原因）。
+     *
+     * <p>{@code removeStack} 不会调到这里（{@code SimpleInventory.removeStack} 用
+     * {@code Inventories.splitStack} 直接改 list），所以两个重载保留、互不重复置脏。
+     */
+    @Override
+    public void setStack(int slot, ItemStack stack) {
+        super.setStack(slot, stack);
+        resetWeightIfEmpty(slot);
+    }
+
     /** 格子空了就把权重归 1（新物品进来时不会继承上一件的权重）。 */
     private void resetWeightIfEmpty(int slot) {
         if (slot < 0 || slot >= SIZE) return;
