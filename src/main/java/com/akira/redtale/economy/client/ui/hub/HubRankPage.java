@@ -19,6 +19,14 @@ public final class HubRankPage {
 	private static final int LIST_TOP = 42;
 
 	/**
+	 * 「只看 30 天内活跃」的整行命中宽度（勾选框 + 文案）。
+	 *
+	 * <p>★原来写 {@code x < x + 10 + 60 = x+70}★：文案从 x+14 画到 x+88（中文字宽 9），
+	 * 末尾约 18px 看得见点不动 —— 与「按钮禁用态 / 溢出截断」同族：画出来的范围必须等于能点的范围。
+	 */
+	private static final int ACTIVE_HIT_W = 96;
+
+	/**
 	 * 滚动行号。
 	 *
 	 * <p>★服务端发的是前 10 名★，427×240 内容区从 y+42 到 y+h-46 只有 72px ⇒ 5 行，
@@ -208,7 +216,7 @@ public final class HubRankPage {
 
 	public static Action click(double mx, double my, int x, int y, int w, int h, int board) {
 		int sy = y + 24;
-		if (mx >= x && mx < x + 10 + 60 && my >= sy - 2 && my < sy + 12) return Action.ACTIVE_TOGGLE;
+		if (mx >= x && mx < x + ACTIVE_HIT_W && my >= sy - 2 && my < sy + 12) return Action.ACTIVE_TOGGLE;
 		if (mx >= x + w - 20 && my >= sy - 2 && my < sy + 12) return Action.SYNC;
 		return Action.NONE;
 	}
