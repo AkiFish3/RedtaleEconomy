@@ -18,6 +18,16 @@ final class HubRequests {
 	static void pullData(HubScreen host, HubPage p) {
 		// T56：进/退任务页都要告诉服务端（决定快照走 Hub 通道还是「弹独立面板」通道）
 		TasksHubClientNetworking.sync(p);
+		// ★跨页瞬态一律在这里复位★（侧栏与深链共用这一个入口）：
+		// 深链（/rt rank 直接开 Hub）不走侧栏那条 if 链，所以「下拉/月份/焦点」原来
+		// 只有点侧栏才会清 —— 同一页从命令进来会凭空展开上月/上次的开着的下拉。
+		switch (p) {
+			case RANK -> host.rankDropdown = false;
+			case CHECKIN -> host.monthOffset = 0;
+			case PAY -> host.payFocus = 0;
+			default -> {
+			}
+		}
 		var mc = MinecraftClient.getInstance();
 		if (mc.player == null) return;
 		switch (p) {

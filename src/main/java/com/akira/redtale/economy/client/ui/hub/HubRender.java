@@ -62,6 +62,7 @@ final class HubRender {
 		// ★下拉最后画★，否则会被底栏/后面的元素盖住
 		if (host.page == HubPage.RANK && HubRankPage.needsDropdownOverlay()) {
 			HubRankPage.drawDropdown(dc, host.text(), cx, cy, host.rankBoard,
+					host.panelY + HubFrame.TOP_BAR,
 					host.panelY + host.panelH - HubFrame.BOTTOM_BAR, mouseX, mouseY);
 		}
 		tickDrag(host, mouseX, mouseY);

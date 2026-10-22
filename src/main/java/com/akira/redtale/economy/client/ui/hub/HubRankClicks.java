@@ -10,7 +10,9 @@ final class HubRankClicks {
 			int cx = host.frame.contentX();
 			int cy = host.frame.contentY();
 			int cw = host.frame.contentW();
-			int dd = HubRankPage.hitDropdown(mouseX, mouseY, cx, cy, host.rankDropdown, host.panelY + host.panelH - HubFrame.BOTTOM_BAR);
+			int dd = HubRankPage.hitDropdown(mouseX, mouseY, cx, cy, host.rankDropdown,
+					host.panelY + HubFrame.TOP_BAR,
+					host.panelY + host.panelH - HubFrame.BOTTOM_BAR);
 			if (dd == -2) {
 				host.rankDropdown = !host.rankDropdown;
 				ClientUiConfig.click();

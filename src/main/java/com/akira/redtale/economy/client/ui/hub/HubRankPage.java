@@ -81,12 +81,11 @@ public final class HubRankPage {
 
 	/** 在所有内容与底栏画完之后调用，保证下拉在最上层。 */
 	public static void drawDropdown(DrawContext dc, TextRenderer tr, int x, int y, int board,
-			int panelBottom, double mouseX, double mouseY) {
+			int panelTop, int panelBottom, double mouseX, double mouseY) {
 		int dw = 86;
 		int count = BOARDS.length;
 		int listH = count * 16;
-		// 下面放不下就往上翻
-		int iy = (y + 20 + listH <= panelBottom) ? y + 20 : Math.max(y - listH, y - listH);
+		int iy = dropdownTop(y, panelTop, panelBottom, listH);
 		dc.fill(x, iy, x + dw, iy + listH, HubTheme.INNER);
 		dc.fill(x, iy, x + dw, iy + 1, HubTheme.LINE);
 		dc.fill(x, iy + listH - 1, x + dw, iy + listH, HubTheme.LINE);
@@ -97,6 +96,25 @@ public final class HubRankPage {
 			dc.drawText(tr, Text.literal(BOARDS[i]), x + 7, iy + 4, on ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.TEXT, false);
 			iy += 16;
 		}
+	}
+
+	/**
+	 * 下拉列表顶边（绘制与命中共用这一份几何）。
+	 *
+	 * <p>★原来两处各写一遍 {@code Math.max(y - listH, y - listH)}★：同一个参数写两次等于没夹 ⇒
+	 * 下面放不下时下拉被画到内容区顶边之上（顶栏/侧栏甚至窗口外），命中区跟着跑到面板外
+	 * （「画在面板外还能点」同族）。
+	 *
+	 * <p>三条规则：① 下面放得下就向下；② 否则向上翻，但整块必须落在内容区内**且不压住下拉框本身**
+	 * （压住的话首项与「点开/关闭」的命中区重叠，第一项永远选不到）；③ 上下都不够（窗口极窄）时
+	 * 仍然向下 —— 溢出底栏总比画到面板外好，且绘制与命中同源，不会错位。
+	 */
+	static int dropdownTop(int y, int panelTop, int panelBottom, int listH) {
+		int down = y + 20;
+		if (down + listH <= panelBottom) return down;
+		int up = y - listH;
+		if (up >= panelTop) return up;
+		return down;
 	}
 
 	public enum Action {
@@ -200,12 +218,13 @@ public final class HubRankPage {
 	}
 
 	/** 下拉命中：返回 0..n-1 表示选中该榜，-2 = 点开/关闭，-1 = 无。 */
-	public static int hitDropdown(double mx, double my, int x, int y, boolean open, int panelBottom) {
+	public static int hitDropdown(double mx, double my, int x, int y, boolean open, int panelTop,
+			int panelBottom) {
 		int dw = 86;
 		if (mx >= x && mx < x + dw && my >= y && my < y + 18) return -2;
 		if (open) {
 			int listH = BOARDS.length * 16;
-			int iy = (y + 20 + listH <= panelBottom) ? y + 20 : Math.max(y - listH, y - listH);
+			int iy = dropdownTop(y, panelTop, panelBottom, listH);
 			for (int i = 0; i < BOARDS.length; i++) {
 				if (mx >= x && mx < x + dw && my >= iy && my < iy + 16) return i;
 				iy += 16;
