@@ -342,6 +342,13 @@ public final class HubSettingsPage {
 			case MODULE -> {
 				String id = clickedModuleId;
 				if (id.isEmpty()) return "";
+				// ★「不可关」的模块不该发包★：渲染写的是「不可关」（T65 的 economy/storage），
+				// 但这里原来无条件 toggle ⇒ 点它就是把注定被服务端拒绝的请求发出去。
+				for (var v : ModulesClientNetworking.snapshot().modules()) {
+					if (!id.equals(v.id())) continue;
+					if (v.locked() && v.on()) return "「" + id + "」是必需模块，不能关闭";
+					break;
+				}
 				boolean cur = ModulesClientNetworking.isEnabled(id);
 				ModulesClientNetworking.set(id, !cur);
 				return "正在切换 " + id + " → " + (!cur ? "开" : "关");
