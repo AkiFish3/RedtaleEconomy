@@ -161,6 +161,26 @@ public class PackageEntity extends Entity implements GeoEntity {
     }
 
     /**
+     * 蛋壳还在裂（只有 special 会经过这个阶段）。
+     *
+     * <p>★这是「开箱」与「发奖」两段效果的**唯一闸门**★（第 62 轮）：规格 §九 的顺序是
+     * 「碎裂 → 露出档位光效 → 给对应奖励」，而旧实现完全没看裂壳进度 —— special 实体在
+     * 第 1 tick 就把奖励发了（同时放掉 25 颗领取粒子 + 升级音），而 `crack` 要 24 tick、
+     * `open` 爆发要等 `crackTicks` 归 -1 才放 ⇒ **实测顺序变成「东西先到手 → 再裂壳 → 再炸」**。
+     * 零报错、零日志，只有盯着看才发现，而 T74 的全部意义就是这一段演出。
+     *
+     * <p>普通包裹 {@code crackTicks} 恒 -1 ⇒ 本判据恒 false，行为与旧版完全一致。
+     * 与「爆发」共用它（`!isOpeningShell()`）而不是各写一次 `crackTicks < 0`：
+     * 两处口径一分叉就会出现「爆发等裂完、发奖不等」这类只在 special 上出现的错序。
+     *
+     * <p>反死锁：{@link #readCustomDataFromNbt} 一律把 {@code crackTicks} 归一成 -1
+     * （存档停在裂壳中途时不能永远等下去），门 {@code _b62_egg_order.py} 的 E5 盯这一条。
+     */
+    public boolean isOpeningShell() {
+        return this.crackTicks >= 0;
+    }
+
+    /**
      * 粒子/特效用的**有效档位**：special 在开箱时掷出一个普通档位，其它包裹就是自身档位。
      *
      * <p>★不能用 getPackageTier() 替代★：surprise 的皮肤档位恒是 {@code surprise}，
@@ -260,8 +280,9 @@ public class PackageEntity extends Entity implements GeoEntity {
 
         // ★只在「真的开箱」时爆发★：CHOOSE 模式实体刚生成时还是待选状态，玩家选完
         // （setSelectedItem ⇒ 不再是 choose 模式）才轮到开箱爆发，否则没选就先炸一次。
+        // ★蛋壳没裂完不许炸★（T74）—— 与下面「发奖」共用同一个 isOpeningShell() 口径。
         if (this.getWorld() instanceof ServerWorld burstWorld && !burstDone && !this.isChooseModeActive()
-                && this.crackTicks < 0) {
+                && !isOpeningShell()) {
             burstDone = true;
             PackageParticles.openBurst(burstWorld, this.getPos(), this.getEffectiveTier());
         }
@@ -296,7 +317,12 @@ public class PackageEntity extends Entity implements GeoEntity {
         }
 
         // 奖励给予逻辑
-        if (!rewardGiven) {
+        // ★蛋壳没裂完不许发奖★（第 62 轮）：规格 §九 是「碎裂 → 档位光效 → 给奖励」。
+        // 旧实现不看裂壳进度 ⇒ special 在第 1 tick 就 `offerOrDrop` 并放掉领取粒子/音效，
+        // 而 crack 要 CRACK_TICKS=24、open 爆发更晚 ⇒ 玩家看到「物品先到手，蛋后炸」，
+        // 自动化的判据也读不出错（RewardGiven 早就是 true，零报错零日志）。
+        // 非 special 的 crackTicks 恒 -1 ⇒ 这里恒真，行为与旧版一致。
+        if (!rewardGiven && !isOpeningShell()) {
             if (cachedData == null) {
                 cachedData = PackageData.fromNbt(packageStack.getNbt());
                 if (cachedData == null) {
