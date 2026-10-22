@@ -43,10 +43,12 @@ public final class StorageConfig {
 					"同一玩家两次快照的最小间隔（分钟），仅在余额有变动时写"))
 			.field("dailyFullSnapshot", ConfigSchema.bool(true, "每天 0 点对所有在线玩家强制全量快照一次"))
 			.field("accountCache", ConfigSchema.obj("账号缓存")
-					.field("size", ConfigSchema.integer(512, 16, 65536, "内存中缓存多少个账号"))
+					.field("size", ConfigSchema.integer(512, 16, 65536,
+							"内存中缓存多少个账号；超出后淘汰「已落盘」的条目（有未落盘改动的永不淘汰）"))
 					.field("saveDebounceSeconds", ConfigSchema.integer(10, 1, 600,
 							"余额变动后延迟多久写盘（秒），防止高频写"))
-					.field("unloadOnQuit", ConfigSchema.bool(true, "玩家退出时立即写盘并清缓存")))
+					.field("unloadOnQuit", ConfigSchema.bool(true,
+							"玩家退出时立即写盘并清缓存（关掉=留在内存里等防抖到期）")))
 			.field("mysql", ConfigSchema.obj("MySQL 后端（backend=mysql 时才读）")
 					.field("host", ConfigSchema.string("", "数据库地址"))
 					.field("port", ConfigSchema.integer(3306, 1, 65535, "端口"))
@@ -122,8 +124,25 @@ public final class StorageConfig {
 		return (int) store().getLong("snapshotIntervalMinutes", 30);
 	}
 
+	/**
+	 * 余额变动后延迟多久写盘（秒）。
+	 *
+	 * <p>★N+80 修★ 旧代码读 {@code account.saveDebounceSeconds}，而 schema 声明的是
+	 * {@code accountCache.saveDebounceSeconds} ⇒ 路径不存在，{@code getPathLong} 静默返回默认值
+	 * ⇒ 管理员改配置**从未生效**且零日志。{@code _e24_cfg_orphan_scan.py} 的「读取了但未声明」反向检查抓到。
+	 */
 	public static int saveDebounceSeconds() {
-		return (int) store().getPathLong("account.saveDebounceSeconds", 10);
+		return (int) store().getPathLong("accountCache.saveDebounceSeconds", 10);
+	}
+
+	/** 内存里最多缓存多少个账号余额（超出后按「最久未用且已落盘」淘汰）。 */
+	public static int accountCacheSize() {
+		return (int) store().getPathLong("accountCache.size", 512);
+	}
+
+	/** 玩家退出时立即落盘并清缓存（默认 true）。 */
+	public static boolean unloadOnQuit() {
+		return store().getPathBool("accountCache.unloadOnQuit", true);
 	}
 
 	// ---------------------------------------------------------------- MySQL（R8）

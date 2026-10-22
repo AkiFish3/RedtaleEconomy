@@ -16,7 +16,9 @@ public final class PremiumConfig {
 			.field("enabled", ConfigSchema.bool(false,
 					"总开关；false 时客户端不显示任何入口，/premium 也不注册"))
 			.field("displayName", ConfigSchema.string("premium", "客户端显示名称"))
-			.field("symbol", ConfigSchema.string("§b✦", "图标/符号前缀"))
+			.field("symbol", ConfigSchema.string("§b✦",
+					"图标/符号前缀。★当前无读取方（预留给 R13 的赞助商店/抽奖 UI）★，"
+							+ "聊天里的赞助货币目前只用 displayName"))
 			.field("requireWhitelist", ConfigSchema.bool(true,
 					"发放时是否要求玩家在 whitelist 内（OP + 白名单为「与」关系）"))
 			.field("whitelist", ConfigSchema.stringList(List.of(),

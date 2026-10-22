@@ -219,7 +219,17 @@ public class RedtaleEconomy implements ModInitializer {
 					}
 				});
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register(
-				(handler, s) -> ShopNetworking.forget(handler.getPlayer().getUuid()));
+				(handler, s) -> {
+					java.util.UUID quit = handler.getPlayer().getUuid();
+					ShopNetworking.forget(quit);
+					// storage.account.unloadOnQuit：退出即落盘 + 清缓存（默认开）
+					try {
+						var internal = com.akira.redtale.economy.economy.BalanceService.internal();
+						if (internal != null) internal.unload(quit);
+					} catch (Exception e) {
+						LOGGER.warn("[storage] 退出落盘失败（余额留在缓存等后台重试）：{}", e.getMessage());
+					}
+				});
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
 			// R34：关服按配置还原称号（避免留下半套 display_name）
 			try {

@@ -104,7 +104,29 @@ public final class InternalProvider implements BalanceProvider {
 		if (cached != null) return cached;
 		long v = MysqlBackend.available() ? readMysql(uuid) : readFile(uuid);
 		cache.put(uuid, v);
+		trimCache();
 		return v;
+	}
+
+	/**
+	 * 缓存条数超过 {@code storage.json → accountCache.size} 时淘汰「已落盘」的条目。
+	 *
+	 * <p>★只淘汰干净的★：有脏标记的条目一旦被淘汰，那笔余额就永远写不回去（退出/崩溃都补不上）。
+	 * 被淘汰的条目下次 {@link #get(UUID)} 会重新读盘，只是多一次 IO。
+	 */
+	private void trimCache() {
+		if (cache.size() <= Math.max(16, StorageConfig.accountCacheSize())) return;
+		int cap = Math.max(16, StorageConfig.accountCacheSize());
+		int over = cache.size() - cap;
+		for (UUID u : cache.keySet()) {
+			if (over <= 0) break;
+			if (dirtyAt.containsKey(u)) continue;
+			if (cache.remove(u) != null) {
+				names.remove(u);
+				readOnly.remove(u);
+				over--;
+			}
+		}
 	}
 
 	private long readMysql(UUID uuid) {
@@ -161,6 +183,7 @@ public final class InternalProvider implements BalanceProvider {
 	public void set(UUID uuid, long rawCopper) {
 		cache.put(uuid, Math.max(0, rawCopper));
 		dirtyAt.put(uuid, System.currentTimeMillis());
+		trimCache();
 	}
 
 	@Override
@@ -233,6 +256,29 @@ public final class InternalProvider implements BalanceProvider {
 		for (UUID u : dirtyAt.keySet()) {
 			if (write(u)) dirtyAt.remove(u);
 		}
+	}
+
+	/**
+	 * 玩家退出：按 {@code storage.json → account.unloadOnQuit} 立即落盘并清缓存。
+	 *
+	 * <p>落盘失败时<b>不清缓存也不清脏标记</b>，交给 {@link #flushDue()} 下一轮重试 ——
+	 * 退出路径上清掉缓存等于把那笔余额扔掉。
+	 */
+	public void unload(UUID uuid) {
+		if (uuid == null || !StorageConfig.unloadOnQuit()) return;
+		if (!available()) return;
+		if (dirtyAt.get(uuid) != null) {
+			if (!write(uuid)) return; // 写盘失败：保留缓存，等后台重试
+			dirtyAt.remove(uuid);
+		}
+		cache.remove(uuid);
+		names.remove(uuid);
+		readOnly.remove(uuid);
+	}
+
+	/** 当前缓存条目数（诊断/探针用）。 */
+	public int cachedAccounts() {
+		return cache.size();
 	}
 
 	public void shutdown() {
