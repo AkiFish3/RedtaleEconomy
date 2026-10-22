@@ -27,12 +27,24 @@ public class PackageEditHandler extends ScreenHandler {
      * 之前两边各写一份常量，改布局时必然出现"图标在 A 处、点击判在 B 处"的错位。
      */
     public static final int EDITOR_SLOTS = 90;
-    public static final int GRID_COLS = 9;
-    public static final int GRID_ROWS = 10;
+    /**
+     * 网格是 <b>15 列 × 6 行</b>（仍是 90 格）。
+     *
+     * <p>★旧布局 9×10 的编辑器在常见分辨率下**装不下屏幕**★：面板高度 = GRID_Y 52 + 10×18 + 背包 76 ≈ 318，
+     * 而逻辑高度在 1920×1080（guiScale auto=4）只有 270、1366×768（guiScale 3）只有 256、
+     * 默认窗口 854×480（guiScale 2）只有 240 ⇒ `top()` 变成负数，模式/档位 chip 被顶出屏幕顶部
+     * （1366×768 gs3 实测 top=-31 ⇒ MODE_Y=20 的 chip 整个不可见 = **改不了模式**），
+     * 底部快捷栏同样在屏幕外。改成横向铺开 15 列后，面板 408×240，三种分辨率全部装得下。
+     *
+     * <p>格子总数、槽位下标、服务端与客户端的几何口径都没变（同一份常量），只是行列互换。
+     */
+    public static final int GRID_COLS = 15;
+    public static final int GRID_ROWS = 6;
     public static final int GRID_X = 8;
     public static final int GRID_Y = 52;
     public static final int INV_X = 8;
-    public static final int INV_Y = 240;
+    /** 网格底边 = 52+6×18 = 160，背包紧接其后：面板总高 240，刚好等于默认窗口的逻辑高度。 */
+    public static final int INV_Y = 162;
     /** 单条权重上限：防客户端塞 Integer.MAX_VALUE 让其它条目永远抽不到（也让 UI 放得下 3 位数）。 */
     public static final int MAX_WEIGHT = 999;
     private static final int PLAYER_INV_START = EDITOR_SLOTS;

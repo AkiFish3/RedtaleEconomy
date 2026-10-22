@@ -14,7 +14,7 @@ import java.util.List;
  * 与手持卡包物品绑定，保存时写回 NBT。
  */
 public class EditablePackageInventory extends SimpleInventory {
-    public static final int SIZE = 90; // 10 行 × 9 列
+    public static final int SIZE = 90; // 6 行 × 15 列（与 PackageEditHandler.GRID_ROWS/COLS 同口径）
 
     /** ★可换绑★：T71 的「档位选择」要换物品 id（tier 存在 id 里）⇒ 底层 ItemStack 会整颗换掉。 */
     private ItemStack stackInHand;

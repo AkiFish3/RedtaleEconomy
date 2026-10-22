@@ -19,13 +19,13 @@ import java.util.List;
  *
  * <pre>
  * ┌──────────────────────────────────────────────┐
- * │ 编辑包裹                                      │
+ * │ 编辑包裹                          总权重 12/3 │
  * │ 模式  [全部][随机][选择]                       │
  * │ 档位  [普通][稀有][史诗][传说][神话][活动]      │
- * │ ┌───────────────────────┐ ┌───────────────┐  │
- * │ │  9 × 10 候选物品网格   │ │ 权重表        │  │
- * │ │  （从背包拖入）        │ │ ▶ 图标 - 10 + │  │
- * │ └───────────────────────┘ └───────────────┘  │
+ * │ ┌──────────────────────────┐ ┌─────────────┐ │
+ * │ │  15 × 6 候选物品网格      │ │ 权重表       │ │
+ * │ │  （从背包拖入）           │ │ ▶图标 - 10 + │ │
+ * │ └──────────────────────────┘ └─────────────┘ │
  * │  玩家背包 / 快捷栏                            │
  * └──────────────────────────────────────────────┘
  * </pre>
@@ -39,8 +39,16 @@ import java.util.List;
 public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
 
     // ——— 几何常量（全部相对屏幕左上角，与 handler 的槽位坐标同一坐标系） ———
-    private static final int PANEL_W = 300;
-    private static final int PANEL_H = 318;
+    /**
+     * 面板 408×240。
+     *
+     * <p>★尺寸不能超过逻辑分辨率★：旧值 300×318 在 1920×1080（guiScale auto=4 ⇒ 480×270）、
+     * 1366×768（gs3 ⇒ 455×256）、默认窗口 854×480（gs2 ⇒ 427×240）三种常见逻辑尺寸下都超高，
+     * `top()` 为负 ⇒ 模式/档位 chip 被顶出屏幕（改不了模式）、底部快捷栏也看不见。
+     * 现在网格改成 15×6 横向铺开，面板压到 408×240：最窄的 427×240 也装得下。
+     */
+    private static final int PANEL_W = 408;
+    private static final int PANEL_H = 240;
 
     private static final int MODE_Y = 20;
     private static final int MODE_CHIP_W = 86;
@@ -51,7 +59,8 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private static final int TIER_CHIP_W = 45;
     private static final int TIER_CHIP_H = 12;
 
-    private static final int TABLE_X = 176;
+    /** 表格起点 = 网格右边（8 + 15×18 = 278）再留 8px。116 宽 ⇒ 286+116 = 402，右留 6px。 */
+    private static final int TABLE_X = 286;
     private static final int TABLE_W = 116;
     private static final int TABLE_Y = PackageEditHandler.GRID_Y;
     private static final int TABLE_ROW_H = 18;
