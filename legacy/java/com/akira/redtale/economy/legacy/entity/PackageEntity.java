@@ -132,9 +132,19 @@ public class PackageEntity extends Entity implements GeoEntity {
         return this.dataTracker.get(PACKAGE_SKIN);
     }
 
-    /** 档位 id（皮肤的后半段）。 */
+    /**
+     * 档位 id（皮肤的后半段）。
+     *
+     * <p>★不能只取最后一个下划线之后★：旧 id 别名（{@code normal_package} / {@code rare_package} /
+     * {@code legendary_package}）的 item path 是「档位在前、系列在后」⇒ 截出来是 {@code "package"}，
+     * 于是 `particleMultiplier("package")` 回落 1.0、`tierColor("package")` 回落米黄
+     * ⇒ 老存档里的稀有包裹与普通包裹粒子和颜色完全一样（零报错，只有肉眼看得出「怎么没特效」）。
+     * 正确解法是问注册表要（同一份 packages.json 已经记了 alias → {series, tier}）。
+     */
     public String getPackageTier() {
         String skin = getPackageSkin();
+        String tier = com.akira.redtale.economy.legacy.data.PackageCatalog.tierOf(skin);
+        if (tier != null) return tier;
         int i = skin.lastIndexOf('_');
         return i < 0 ? "normal" : skin.substring(i + 1);
     }
