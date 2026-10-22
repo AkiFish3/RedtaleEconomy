@@ -198,7 +198,10 @@ public final class HubBoardPage {
 			if (my < ry || my >= ry + ROW_H - 2 || mx < x || mx >= x + w) continue;
 			outIndex[0] = idx;
 			int bx = x + w - 4 - BTN_W;
-			if (mx >= bx && mx < bx + BTN_W) return actionFor(list.get(idx));
+			// 按钮命中要跟渲染同几何（ry+6 / BTN_H）：原来只判 x，点行首文字右侧那一小块也会接单
+			if (mx >= bx && mx < bx + BTN_W && my >= ry + 6 && my < ry + 6 + BTN_H) {
+				return actionFor(list.get(idx));
+			}
 			return Action.NONE;
 		}
 		return Action.NONE;

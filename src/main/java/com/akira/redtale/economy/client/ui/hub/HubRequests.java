@@ -21,10 +21,7 @@ final class HubRequests {
 		var mc = MinecraftClient.getInstance();
 		if (mc.player == null) return;
 		switch (p) {
-			case SHOP -> {
-				String sid = ShopClientState.shopIdToRequest();
-				if (!sid.isEmpty()) ShopClientNetworking.requestPage(sid, 0, "");
-			}
+			case SHOP -> host.requestShopPage();
 			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking
 					.request(host.rankActiveOnly);
 			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
@@ -33,6 +30,12 @@ final class HubRequests {
 			case ADMIN -> AdminClientNetworking.request();
 			case CHECKIN -> chat("checkin status");
 			case MAIL -> MailClientNetworking.request();
+			// ★以下五页原来只在「点侧栏」时拉，深链（setPage / 命令打开 Hub）进来就是空页★
+			case STORAGE -> com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
+			case TITLES -> com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
+			case PASS -> chat("pass");
+			case BOUNTY -> chat("bounty list");
+			case GUILD -> chat("guild");
 			default -> {
 			}
 		}
@@ -44,17 +47,8 @@ final class HubRequests {
 		if (mc.player != null) mc.player.networkHandler.sendChatCommand(cmd);
 	}
 
-	static void requestGuild() {
-		chat("guild");
-	}
-
-	static void requestPass() {
-		chat("pass");
-	}
-
-	static void requestBounty() {
-		chat("bounty list");
-	}
+	// 原来还有 requestGuild / requestPass / requestBounty 三个薄封装，侧栏那条 if 链删掉后
+	// 调用点全归到 pullData 的 switch（一并死了），三个方法一起删掉，别留半截。
 
 	static void requestShopPage(HubScreen host) {
 		host.shopRequested = true;

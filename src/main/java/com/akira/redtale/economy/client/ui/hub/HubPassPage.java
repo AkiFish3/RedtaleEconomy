@@ -29,9 +29,8 @@ public final class HubPassPage {
 	private static final int CELL_H = 52;
 	private static final int GAP = 4;
 
-	/** 滚动条厚度与离轨底距离。 */
+	/** 滚动条厚度（离轨底距离由 {@code layout().barY()} 统一算，别再单开一个常量）。 */
 	private static final int BAR_H = 4;
-	private static final int BAR_GAP = 5;
 
 	/** 标题行 + 经验条（含右侧经验文字）占用的高度。 */
 	private static final int TOP_H = 26;

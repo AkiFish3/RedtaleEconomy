@@ -208,8 +208,7 @@ public final class HubTasksPage {
 				: (done ? (isSubmit(t) ? "缴纳" : "领取") : "进行中");
 		int bw = 38;
 		int bx = x + w - bw - 4;
-		boolean canClick = !claimed && done;
-		drawMini(dc, tr, bx, ry + 10, bw, 14, btn, canClick, mouseX, mouseY);
+		drawMini(dc, tr, bx, ry + 10, bw, 14, btn, canAct(t), mouseX, mouseY);
 		long reward = t.reward();
 		int rw = HubMoney.width(tr, reward);
 		HubMoney.draw(dc, tr, Math.max(x + 26, bx - rw - 6), ry + 4, reward, bx - x - 30);
@@ -311,13 +310,22 @@ public final class HubTasksPage {
 		// 行间空隙不算命中
 		if (my - (top + row * (ROW_H + GAP)) >= ROW_H) return Action.NONE;
 		TaskProtocol.Task t = tasks.get(idx);
+		// ★按钮命中必须与渲染同几何★（bx / ry+10 / 38×14）：原来只判 x 区间，
+		// 点行内任意高度都会领奖；且不判 canAct ⇒ 点「进行中 / 已领取」照样发命令，
+		// 服务端只能回一条拒绝消息（阶段 2 的误点来源）。
 		int bw = 38;
 		int bx = x + w - bw - 4;
-		if (mx >= bx && mx < bx + bw) {
+		int by = top + row * (ROW_H + GAP) + 10;
+		if (mx >= bx && mx < bx + bw && my >= by && my < by + 14 && canAct(t)) {
 			outSlot[0] = t.slot();
 			return isSubmit(t) ? Action.SUBMIT : Action.CLAIM;
 		}
 		return Action.NONE;
+	}
+
+	/** 按钮是否可按：未领取 + 已完成（渲染与命中同一判据）。 */
+	private static boolean canAct(TaskProtocol.Task t) {
+		return !t.claimed() && isDone(t);
 	}
 
 	public static void scrollByRows(int rows) {

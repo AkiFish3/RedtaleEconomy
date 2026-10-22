@@ -52,31 +52,22 @@ final class HubClicks {
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.dropCursor();
 				}
 				host.page = all[idx];
-				// T56：任务页要通知服务端切换快照通道（进页拉一次，离页清标记）
-				TasksHubClientNetworking.sync(host.page);
-				if (host.page == HubPage.SHOP) host.requestShopPage();
-				if (host.page == HubPage.MARKET) com.akira.redtale.economy.client.market.MarketClientNetworking.request();
-				if (host.page == HubPage.BOUNTY) HubRequests.requestBounty();
+				// ★拉数据只有 HubRequests.pullData 一套★：侧栏这里原来又写了一条 if 链，
+				// 与深链（setPage）覆盖的页面不同 ⇒ 称号/仓储/战令/悬赏/协会深链进来不拉数据；
+				// 而且 TITLES 那行被粘进了 STORAGE 分支（点仓储多发一条、点称号不刷新）。
 				if (host.page == HubPage.BOARD) {
 					HubBoardPage.resetScroll();
-					com.akira.redtale.economy.client.ui.hub.BoardClientNetworking.request();
 					host.setStatus("正在读取委托板…");
 				}
 				if (host.page == HubPage.LEDGER) {
 					HubLedgerPage.reset();
-					com.akira.redtale.economy.client.ui.hub.LedgerClientNetworking.request();
 					host.setStatus("正在读取流水…");
 				}
-				if (host.page == HubPage.PASS) HubRequests.requestPass();
 				if (host.page == HubPage.ADMIN) {
 					HubAdminPage.reset();
-					AdminClientNetworking.request();
 					host.setStatus("正在读取控制台数据…");
-				}				if (host.page == HubPage.GUILD) HubRequests.requestGuild();
-				if (host.page == HubPage.STORAGE) {
-					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
-			com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
 				}
+				HubRequests.pullData(host, host.page);
 				return true;
 			}
 		}
