@@ -231,8 +231,8 @@ public final class WarehouseModule implements RedtaleModule {
 							"premium take failed"));
 			return new UpgradeOutcome(UpgradeResult.NO_PREMIUM, data.slots(), next);
 		}
+		int before = data.slots();
 		boolean ok = data.expandTo(next.slots());
-		data.save();
 		if (!ok) {
 			// T34 修：expandTo 返回 false 说明槽位没变（已达上限），以前钱扣了不退
 			TxnRunner.refund(uuid, next.price(), Ledger.TYPE_WAREHOUSE, "refund:slots:" + next.slots(),
@@ -240,6 +240,18 @@ public final class WarehouseModule implements RedtaleModule {
 							"expand failed"));
 			TxnRunner.revert(TxnRunner.PREMIUM, uuid, next.premium(), Ledger.TYPE_PREMIUM,
 					"refund:slots:" + next.slots());
+			return new UpgradeOutcome(UpgradeResult.FAILED, data.slots(), next);
+		}
+		// ★R129：扩容落盘失败必须退款并退回内存格数★ 否则「付了钱没扩」，
+		// 或者下一次任何 save 把这一档免费写进磁盘。
+		if (!data.saveChecked()) {
+			data.rollbackExpand(before);
+			TxnRunner.refund(uuid, next.price(), Ledger.TYPE_WAREHOUSE, "refund:slots:" + next.slots(),
+					new TxnRunner.Note(uuid, "warehouse", "slots:" + next.slots(), 0, next.price(),
+							"warehouse save failed"));
+			TxnRunner.revert(TxnRunner.PREMIUM, uuid, next.premium(), Ledger.TYPE_PREMIUM,
+					"refund:slots:" + next.slots());
+			RedtaleEconomy.LOGGER.error("[warehouse] 扩容落盘失败，已退款：{}", uuid);
 			return new UpgradeOutcome(UpgradeResult.FAILED, data.slots(), next);
 		}
 		// T63：扩容费是玩家交给系统的钱，进资金池（放在成功分支，退款路径不计）

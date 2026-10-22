@@ -161,8 +161,18 @@ public final class WarehouseData {
 	}
 
 	public void save() {
+		saveChecked();
+	}
+
+	/**
+	 * 落盘并返回是否真的写成功。
+	 *
+	 * <p>★R129：扣钱扩容之后必须看这个返回值★ 写失败时内存里已经扩容、磁盘没有，
+	 * 重启后玩家付过钱的档位消失；而如果放任内存态不退回，下一次任何 save 都会把这档「免费」写进磁盘。
+	 */
+	public boolean saveChecked() {
 		Path f = file(uuid);
-		if (f == null) return;
+		if (f == null) return false;
 		updatedAt = java.time.LocalDateTime.now()
 				.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 		Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
@@ -177,9 +187,19 @@ public final class WarehouseData {
 				Files.move(tmp, f, StandardCopyOption.REPLACE_EXISTING);
 			}
 			dirty = false;
+			return true;
 		} catch (IOException e) {
 			RedtaleEconomy.LOGGER.error("[warehouse] 写入 {} 失败：{}", uuid, e.getMessage());
+			return false;
 		}
+	}
+
+	/** 扩容落盘失败时把内存格数退回原值（见 {@link #saveChecked()}）。 */
+	public void rollbackExpand(int previousSlots) {
+		int base = WarehouseConfig.baseSlots();
+		slots = Math.max(base, previousSlots);
+		purchased = Math.min(purchased, slots);
+		dirty = true;
 	}
 
 	private static Path file(UUID uuid) {
