@@ -42,6 +42,14 @@ public final class EditShotHarness {
 	public static final int REQ_SETUP = 1;
 	public static final int REQ_SEED = 2;
 	public static final int REQ_VERIFY = 3;
+	/**
+	 * 只回读、不关窗：证明 T76 第 2 层（改动后 ≤1s 落盘）真的在工作。
+	 *
+	 * <p>为什么需要它：三层保险里第 1 层（关窗）与第 3 层（断线）都只在"事件发生那一刻"生效，
+	 * 而第 2 层是**唯一一条在界面还开着时**把改动写进手牌 NBT 的路径。它坏掉时症状是
+	 * 「正常关窗一切正常，客户端一崩改动全丢」—— 这种缺陷没有任何现有判据能碰到。
+	 */
+	public static final int REQ_SNAP = 4;
 
 	static volatile int request = REQ_NONE;
 	private static int lastHandled = REQ_NONE;
@@ -85,6 +93,7 @@ public final class EditShotHarness {
 			case REQ_SETUP -> setup(p);
 			case REQ_SEED -> seed(p);
 			case REQ_VERIFY -> verify(p);
+			case REQ_SNAP -> snap(p);
 			default -> {
 			}
 		}
@@ -117,6 +126,26 @@ public final class EditShotHarness {
 		handler.getSlot(1).setStack(new ItemStack(Items.EMERALD, 1));
 		log("SEED ok slot0=" + Registries.ITEM.getId(handler.getSlot(0).getStack().getItem())
 				+ " slot1=" + Registries.ITEM.getId(handler.getSlot(1).getStack().getItem()));
+	}
+
+	/**
+	 * 界面**还开着**时的落盘回读（T76 第 2 层）。
+	 *
+	 * <p>{@code open=} 必须为 true —— 否则这一行什么都证不了（关窗本来就会写）。
+	 * 判据要求 `items[0].weight=4`：三次「+」之后服务端的 {@code sendContentUpdates}
+	 * 应该在 1 秒内把 4 写进手牌 NBT，而不必等玩家关窗。
+	 */
+	private static void snap(ServerPlayerEntity p) {
+		ItemStack stack = p.getStackInHand(Hand.MAIN_HAND);
+		NbtCompound nbt = stack.getNbt();
+		boolean open = p.currentScreenHandler instanceof PackageEditHandler;
+		NbtList items = nbt == null ? null : nbt.getList("items", 10);
+		int count = items == null ? -1 : items.size();
+		int w0 = -1;
+		if (items != null && !items.isEmpty()) {
+			w0 = items.getCompound(0).getInt("weight");
+		}
+		log("SNAP open=" + open + " items.count=" + count + " items[0].weight=" + w0);
 	}
 
 	/** 关窗后的落盘回读：手牌 id / mode / items 列表逐条（item id + weight）。 */

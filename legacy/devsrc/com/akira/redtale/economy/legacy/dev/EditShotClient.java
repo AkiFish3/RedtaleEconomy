@@ -212,6 +212,9 @@ final class EditShotClient {
 				if (++timer >= 6) {
 					timer = 0;
 					save(mc, "b31-edit-03-weight");
+					// T76 第 2 层：此刻界面**还开着**，让服务端回读一次手牌 NBT。
+					// 不新增阶段 —— 服务端在下一 tick 就处理，后面十几个阶段足够它写完。
+					EditShotHarness.request = EditShotHarness.REQ_SNAP;
 					phase = 12;
 				}
 			}
