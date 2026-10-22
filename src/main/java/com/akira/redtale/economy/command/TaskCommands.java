@@ -1,5 +1,6 @@
 package com.akira.redtale.economy.command;
 
+import com.akira.redtale.economy.RedtaleEconomy;
 import com.akira.redtale.economy.perm.Permissions;
 import com.akira.redtale.economy.economy.BalanceService;
 import com.akira.redtale.economy.lang.Lang;
@@ -188,12 +189,24 @@ public final class TaskCommands {
 				com.akira.redtale.economy.journal.TxnJournal.begin(
 						com.akira.redtale.economy.journal.TxnJournal.TASK_SUBMIT, p.getUuid(), payload);
 
+		// ★R132：扣了多少必须可回读★ 原来 removeFrom 是 void，扣不齐也照样 taken=true + 继续发放，
+		// 等于「少扣物品也算完成」。现在每件记实际扣数，任一件扣不齐就整单回滚（仓库 + 背包都还）。
+		int[] whTaken = new int[t.items.size()];
+		int[] bagTaken = new int[t.items.size()];
 		for (int i = 0; i < t.items.size(); i++) {
 			TaskModule.ItemCount ic = t.items.get(i);
 			// R27：先扣仓库，不够的部分再扣背包
-			int fromWarehouse = WarehouseModule.takeFor(p.getUuid(), ic.id, ic.count);
-			int rest = ic.count - fromWarehouse;
-			if (rest > 0) removeFrom(p, ic.id, rest);
+			whTaken[i] = WarehouseModule.takeFor(p.getUuid(), ic.id, ic.count);
+			int rest = ic.count - whTaken[i];
+			bagTaken[i] = rest > 0 ? removeFrom(p, ic.id, rest) : 0;
+			if (whTaken[i] + bagTaken[i] != ic.count) {
+				restoreTaken(p, t.items, whTaken, bagTaken, i);
+				txn.dismiss();
+				RedtaleEconomy.LOGGER.error("[tasks] 扣物不足，已回滚：slot={} id={} need={} wh={} bag={}",
+						slot, ic.id, ic.count, whTaken[i], bagTaken[i]);
+				say(ctx, p, Text.literal(Lang.msg("market.err.saveFail")), true);
+				return 0;
+			}
 			arr.get(i).getAsJsonObject().addProperty("taken", true);
 			txn.flush();
 		}
@@ -293,8 +306,8 @@ public final class TaskCommands {
 	/** R29：消耗 1 张刷新券；背包优先，其次仓库。 */
 	private static boolean consumeTicket(ServerPlayerEntity p, String ticketId) {
 		if (countOf(p, ticketId) > 0) {
-			removeFrom(p, ticketId, 1);
-			return true;
+			// R132：券必须真扣掉 1 张才算消耗（原来 void 扣，扣不动也当成功）
+			if (removeFrom(p, ticketId, 1) == 1) return true;
 		}
 		if (TaskModule.refreshTicketFromWarehouse()
 				&& WarehouseModule.takeFor(p.getUuid(), ticketId, 1) > 0) {
@@ -327,9 +340,11 @@ public final class TaskCommands {
 				.of(com.akira.redtale.economy.module.impl.TaskModule.containerPolicy());
 	}
 
-	private static void removeFrom(ServerPlayerEntity p, String itemId, int count) {
+	/** 从背包（含容器，按开关）扣物，<b>返回实际扣掉的数量</b>（R132：调用方必须核对差额）。 */
+	private static int removeFrom(ServerPlayerEntity p, String itemId, int count) {
 		Item item = item(itemId);
-		if (item == null) return;
+		if (item == null) return 0;
+		int want = count;
 		int left = count;
 		for (int i = 0; i < p.getInventory().size() && left > 0; i++) {
 			ItemStack st = p.getInventory().getStack(i);
@@ -346,6 +361,26 @@ public final class TaskCommands {
 				ItemStack st = p.getInventory().getStack(i);
 				if (st.isEmpty() || st.getItem() == item || st.getNbt() == null) continue;
 				left -= com.akira.redtale.economy.shop.ContainerScan.take(st.getNbt(), itemId, left, policy);
+			}
+		}
+		p.getInventory().markDirty();
+		return want - left;
+	}
+
+	/** R132 回滚：把 {@code 0..upto} 已扣的实物还回去（仓库归仓库、背包归背包，塞不下就丢脚下）。 */
+	private static void restoreTaken(ServerPlayerEntity p, java.util.List<TaskModule.ItemCount> items,
+			int[] wh, int[] bag, int upto) {
+		for (int j = 0; j <= upto && j < items.size(); j++) {
+			Item item = item(items.get(j).id);
+			if (item == null) continue;
+			if (wh[j] > 0) {
+				ItemStack rest = WarehouseModule.give(p.getUuid(), new ItemStack(item, wh[j]));
+				if (!rest.isEmpty()) p.dropItem(rest, false);
+			}
+			if (bag[j] > 0) {
+				ItemStack back = new ItemStack(item, bag[j]);
+				p.getInventory().insertStack(back);
+				if (!back.isEmpty()) p.dropItem(back, false);
 			}
 		}
 		p.getInventory().markDirty();

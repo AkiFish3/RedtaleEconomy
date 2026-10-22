@@ -245,7 +245,19 @@ public final class BoardCommands {
 			return 0;
 		}
 
-		removeFrom(p, item, e.count);
+		// ★R132：扣了多少必须可回读★ 前置 countOf 只保证「扣之前够」，扣不动时原来照样发满额赏金。
+		int removed = removeFrom(p, item, e.count);
+		if (removed != e.count) {
+			// 少扣 ⇒ 把已扣的还回去、条目退回 ACCEPTED（可原样重试），不发赏金
+			if (removed > 0) giveBack(p, item, removed);
+			e.status = prevStatus;
+			BoardStore.saveChecked();
+			txn.dismiss();
+			RedtaleEconomy.LOGGER.error("[board] 交付扣物不足，已回滚：id={} need={} got={}",
+					e.id, e.count, removed);
+			src.sendError(Text.literal(Lang.msg("market.err.saveFail")));
+			return 0;
+		}
 		txn.state("taken");
 		try {
 			// 赏金在发布时已扣，这里只发给接单者；物品直接销毁（不返还发布者，防自买自卖刷钱）
@@ -328,7 +340,9 @@ public final class BoardCommands {
 		p.getInventory().markDirty();
 	}
 
-	private static void removeFrom(ServerPlayerEntity p, Item item, int count) {
+	/** 从背包扣物，<b>返回实际扣掉的数量</b>（R132：调用方必须核对差额，别再靠前置 countOf 兜）。 */
+	private static int removeFrom(ServerPlayerEntity p, Item item, int count) {
+		if (item == null || count <= 0) return 0;
 		int left = count;
 		for (int i = 0; i < p.getInventory().size() && left > 0; i++) {
 			ItemStack st = p.getInventory().getStack(i);
@@ -339,6 +353,7 @@ public final class BoardCommands {
 			if (st.isEmpty()) p.getInventory().setStack(i, ItemStack.EMPTY);
 		}
 		p.getInventory().markDirty();
+		return count - left;
 	}
 
 	private static Item item(String id) {
