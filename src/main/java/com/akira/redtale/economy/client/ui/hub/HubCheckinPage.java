@@ -165,13 +165,9 @@ public final class HubCheckinPage {
 				dc.fill(cx, cy, cx + 1, cy + cellH, HubTheme.GOLD);
 				dc.fill(cx + cellW - 1, cy, cx + cellW, cy + cellH, HubTheme.GOLD);
 			}
-			// §48.3 里程碑角标（7/14/28）：右下角小方块。
-			// ★画方块而不是塞「🎁」这类字形★：默认字体没有礼盒 emoji，会渲染成豆腐块。
-			if (isMilestoneDay(miles, day) && cellH >= 14) {
-				int bx2 = cx + cellW - 6;
-				int by2 = cy + cellH - 6;
-				dc.fill(bx2, by2, bx2 + 4, by2 + 4, streak >= day ? HubTheme.OK : HubTheme.GOLD);
-			}
+			// ★里程碑不再在格子右下角画方块（Aki 2026-10-23）★：顶部进度条已经把
+			// 7/14/… 的刻点 + 「streak/goal」写清楚了，日历里再点一个黄方块属于重复信息，
+			// 而且方块压在格子边框上会被误读成「这天有特殊事件」。
 		}
 
 		// 底部：今日奖励 + 按钮（贴着内容区底边，不随日历行数漂移）
@@ -243,18 +239,20 @@ public final class HubCheckinPage {
 		return best;
 	}
 
-	private static boolean isMilestoneDay(List<CheckinProtocol.Milestone> miles, int day) {
-		for (CheckinProtocol.Milestone m : miles) if (m.day() == day) return true;
-		return false;
-	}
-
 	/** 里程碑提示文案；今天是最后一天前一日时改成「明天达成」。 */
 	private static Text milestoneHint(CheckinProtocol.Milestone next, int streak, int color) {
 		if (next == null) return Text.literal("已达成全部里程碑");
-		int left = next.day() - streak;
-		Text reward = next.money() > 0
+		boolean hasReward = next.money() > 0;
+		Text reward = hasReward
 				? Text.literal(" · +").append(HubMoney.asText(next.money(), false, color))
 				: Text.empty();
+		// 断签后 streak 归 1（或 0），此时「距 7 天还差 7 天」读起来像已经欠了 7 天 ⇒ 换成目标口径
+		if (streak <= 1) {
+			return hasReward
+					? Text.literal("连续 " + next.day() + " 天可得").append(reward)
+					: Text.literal("连登 " + next.day() + " 天里程碑");
+		}
+		int left = next.day() - streak;
 		if (left == 1) return Text.literal("明天达成 " + next.day() + " 天里程碑").append(reward);
 		return Text.literal("距 " + next.day() + " 天里程碑还差 " + left + " 天").append(reward);
 	}

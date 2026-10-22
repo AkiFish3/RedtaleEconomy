@@ -55,7 +55,8 @@ public final class HubPayPage {
 		HubWidgets.button(dc, tr, x + 98, by, 60, 20, "清空", HubWidgets.Variant.OUTLINE,
 				hover(mouseX, mouseY, x + 98, by, 60, 20), false, true);
 
-		dc.drawText(tr, Text.literal("只会转给在线玩家；金额单位是铜。"), x, by + 28, HubTheme.MUTED, false);
+		dc.drawText(tr, Text.literal("支持离线玩家（对方上线后自动到账）；金额单位是铜。"), x, by + 28,
+				HubTheme.MUTED, false);
 	}
 
 	private static void field(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,

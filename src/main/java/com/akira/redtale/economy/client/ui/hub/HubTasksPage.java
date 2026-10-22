@@ -36,6 +36,31 @@ public final class HubTasksPage {
 	private static final int TAB_H = 15;
 	/** 分栏下方的信息行（日期 / 刷新次数），行高 12。 */
 	private static final int INFO_H = 12;
+	/**
+	 * 内容区顶到分栏条的留白。
+	 *
+	 * <p>★Aki 2026-10-23★：原来分栏直接贴在内容区顶（y+0），下面紧接日期行，
+	 * 视觉上「每日任务 · 日期」像被压在顶栏分隔线上。留 5px 呼吸区。
+	 */
+	private static final int TOP_PAD = 5;
+	/** 分栏条 → 信息行的额外间距（分隔线下面再让 3px）。 */
+	private static final int INFO_PAD = 4;
+
+	/** 分栏条顶边（绘制与命中共用）。 */
+	static int tabTop(int y) {
+		return y + TOP_PAD;
+	}
+
+	/** 信息行文字顶边（分隔线在 {@link #tabTop} + TAB_H 处）。 */
+	static int infoTop(int y) {
+		return tabTop(y) + TAB_H + INFO_PAD;
+	}
+
+	/** 任务列表顶边。 */
+	static int listTop(int y) {
+		return tabTop(y) + TAB_H + INFO_H + 2;
+	}
+
 	private static final String[] TABS = {"每日", "每周", "活动"};
 
 	public static final int TAB_DAILY = 0;
@@ -64,31 +89,32 @@ public final class HubTasksPage {
 		List<TaskProtocol.Task> tasks = visible();
 
 		// 第一行：分栏
+		int tabsY = tabTop(y);
 		int cx = x;
 		for (int i = 0; i < TABS.length; i++) {
 			int cw = chipW(i, tr);
 			boolean on = i == tab;
-			boolean hover = mouseX >= cx && mouseX < cx + cw && mouseY >= y && mouseY < y + 13;
-			dc.fill(cx, y, cx + cw, y + 13, on ? HubTheme.PRIMARY_SOFT
+			boolean hover = mouseX >= cx && mouseX < cx + cw && mouseY >= tabsY && mouseY < tabsY + 13;
+			dc.fill(cx, tabsY, cx + cw, tabsY + 13, on ? HubTheme.PRIMARY_SOFT
 					: (hover ? HubTheme.PRIMARY_SOFT_HOVER : HubTheme.CARD));
-			dc.fill(cx, y + 12, cx + cw, y + 13, on ? HubTheme.GOLD : HubTheme.LINE);
-			dc.drawText(tr, Text.literal(TABS[i]), cx + 7, y + 3,
+			dc.fill(cx, tabsY + 12, cx + cw, tabsY + 13, on ? HubTheme.GOLD : HubTheme.LINE);
+			dc.drawText(tr, Text.literal(TABS[i]), cx + 7, tabsY + 3,
 					on ? HubTheme.PRIMARY_SOFT_TEXT : HubTheme.MUTED, false);
 			cx += cw + 3;
 		}
 
 		// 第二行：本栏的时间口径（日/周各一条）+ 刷新（只有日任务可刷）
-		int infoY = y + TAB_H;
-		dc.drawText(tr, Text.literal(infoLine(snap)), x, infoY + 1, HubTheme.MUTED, false);
+		int infoY = infoTop(y);
+		dc.drawText(tr, Text.literal(infoLine(snap)), x, infoY, HubTheme.MUTED, false);
 		if (tab == TAB_DAILY) {
 			String left = "可刷新 " + snap.refreshesLeft() + " 次";
-			dc.drawText(tr, Text.literal(left), x + w - 62 - tr.getWidth(left), infoY + 1,
+			dc.drawText(tr, Text.literal(left), x + w - 62 - tr.getWidth(left), infoY,
 					HubTheme.MUTED, false);
-			drawMini(dc, tr, x + w - 56, infoY - 1, 56, 13, "刷新", mouseX, mouseY);
+			drawMini(dc, tr, x + w - 56, infoY - 3, 56, 13, "刷新", mouseX, mouseY);
 		}
-		dc.fill(x, y + TAB_H - 1, x + w, y + TAB_H, HubTheme.OUTLINE);
+		dc.fill(x, tabsY + TAB_H - 1, x + w, tabsY + TAB_H, HubTheme.OUTLINE);
 
-		int top = y + TAB_H + INFO_H + 3;
+		int top = listTop(y);
 		int bottom = y + h;
 		if (tasks.isEmpty()) {
 			dc.drawText(tr, Text.literal(emptyText()), x + 2, top + 6, HubTheme.MUTED, false);
@@ -282,8 +308,10 @@ public final class HubTasksPage {
 	 * 行内按钮 → CLAIM/SUBMIT（slot 经 {@code outSlot} 带回）。
 	 */
 	public static Action click(double mx, double my, int x, int y, int w, int h, int[] outSlot) {
-		// 分栏（第一行，高 13）
-		if (my >= y && my < y + 13) {
+		// 分栏（第一行，高 13）。★与渲染共用 tabTop/infoTop/listTop★：
+		// 以前绘制写 y、命中写 y+TAB_H-1 两套数字，任何一侧调间距都会让按钮「画在这、点在那」。
+		int tabsY = tabTop(y);
+		if (my >= tabsY && my < tabsY + 13) {
 			net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
 			if (mc != null && mc.textRenderer != null) {
 				for (int i = 0; i < TABS.length; i++) {
@@ -296,12 +324,14 @@ public final class HubTasksPage {
 			}
 		}
 
-		if (tab == TAB_DAILY && my >= y + TAB_H - 1 && my < y + TAB_H + 12
+		// 刷新：命中区 = 绘制区（infoTop-3 起，高 13）
+		int infoY = infoTop(y);
+		if (tab == TAB_DAILY && my >= infoY - 3 && my < infoY - 3 + 13
 				&& mx >= x + w - 56 && mx <= x + w) return Action.REFRESH;
 
 		List<TaskProtocol.Task> tasks = visible();
 		if (tasks.isEmpty()) return Action.NONE;
-		int top = y + TAB_H + INFO_H + 3;
+		int top = listTop(y);
 		int bottom = y + h;
 		if (my < top || my >= bottom) return Action.NONE;
 		int row = (int) ((my - top) / (ROW_H + GAP));

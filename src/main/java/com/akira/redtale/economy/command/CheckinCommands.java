@@ -42,9 +42,11 @@ public final class CheckinCommands {
 		}
 		CheckinModule.Outcome o = CheckinModule.checkin(p.getUuid());		switch (o.result()) {
 			case OK -> Feedback.success(src, Text.literal(
-					Lang.msg("checkin.ok", o.streak(), BalanceService.format(o.reward()))));
+					Lang.msg("checkin.ok", o.streak(), BalanceService.format(o.reward()))
+							+ (o.bonus().isEmpty() ? "" : " · " + o.bonus())));
 			case NO_TIER -> p.sendMessage(Text.literal(
-					Lang.msg("checkin.noTier", o.streak())), true);
+					Lang.msg("checkin.noTier", o.streak())
+							+ (o.bonus().isEmpty() ? "" : " · " + o.bonus())), true);
 			case ALREADY -> p.sendMessage(Text.literal(
 					Lang.msg("checkin.already", o.streak())), true);
 			default -> src.sendError(Text.literal(Lang.msg("checkin.disabled")));
@@ -77,7 +79,10 @@ public final class CheckinCommands {
 				? BalanceService.format(price) : ticket;
 		Text msg = Text.literal(Lang.msg(key, cost)
 				+ (r == CheckinModule.MakeupResult.OK
-						? " · " + CheckinModule.LAST_MAKEUP_DATE : ""));
+						? " · " + CheckinModule.LAST_MAKEUP_DATE
+								+ (CheckinModule.LAST_MAKEUP_BONUS.isEmpty()
+										? "" : " · " + CheckinModule.LAST_MAKEUP_BONUS)
+						: ""));
 		if (r == CheckinModule.MakeupResult.OK) {
 			src.sendFeedback(() -> msg, false);
 			com.akira.redtale.economy.net.CheckinNetworking.sendSnapshot(p);

@@ -15,14 +15,10 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 /** {@code /bal} {@code /pay}。所有金额在服务端换算，客户端只传字符串。 */
 public final class EconomyCommands {
-
-	private static final Map<UUID, Long> LAST_PAY = new HashMap<>();
 
 	private EconomyCommands() {
 	}
@@ -92,10 +88,6 @@ public final class EconomyCommands {
 			src.sendError(Text.literal("该命令只能由玩家执行"));
 			return 0;
 		}
-		if (!EconomyConfig.payEnabled()) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.disabled")));
-			return 0;
-		}
 
 		String name = StringArgumentType.getString(ctx, "player");
 		String raw = StringArgumentType.getString(ctx, "amount");
@@ -105,58 +97,32 @@ public final class EconomyCommands {
 			return 0;
 		}
 
-		ServerPlayerEntity target = src.getServer().getPlayerManager().getPlayer(name);
-		if (target == null) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.offline", name)));
-			return 0;
-		}
-		if (target.getUuid().equals(sender.getUuid()) && !EconomyConfig.payAllowSelf()) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.self")));
-			return 0;
-		}
-		if (amount < EconomyConfig.payMin()) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.min", BalanceService.format(EconomyConfig.payMin()))));
-			return 0;
-		}
-		if (amount > EconomyConfig.payMax()) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.max", BalanceService.format(EconomyConfig.payMax()))));
-			return 0;
-		}
-
-		int cd = EconomyConfig.payCooldownSeconds();
-		if (cd > 0) {
-			long last = LAST_PAY.getOrDefault(sender.getUuid(), 0L);
-			long waitMs = last + cd * 1000L - System.currentTimeMillis();
-			if (waitMs > 0) {
-				src.sendError(Text.literal(Lang.msg("cmd.pay.cooldown", (waitMs / 1000) + 1)));
-				return 0;
+		// ★校验与账务只有一份★（PayService）：界面路径 PayNetworking 也调它。
+		// 以前这里和 PayNetworking 各写一套，界面那条完全不读配置（免税 / 无冷却 / 可自转）。
+		com.akira.redtale.economy.module.PayService.Result r =
+				com.akira.redtale.economy.module.PayService.pay(sender, name, amount);
+		switch (r.code()) {
+			case OK -> {
+				src.sendFeedback(() -> Text.literal(Lang.msg("cmd.pay.sent", r.targetName(),
+						BalanceService.format(r.amount()), BalanceService.format(r.tax()))
+						+ (r.queued() ? "（对方离线，上线后自动到账）" : "")), false);
+				return 1;
 			}
+			case DISABLED -> src.sendError(Text.literal(Lang.msg("cmd.pay.disabled")));
+			case BAD_AMOUNT -> src.sendError(Text.literal(Lang.msg("cmd.pay.badAmount", raw)));
+			case UNKNOWN_PLAYER -> src.sendError(Text.literal(
+					"找不到玩家：" + name + "（需要对方至少登录过一次服务器）"));
+			case SELF -> src.sendError(Text.literal(Lang.msg("cmd.pay.self")));
+			case MIN -> src.sendError(Text.literal(
+					Lang.msg("cmd.pay.min", BalanceService.format(EconomyConfig.payMin()))));
+			case MAX -> src.sendError(Text.literal(
+					Lang.msg("cmd.pay.max", BalanceService.format(EconomyConfig.payMax()))));
+			case COOLDOWN -> src.sendError(Text.literal(Lang.msg("cmd.pay.cooldown", r.waitSec())));
+			default -> src.sendError(Text.literal(Lang.msg("cmd.pay.insufficient",
+					BalanceService.format(BalanceService.get(sender.getUuid())),
+					BalanceService.format(amount))));
 		}
-
-		long balance = BalanceService.get(sender.getUuid());
-		if (balance < amount) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.insufficient",
-					BalanceService.format(balance), BalanceService.format(amount))));
-			return 0;
-		}
-
-		long taxRaw = (long) Math.ceil(amount * (EconomyConfig.payTaxPercent() / 100.0));
-		final long tax = Math.min(taxRaw, amount);
-		long net = amount - tax;
-
-		if (!BalanceService.take(sender.getUuid(), amount, com.akira.redtale.economy.storage.Ledger.TYPE_PAY,
-				"to:" + target.getUuid() + "/tax:" + tax)) {
-			src.sendError(Text.literal(Lang.msg("cmd.pay.insufficient",
-					BalanceService.format(balance), BalanceService.format(amount))));
-			return 0;
-		}
-		BalanceService.add(target.getUuid(), net, com.akira.redtale.economy.storage.Ledger.TYPE_PAY,
-				"from:" + sender.getUuid());
-		LAST_PAY.put(sender.getUuid(), System.currentTimeMillis());
-
-		src.sendFeedback(() -> Text.literal(Lang.msg("cmd.pay.sent", name, BalanceService.format(amount), BalanceService.format(tax))), false);
-		target.sendMessage(Text.literal(Lang.msg("cmd.pay.received", sender.getEntityName(), BalanceService.format(amount), BalanceService.format(net))), false);
-		return 1;
+		return 0;
 	}
 
 	private static UUID resolve(ServerCommandSource src, String name) {

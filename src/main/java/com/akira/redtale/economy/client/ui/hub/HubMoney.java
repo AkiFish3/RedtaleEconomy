@@ -35,6 +35,10 @@ public final class HubMoney {
 	/** 两个币种之间的间距。 */
 	private static final int SEG_GAP = 5;
 
+	/** Numismatic 硬币贴图的实际边长（16×16，见 jar 内 textures/item/*_coin.png）。 */
+	private static final int TEX_W = 16;
+	private static final int TEX_H = 16;
+
 	/** T70：Numismatic 原始贴图（顺序 = 金/银/铜，与 split() 的 [0][1][2] 对齐）。 */
 	private static final Identifier[] COIN_TEX = {
 			Identifier.tryParse("numismatic-overhaul:textures/item/gold_coin.png"),
@@ -262,11 +266,18 @@ public final class HubMoney {
 		return found;
 	}
 
-	/** 硬币图标：优先原版贴图（缩放绘制，不改资源），缺失则几何圆片。 */
+	/**
+	 * 硬币图标：优先原版贴图（缩放绘制，不改资源），缺失则几何圆片。
+	 *
+	 * <p>★必须用带 region 的重载★：{@code drawTexture(id,x,y,w,h,u,v,rw,rh,tw,th)}。
+	 * 只用 9 参版本（{@code id,x,y,u,v,w,h,tw,th}）时 <b>w/h 同时被当作源区域</b>，
+	 * 于是只从 16×16 贴图里抠出左上 8×8 画到 8×8 —— 屏幕上是一枚被切掉右下的残缺币
+	 * （Aki 报的「货币图标显示不完整」就是这个）。要「整张缩放」，必须显式给 region=16。
+	 */
 	private static void coin(DrawContext dc, int x, int y, int kind) {
 		if (texOk(kind)) {
 			int s = iconW();
-			dc.drawTexture(COIN_TEX[kind], x, y, 0, 0, s, s, 16, 16);
+			dc.drawTexture(COIN_TEX[kind], x, y, s, s, 0.0f, 0.0f, TEX_W, TEX_H, TEX_W, TEX_H);
 			return;
 		}
 		coinGeometry(dc, x, y, kind);
