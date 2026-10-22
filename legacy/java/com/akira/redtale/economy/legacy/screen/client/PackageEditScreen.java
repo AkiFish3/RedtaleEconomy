@@ -81,6 +81,31 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     private int hoverGridSlot = -1;
     private int hoverTableRow = -1;
 
+    // ——— T80 权重编辑器：入口①按键气泡 / 入口②右上角按钮 ———
+
+    /** 唤出气泡的按键（规格 §二 允许改键；先固定 W，键位冲突时只改这一处）。 */
+    private static final int WEIGHT_KEY = org.lwjgl.glfw.GLFW.GLFW_KEY_W;
+    private static final int KEY_ESCAPE = org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
+
+    /** 右上角「权重」按钮（规格 §二 方案 2）。★必须留在面板内★：门 `_b44` 会核对。 */
+    private static final int WEIGHT_BTN_W = 56;
+    private static final int WEIGHT_BTN_H = 14;
+    private static final int WEIGHT_BTN_X = PANEL_W - 6 - WEIGHT_BTN_W;
+    private static final int WEIGHT_BTN_Y = 3;
+
+    /** 权重模式（点格子即开气泡）。 */
+    private boolean weightMode = false;
+    /** 当前气泡（null = 没开）。两个入口共用。 */
+    private WeightPopup popup = null;
+    /** 长按连发：正在按住的热区（{@link WeightPopup#ID_MINUS}/{@link WeightPopup#ID_PLUS}）。 */
+    private int holdRegion = WeightPopup.ID_NONE;
+    private static final long HOLD_DELAY_MS = 300L;
+    private static final long HOLD_REPEAT_MS = 50L;
+    private long holdNextMs = 0L;
+    /** 上一帧的鼠标位置（绝对逻辑坐标）——按 W 时用它决定气泡出现在哪里。 */
+    private int lastMouseX = 0;
+    private int lastMouseY = 0;
+
     public PackageEditScreen(PackageEditHandler handler, PlayerInventory inventory, Text title) {
         super(handler, inventory, title);
         this.backgroundWidth = PANEL_W;
@@ -214,8 +239,59 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         return lum >= 128 ? 0xFF101014 : 0xFFEDEDF2;
     }
 
-    private void slotBg(DrawContext context, int x, int y) {
-        context.fill(x, y, x + 18, y + 18, 0xFF2A2A31);
+    /**
+     * 权重数字的颜色（规格 §三）。
+     *
+     * <ul>
+     *   <li>编辑态（气泡开着 / 权重模式）：{@code #58D6A8} 绿</li>
+     *   <li>权重为 0：{@code #8A8A8A} 灰 —— 0 表示该条目在 RANDOM 里被跳过，必须一眼看出来</li>
+     *   <li>普通：{@code #FFD24A} 金</li>
+     * </ul>
+     *
+     * <p>★三个入口共用这一个函数★（网格角标 / 权重表 / 气泡），否则同一格在三处显示三种颜色。
+     */
+    public static int weightColor(int weight, boolean editing) {
+        if (editing) return 0xFF58D6A8;
+        return weight == 0 ? 0xFF8A8A8A : 0xFFD24A;
+    }
+
+    /**
+     * 同色深一档（描边用）。规格给的例子是金 {@code #FFD24A} → {@code #7A5E00}，
+     * 这里按 RGB ×0.45 统一推导 ⇒ (114,94,33)，与例子肉眼同级，三态都能自动获得对应深色，
+     * 不用为绿/灰再各写一个魔数。
+     */
+    private static int darken(int argb) {
+        int r = (int) (((argb >> 16) & 0xFF) * 0.45f);
+        int g = (int) (((argb >> 8) & 0xFF) * 0.45f);
+        int b = (int) ((argb & 0xFF) * 0.45f);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    /**
+     * 画一格的权重角标（面板相对坐标 {@code (sx, sy)} = 格子左上角 +1）。
+     *
+     * <p>★3 位数要缩一半★：9px 字体一个字符宽 6px，{@code 999} 就是 18px，正好等于整格宽
+     * ⇒ 不缩会压到右边相邻格子上（看起来像"隔壁的权重"）。上限 999 时用 0.5 缩放画成 9px 宽。
+     */
+    private void drawWeightBadge(DrawContext context, int sx, int sy, int weight, boolean editing) {
+        String text = String.valueOf(weight);
+        int color = weightColor(weight, editing);
+        int outline = darken(color);
+        if (text.length() >= 3) {
+            context.getMatrices().push();
+            context.getMatrices().translate(sx, sy, 0);
+            context.getMatrices().scale(0.5f, 0.5f, 1.0f);
+            context.drawText(this.textRenderer, text, 1, 1, outline, false);
+            context.drawText(this.textRenderer, text, 0, 0, color, false);
+            context.getMatrices().pop();
+            return;
+        }
+        // 1px 右下描边 ⇒ 浅色物品（纸、白羊毛）上也读得清
+        context.drawText(this.textRenderer, text, sx + 1, sy + 1, outline, false);
+        context.drawText(this.textRenderer, text, sx, sy, color, false);
+    }
+
+    private void slotBg(DrawContext context, int x, int y) {        context.fill(x, y, x + 18, y + 18, 0xFF2A2A31);
         context.fill(x, y, x + 18, y + 1, 0xFF14141A);
     }
 
@@ -240,6 +316,19 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
         context.drawText(this.textRenderer, this.title, this.titleX, this.titleY, 0xFFEDEDF2, false);
         context.drawText(this.textRenderer, this.playerInventoryTitle,
                 this.playerInventoryTitleX, this.playerInventoryTitleY, 0xFF8E8E9A, false);
+
+        // ★T80：每格权重数字画在物品**左上角**（规格 §三）★
+        // 只在该格有物品时画；颜色三态见 weightColor()。位置 = 格子坐标 +(1,1)，
+        // 即 `slot.x + 1, slot.y + 1`（与槽位同一份几何，不另算）。
+        // drawForeground 里已经是面板相对坐标且**在物品之后**执行（第 42 轮 javap 实证：
+        // HandledScreen.render 的 translate 在 40，drawForeground 在 179）⇒ 数字压在图标上，正是规格要的角标。
+        for (int i = 0; i < PackageEditHandler.EDITOR_SLOTS; i++) {
+            ItemStack stack = this.handler.getSlot(i).getStack();
+            if (stack.isEmpty()) continue;
+            int sx = PackageEditHandler.GRID_X + (i % PackageEditHandler.GRID_COLS) * 18 + 1;
+            int sy = PackageEditHandler.GRID_Y + (i / PackageEditHandler.GRID_COLS) * 18 + 1;
+            drawWeightBadge(context, sx, sy, PackageEditClientState.weight(i), weightMode);
+        }
 
         // 模式 chip 文案
         PackageData.PackageMode[] modes = PackageData.PackageMode.values();
@@ -297,18 +386,61 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             context.drawText(this.textRenderer, name, tx + NAME_X, ry + 5, 0xFFA9A9B4, false);
         }
 
-        // 汇总：总权重（RANDOM 模式下就是抽取概率的分母）——放标题右侧，不占背包区
-        int total = 0;
-        for (int slot : entries) total += Math.max(0, PackageEditClientState.weight(slot));
-        String summary = Text.translatable("screen.redtale_economy.edit.total", total,
-                entries.size()).getString();
-        context.drawText(this.textRenderer, summary,
-                x + PANEL_W - 8 - this.textRenderer.getWidth(summary), y + 6, 0xFF8E8E9A, false);
+        // 汇总：总权重（RANDOM 模式下就是抽取概率的分母）——放标题右侧，不占背包区。
+        // ★T80：权重模式下改显示提示条★（规格 §二 方案 2「提示条显示：点击物品调整权重」）。
+        // 两者同一位置二选一，不新增行高（面板高度已在 408×240 顶满，任何新行都会顶掉背包）。
+        String right;
+        int rightColor;
+        if (weightMode) {
+            right = Text.translatable("screen.redtale_economy.edit.pickHint").getString();
+            rightColor = 0xFF58D6A8;
+        } else {
+            int total = 0;
+            for (int slot : entries) total += Math.max(0, PackageEditClientState.weight(slot));
+            right = Text.translatable("screen.redtale_economy.edit.total", total,
+                    entries.size()).getString();
+            rightColor = 0xFF8E8E9A;
+        }
+        context.drawText(this.textRenderer, right,
+                x + weightBtnX() - 8 - this.textRenderer.getWidth(right), y + 6, rightColor, false);
+
+        // 右上角「权重」切换按钮（规格 §二 方案 2）。★不画在面板外★：x/y 都在 [0, PANEL] 内。
+        int relBtnX = weightBtnX();
+        int bx = x + relBtnX;
+        int by = y + WEIGHT_BTN_Y;
+        boolean hoverBtn = inside(mouseX - left(), mouseY - top(), relBtnX, WEIGHT_BTN_Y,
+                WEIGHT_BTN_W, WEIGHT_BTN_H);
+        // ★mouseX/mouseY 是绝对坐标，必须先减 left()/top()★（第 42 轮 javap：字节码 177/178 直接传原始值）
+        int btnFill = weightMode ? 0xFF58D6A8 : (hoverBtn ? 0xFF3A3A44 : 0xFF26262E);
+        context.fill(bx, by, bx + WEIGHT_BTN_W, by + WEIGHT_BTN_H, btnFill);
+        context.fill(bx, by, bx + WEIGHT_BTN_W, by + 1, weightMode ? 0xFFFFFFFF : 0xFF4A4A55);
+        Text btnLabel = Text.translatable("screen.redtale_economy.edit.weightBtn");
+        context.drawText(this.textRenderer, btnLabel,
+                bx + (WEIGHT_BTN_W - this.textRenderer.getWidth(btnLabel)) / 2, by + 3,
+                textOn(btnFill), false);
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
         updateHover(mouseX, mouseY);
+        // 气泡的目标格被清空（拖回背包 / 右键删 / 换档重算）⇒ 气泡必须自己关掉，
+        // 否则会留一个"权重 1、没有物品"的孤儿气泡，点 ± 还在往服务端发 SET_WEIGHT。
+        if (popup != null && this.handler.getSlot(popup.slot()).getStack().isEmpty()) {
+            popup = null;
+            clearHold();
+        }
+        // 长按连发（规格 §六 第 3 条）：0.3s 后每 50ms ±1。
+        // ★不能用 tick() 当节拍器★：`HandledScreen.tick()` 是 **final**（javac 实测「无法覆盖」），
+        // 而 render() 每帧都被调、且这些操作本来就只影响本客户端 UI（发包方式和 mouseClicked 一致）。
+        if (holdRegion != WeightPopup.ID_NONE && popup != null) {
+            long now = System.currentTimeMillis();
+            if (now >= holdNextMs) {
+                stepWeight(popup.slot(), holdRegion == WeightPopup.ID_PLUS ? 1 : -1);
+                holdNextMs = now + HOLD_REPEAT_MS;
+            }
+        }
         this.renderBackground(context);
         super.render(context, mouseX, mouseY, delta);
 
@@ -338,6 +470,16 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             context.drawTooltip(this.textRenderer, tip, mouseX, mouseY);
         }
         this.drawMouseoverTooltip(context, mouseX, mouseY);
+
+        // ★气泡最后画★（规格 §六 第 1 条）：槽位 tooltip 由 drawMouseoverTooltip 画，
+        // 气泡若先画会被"物品名/权重/滚轮调整"那三行压住（并且 tooltip 底是半透明黑，叠加后不可读）。
+        if (popup != null) {
+            ItemStack stack = this.handler.getSlot(popup.slot()).getStack();
+            if (!stack.isEmpty()) {
+                popup.draw(context, this.textRenderer, stack,
+                        PackageEditClientState.weight(popup.slot()), mouseX, mouseY);
+            }
+        }
     }
 
     // ————————————————————————— 命中 —————————————————————————
@@ -391,6 +533,51 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int x = left();
         int y = top();
+
+        // ——— T80 气泡优先：它画在最上层，命中也必须在最上层 ———
+        if (popup != null) {
+            if (button == 0) {
+                int region = popup.hit(mouseX, mouseY);
+                if (region == WeightPopup.ID_MINUS || region == WeightPopup.ID_PLUS) {
+                    boolean plus = region == WeightPopup.ID_PLUS;
+                    stepWeight(popup.slot(), plus ? 1 : -1);
+                    // 长按连发：按下时启动计时，tick() 里每 50ms 再来一次（规格 §六 第 3 条）
+                    holdRegion = region;
+                    holdNextMs = System.currentTimeMillis() + HOLD_DELAY_MS;
+                    return true;
+                }
+                if (region == WeightPopup.ID_CONFIRM) {
+                    // 「确认」= 把当前值再发一次（幂等）+ 关闭。规格 §四 是「改即发」，确认只是收尾动作，
+                    // 但它必须是**能用的按钮**：旧式"只关不加"的假按钮点了没反应更让人困惑。
+                    sendWeight(popup.slot(), PackageEditClientState.weight(popup.slot()));
+                    closePopup();
+                    return true;
+                }
+                if (popup.contains(mouseX, mouseY)) return true; // 点在气泡空白处：吃掉，别穿透去搬物品
+            } else if (popup.contains(mouseX, mouseY)) {
+                return true;
+            }
+            // 点在气泡外：先关，然后让这一次点击照常生效（不做"第一下只关气泡"的拦截）
+            closePopup();
+        }
+
+        // ——— T80 入口②：右上角「权重」按钮切模式 ———
+        if (button == 0 && inside(mouseX, mouseY, x + weightBtnX(), y + WEIGHT_BTN_Y,
+                WEIGHT_BTN_W, WEIGHT_BTN_H)) {
+            weightMode = !weightMode;
+            closePopup();
+            return true;
+        }
+
+        // ——— T80 入口②：权重模式下点格子 → 在格子旁弹气泡，且**不搬动物品** ———
+        // 只在格里真有物品时接管；空格仍走原版（否则权重模式下没法把物品拖进网格）。
+        if (weightMode && button == 0) {
+            int slot = gridSlotAt(mouseX, mouseY);
+            if (slot >= 0 && !this.handler.getSlot(slot).getStack().isEmpty()) {
+                openPopupAtSlot(slot);
+                return true;
+            }
+        }
 
         // 模式 chip（只吃左键）
         if (button == 0) {
@@ -468,6 +655,87 @@ public class PackageEditScreen extends HandledScreen<PackageEditHandler> {
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, amount);
+    }
+
+    // ————————————————————————— T80 键盘 / 气泡 —————————————————————————
+
+    /**
+     * 入口①：悬停某格按 {@code W} → 在鼠标处弹气泡（规格 §二 方案 1）。
+     *
+     * <p>"键盘被聊天框抢走"的顾虑在 1.20.1 不成立：本界面没有 {@code TextFieldWidget}，
+     * 聊天框在打开容器界面时不可聚焦（{@code Screen.keyPressed} 只可能来自本界面）。
+     * 唯一要守的是：**没有悬停到有物品的格子就不要吞键**，否则 W 在其它位置失效。
+     */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == KEY_ESCAPE && popup != null) {
+            closePopup();
+            return true;
+        }
+        if (keyCode == WEIGHT_KEY) {
+            if (popup != null) { // 再按一次 = 关闭
+                closePopup();
+                return true;
+            }
+            int slot = hoverGridSlot;
+            if (slot >= 0 && !this.handler.getSlot(slot).getStack().isEmpty()) {
+                // 鼠标旁 10px：不压住正在悬停的格子（压住会让 tooltip 与点选都看不见）
+                popup = WeightPopup.at(slot, lastMouseX + 10, lastMouseY + 10, this.width, this.height);
+                return true;
+            }
+            return false;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        clearHold();
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    /**
+     * 权重按钮的面板相对 X。
+     *
+     * <p>★窄屏要跟着可见右缘走★：面板 408 宽在 320/341 逻辑宽下会被屏幕右缘裁掉（`init()` 把锚点钳到 0
+     * ⇒ 面板右侧 88px 在屏幕外）。按钮若死守 {@link #WEIGHT_BTN_X}=346，在 320 宽下就整块不可见 ——
+     * 而它正是「权重模式」唯一入口，等于窄屏下只有按 W 这条路。这里把它贴到**当前可见**右缘，
+     * 与第 43 轮的锚点钳位同一思路；绘制与命中都读这一个函数。
+     */
+    private int weightBtnX() {
+        int visibleRight = this.width - left() - 2 - WEIGHT_BTN_W;
+        return Math.max(0, Math.min(WEIGHT_BTN_X, visibleRight));
+    }
+
+    private void openPopupAtSlot(int slot) {
+        int col = slot % PackageEditHandler.GRID_COLS;
+        int row = slot / PackageEditHandler.GRID_COLS;
+        // 固定贴在格子右侧；WeightPopup.at 会把它钳回屏幕内（贴右边时自动左移）
+        popup = WeightPopup.at(slot, left() + PackageEditHandler.GRID_X + col * 18 + 20,
+                top() + PackageEditHandler.GRID_Y + row * 18, this.width, this.height);
+    }
+
+    private void closePopup() {
+        popup = null;
+        clearHold();
+    }
+
+    private void clearHold() {
+        holdRegion = WeightPopup.ID_NONE;
+        holdNextMs = 0L;
+    }
+
+    /** 发一条 SET_WEIGHT（钳到 [0, maxWeight]）。值没变就不发，避免长按到边界后每 50ms 刷包。 */
+    private void stepWeight(int slot, int delta) {
+        int current = PackageEditClientState.weight(slot);
+        sendWeight(slot, current + delta);
+    }
+
+    private void sendWeight(int slot, int value) {
+        int clamped = Math.max(0, Math.min(PackageEditClientState.maxWeight(), value));
+        if (clamped == PackageEditClientState.weight(slot)) return;
+        RENetworking.sendEditAction(RENetworking.ACT_SET_WEIGHT,
+                buf -> { buf.writeVarInt(slot); buf.writeVarInt(clamped); });
     }
 
     // ————————————————————————— 小工具 —————————————————————————

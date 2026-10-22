@@ -416,5 +416,9 @@
   "screen.redtale_economy.edit.mode.random": "Random",
   "screen.redtale_economy.edit.weight": "Weight: %s",
   "screen.redtale_economy.edit.hint": "Scroll to change weight",
-  "screen.redtale_economy.edit.total": "Total %s · %s entries"
+  "screen.redtale_economy.edit.total": "Total %s · %s entries",
+  "screen.redtale_economy.edit.weightBtn": "Weight",
+  "screen.redtale_economy.edit.pickHint": "Click an item to set its weight",
+  "screen.redtale_economy.edit.popup.weight": "Weight",
+  "screen.redtale_economy.edit.popup.confirm": "OK"
 }

@@ -416,5 +416,9 @@
   "screen.redtale_economy.edit.mode.random": "随机",
   "screen.redtale_economy.edit.weight": "权重：%s",
   "screen.redtale_economy.edit.hint": "滚轮调整权重",
-  "screen.redtale_economy.edit.total": "总权重 %s · %s 条"
+  "screen.redtale_economy.edit.total": "总权重 %s · %s 条",
+  "screen.redtale_economy.edit.weightBtn": "权重",
+  "screen.redtale_economy.edit.pickHint": "点击物品调整权重",
+  "screen.redtale_economy.edit.popup.weight": "权重",
+  "screen.redtale_economy.edit.popup.confirm": "确认"
 }
