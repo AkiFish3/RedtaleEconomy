@@ -36,11 +36,22 @@ public final class HubMarketPage {
 
 	private static int priceIndex = 2;
 
+	/** 列表滚动行（★服务端一页 18 条，427×240 只放得下 5 行 ⇒ 必须能滚★）。 */
+	private static int scrollRow;
+
 	private HubMarketPage() {
 	}
 
+	public static void resetScroll() {
+		scrollRow = 0;
+	}
+
+	public static int scrollRow() {
+		return scrollRow;
+	}
+
 	public enum Action {
-		NONE, TOGGLE_MINE, SYNC, CYCLE_PRICE, SELL, PREV, NEXT, BUY, CANCEL
+		NONE, ALL_FILTER, MINE_FILTER, SYNC, CYCLE_PRICE, SELL, PREV, NEXT, BUY, CANCEL
 	}
 
 	public static long price() {
@@ -57,6 +68,16 @@ public final class HubMarketPage {
 
 	private static int rowsVisible(int h) {
 		return Math.max(1, (h - FILTER_H - SELL_H - 12 - 24) / ROW_H);
+	}
+
+	/** 滚动上限（条目数 − 屏内行数）；渲染、命中、滚轮三处共用，避免口径漂移。 */
+	public static int maxScroll(int count, int h) {
+		return Math.max(0, count - rowsVisible(h));
+	}
+
+	public static void scrollByRows(int rows, int h) {
+		int count = MarketClientNetworking.LAST.offers().size();
+		scrollRow = Math.max(0, Math.min(maxScroll(count, h), scrollRow + rows));
 	}
 
 	// ---------------------------------------------------------------- 渲染
@@ -110,16 +131,30 @@ public final class HubMarketPage {
 		int top = listTop(y);
 		int rows = rowsVisible(h);
 		int bottomLimit = y + h - 26;
-		for (int i = 0; i < offers.size() && i < rows; i++) {
-			int ry = top + i * ROW_H;
+		int scrollMax = maxScroll(offers.size(), h);
+		scrollRow = Math.max(0, Math.min(scrollRow, scrollMax));
+		int drawn = 0;
+		for (int slot = 0; slot < rows; slot++) {
+			int i = scrollRow + slot;
+			if (i >= offers.size()) break;
+			int ry = top + slot * ROW_H;
 			if (ry + ROW_H > bottomLimit) break;
 			drawRow(dc, tr, x, ry, w, offers.get(i), i == selected, mouseX, mouseY);
+			drawn++;
 		}
 		if (offers.isEmpty()) {
 			dc.drawText(tr, Text.literal(snap.mineOnly() ? "你还没有挂单" : "市场里暂时没有货"),
 					x + 6, top + 6, HubTheme.MUTED, false);
 			dc.drawText(tr, Text.literal(trim(tr, "拿着物品 → 填价格 → 点「挂出」；也可以 /market sell <价格>",
 					w - 12)), x + 6, top + 20, HubTheme.HINT, false);
+		}
+		// 滚动条：一页 18 条但屏内只有 5 行 ⇒ 没它那 13 条既看不见也翻不到
+		if (scrollMax > 0) {
+			int trackH = Math.max(8, bottomLimit - top);
+			dc.fill(x + w - 1, top, x + w, top + trackH, HubTheme.TRACK);
+			int knobH = Math.max(8, trackH * Math.max(1, drawn) / offers.size());
+			int knobY = top + (trackH - knobH) * scrollRow / scrollMax;
+			dc.fill(x + w - 1, knobY, x + w, knobY + knobH, HubTheme.LINE);
 		}
 
 		// 底栏
@@ -170,8 +205,9 @@ public final class HubMarketPage {
 		if (my >= y && my < y + FILTER_H) {
 			int cw0 = tr.getWidth("全部") + 10;
 			int cw1 = tr.getWidth("我的") + 10;
-			if (mx >= x && mx < x + cw0) return Action.TOGGLE_MINE;
-			if (mx >= x + cw0 + 4 && mx < x + cw0 + 4 + cw1) return Action.TOGGLE_MINE;
+			// ★两个 chip 语义不同★：以前都返回 TOGGLE_MINE ⇒ 点「全部」反而切到「我的」
+			if (mx >= x && mx < x + cw0) return Action.ALL_FILTER;
+			if (mx >= x + cw0 + 4 && mx < x + cw0 + 4 + cw1) return Action.MINE_FILTER;
 			if (mx >= x + w - 32) return Action.SYNC;
 			return Action.NONE;
 		}
@@ -195,8 +231,12 @@ public final class HubMarketPage {
 		int top = listTop(y);
 		int rows = rowsVisible(h);
 		List<MarketProtocol.Offer> offers = snap.offers();
-		for (int i = 0; i < offers.size() && i < rows; i++) {
-			int ry = top + i * ROW_H;
+		int scrollMax = maxScroll(offers.size(), h);
+		scrollRow = Math.max(0, Math.min(scrollRow, scrollMax));
+		for (int slot = 0; slot < rows; slot++) {
+			int i = scrollRow + slot;
+			if (i >= offers.size()) break;
+			int ry = top + slot * ROW_H;
 			if (ry + ROW_H > y + h - 26) break;
 			if (mx >= x && mx < x + w && my >= ry && my < ry + ROW_H - 2) {
 				outIndex[0] = i;

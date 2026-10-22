@@ -17,12 +17,25 @@ final class HubMarketClicks {
 					host.marketSelected, idx);
 			var snap = com.akira.redtale.economy.client.market.MarketClientNetworking.LAST;
 			switch (a) {
-				case TOGGLE_MINE -> {
-					com.akira.redtale.economy.client.market.MarketClientNetworking.request(0,
-							!snap.mineOnly(), com.akira.redtale.economy.client.market.MarketClientNetworking.query);
+				// ★两个 chip 各管各的★：以前都是 TOGGLE_MINE ⇒ 点「全部」把过滤切到「我的」
+				case ALL_FILTER -> {
+					if (snap.mineOnly()) {
+						com.akira.redtale.economy.client.market.MarketClientNetworking.request(0, false,
+								com.akira.redtale.economy.client.market.MarketClientNetworking.query);
+					}
+					HubMarketPage.resetScroll();
+					host.marketSelected = -1;
+				}
+				case MINE_FILTER -> {
+					if (!snap.mineOnly()) {
+						com.akira.redtale.economy.client.market.MarketClientNetworking.request(0, true,
+								com.akira.redtale.economy.client.market.MarketClientNetworking.query);
+					}
+					HubMarketPage.resetScroll();
 					host.marketSelected = -1;
 				}
 				case SYNC -> {
+					HubMarketPage.resetScroll();
 					com.akira.redtale.economy.client.market.MarketClientNetworking.request();
 					host.setStatus("正在刷新市场…");
 				}
@@ -32,12 +45,14 @@ final class HubMarketClicks {
 					host.setStatus("正在挂单…");
 				}
 				case PREV -> {
+					HubMarketPage.resetScroll();
 					com.akira.redtale.economy.client.market.MarketClientNetworking.request(
 							Math.max(0, snap.page() - 1), snap.mineOnly(),
 							com.akira.redtale.economy.client.market.MarketClientNetworking.query);
 					host.marketSelected = -1;
 				}
 				case NEXT -> {
+					HubMarketPage.resetScroll();
 					com.akira.redtale.economy.client.market.MarketClientNetworking.request(
 							snap.page() + 1, snap.mineOnly(),
 							com.akira.redtale.economy.client.market.MarketClientNetworking.query);

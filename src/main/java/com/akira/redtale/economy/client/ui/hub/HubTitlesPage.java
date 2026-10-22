@@ -33,7 +33,24 @@ public final class HubTitlesPage {
 	private static final int CHIP_H = 14;
 	private static final int HINT_H = 10;
 
+	/** 已拥有列表的滚动行（★列表超过 maxRows 时必须能滚★，否则第 7 条起看不见也点不到）。 */
+	private static int scrollRow;
+
 	private HubTitlesPage() {
+	}
+
+	public static void resetScroll() {
+		scrollRow = 0;
+	}
+
+	/** 滚动上限：条目数 − 屏内行数（两者都按当前快照/高度算，与渲染同一口径）。 */
+	public static int maxScroll(int h) {
+		TitleProtocol.Snapshot s = TitlesClientNetworking.LAST;
+		return Math.max(0, s.owned().size() - dims(s, 0, h).maxRows());
+	}
+
+	public static void scrollByRows(int rows, int h) {
+		scrollRow = Math.max(0, Math.min(maxScroll(h), scrollRow + rows));
 	}
 
 	/** 该快照下应该显示的槽位数（协议可能给 0/超限，这里兜底）。 */
@@ -137,9 +154,15 @@ public final class HubTitlesPage {
 					x + 2, d.rowsY() + 2, HubTheme.MUTED, false);
 			return;
 		}
-		int max = Math.min(s.owned().size(), d.maxRows());
-		for (int i = 0; i < max; i++) {
-			int ry = d.rowsY() + i * ROW_H;
+		int scrollMax = Math.max(0, s.owned().size() - d.maxRows());
+		scrollRow = Math.max(0, Math.min(scrollRow, scrollMax));
+		int visible = Math.max(0, Math.min(s.owned().size() - scrollRow, d.maxRows()));
+		int limitY = y + h - HINT_H;
+		for (int slot = 0; slot < visible; slot++) {
+			int i = scrollRow + slot;
+			if (i >= s.owned().size()) break;
+			int ry = d.rowsY() + slot * ROW_H;
+			if (ry + ROW_H - 2 > limitY) break;
 			String t = s.owned().get(i);
 			boolean on = s.equipped().contains(t);
 			boolean hover = mouseX >= x && mouseX < x + w && mouseY >= ry && mouseY < ry + ROW_H - 2;
@@ -149,6 +172,15 @@ public final class HubTitlesPage {
 			String btn = on ? "已装备" : "装备";
 			dc.drawText(tr, Text.literal(btn), x + w - 12 - tr.getWidth(btn), ry + 5,
 					on ? HubTheme.PRIMARY : HubTheme.MUTED, false);
+		}
+		// 滚动条：贴右边界，与列表同区（T45 同族——看得见第一条却没有第二条的入口）
+		if (scrollMax > 0) {
+			int trackTop = d.rowsY();
+			int trackH = Math.max(8, limitY - trackTop);
+			dc.fill(x + w - 1, trackTop, x + w, trackTop + trackH, HubTheme.TRACK);
+			int knobH = Math.max(8, trackH * visible / Math.max(1, s.owned().size()));
+			int knobY = trackTop + (trackH - knobH) * scrollRow / scrollMax;
+			dc.fill(x + w - 1, knobY, x + w, knobY + knobH, HubTheme.LINE);
 		}
 		String hint = "左键装备（自动选空槽）· 点槽位条卸下 · 右键从列表移除";
 		dc.drawText(tr, Text.literal(hint), x, y + h - HINT_H, HubTheme.MUTED, false);
@@ -185,9 +217,12 @@ public final class HubTitlesPage {
 			}
 		}
 
-		int max = Math.min(s.owned().size(), d.maxRows());
-		for (int i = 0; i < max; i++) {
-			int ry = d.rowsY() + i * ROW_H;
+		int scrollMax = Math.max(0, s.owned().size() - d.maxRows());
+		scrollRow = Math.max(0, Math.min(scrollRow, scrollMax));
+		int visible = Math.max(0, Math.min(s.owned().size() - scrollRow, d.maxRows()));
+		for (int slot = 0; slot < visible; slot++) {
+			int i = scrollRow + slot;
+			int ry = d.rowsY() + slot * ROW_H;
 			if (mx >= x && mx < x + w && my >= ry && my < ry + ROW_H - 2) {
 				return new Result(button == 1 ? Hit.REMOVE : Hit.SELECT, i);
 			}

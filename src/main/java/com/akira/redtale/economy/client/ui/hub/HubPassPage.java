@@ -278,11 +278,21 @@ public final class HubPassPage {
 
 		int idx = hitCell(mx, my, x, lo.row1(), w, lo.cellH(), visible, s.free().size(), scroll);
 		if (idx >= 0 && idx < s.free().size()) {
-			return new Result(new Claim("free", s.free().get(idx).level()), -1);
+			int lv = s.free().get(idx).level();
+			// ★只有「已达等级 + 未领取」才发命令★：以前点任意格子（含已领/未达）都发 claim，
+			// 服务端拒绝刷屏，界面也没有任何反馈区分（与 T56 任务页同族缺陷）。
+			if (lv <= s.level() && !s.claimedFree().contains(lv)) {
+				return new Result(new Claim("free", lv), -1);
+			}
+			return Result.NONE;
 		}
 		idx = hitCell(mx, my, x, lo.row2(), w, lo.cellH(), visible, s.prem().size(), scroll);
 		if (idx >= 0 && idx < s.prem().size()) {
-			return new Result(new Claim("premium", s.prem().get(idx).level()), -1);
+			int lv = s.prem().get(idx).level();
+			if (s.premium() && lv <= s.level() && !s.claimedPrem().contains(lv)) {
+				return new Result(new Claim("premium", lv), -1);
+			}
+			return Result.NONE;
 		}
 		return Result.NONE;
 	}

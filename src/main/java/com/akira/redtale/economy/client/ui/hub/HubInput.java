@@ -196,6 +196,21 @@ final class HubInput {
 			HubAdminPage.scrollByRows(dir, host.frame.contentH());
 			return true;
 		}
+		if (inContent && host.page == HubPage.MARKET) {
+			// 服务端一页 18 条，427×240 只放得下 5 行（T45 同族：不滚就连"下一页"都跳过中间 13 条）
+			HubMarketPage.scrollByRows(dir, host.frame.contentH());
+			return true;
+		}
+		if (inContent && host.page == HubPage.MAIL) {
+			// T62：待领取可能十几条，列表原来有 scrollRow 却没接滚轮（clamp 只在渲染里）
+			HubMailPage.scrollByRows(dir, host.frame.contentY(), host.frame.contentH());
+			return true;
+		}
+		if (inContent && host.page == HubPage.TITLES) {
+			// 称号数由管理员发放，可远超一屏
+			HubTitlesPage.scrollByRows(dir, host.frame.contentH());
+			return true;
+		}
 		if (inContent && host.page == HubPage.STORAGE) {
 			host.storageScroll = Math.max(0, Math.min(
 					com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.SLOT_COUNT,

@@ -24,15 +24,24 @@ final class HubRequests {
 			case SHOP -> host.requestShopPage();
 			case RANK -> com.akira.redtale.economy.client.rank.RankClientNetworking
 					.request(host.rankActiveOnly);
-			case MARKET -> com.akira.redtale.economy.client.market.MarketClientNetworking.request();
+			case MARKET -> {
+				HubMarketPage.resetScroll();
+				com.akira.redtale.economy.client.market.MarketClientNetworking.request();
+			}
 			case BOARD -> BoardClientNetworking.request();
 			case LEDGER -> LedgerClientNetworking.request();
 			case ADMIN -> AdminClientNetworking.request();
 			case CHECKIN -> chat("checkin status");
-			case MAIL -> MailClientNetworking.request();
+			case MAIL -> {
+				HubMailPage.resetScroll();
+				MailClientNetworking.request();
+			}
 			// ★以下五页原来只在「点侧栏」时拉，深链（setPage / 命令打开 Hub）进来就是空页★
 			case STORAGE -> com.akira.redtale.economy.client.warehouse.WarehouseClientNetworking.request();
-			case TITLES -> com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
+			case TITLES -> {
+				HubTitlesPage.resetScroll();
+				com.akira.redtale.economy.client.title.TitlesClientNetworking.request();
+			}
 			case PASS -> chat("pass");
 			case BOUNTY -> chat("bounty list");
 			case GUILD -> chat("guild");

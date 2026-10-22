@@ -50,6 +50,34 @@ public final class HubMailPage {
 		return listW;
 	}
 
+	/** 列表体区（渲染、命中、滚动三处共用）。 */
+	private static int bodyTop(int y) {
+		return y + 19;
+	}
+
+	private static int bodyBottom(int y, int h) {
+		return y + h - 24;
+	}
+
+	/** 一屏放几行。 */
+	private static int fitRows(int y, int h) {
+		return Math.max(1, (bodyBottom(y, h) - bodyTop(y) + GAP) / (ROW_H + GAP));
+	}
+
+	public static int maxScroll(int y, int h) {
+		return Math.max(0, MailClientNetworking.LAST.entries().size() - fitRows(y, h));
+	}
+
+	/**
+	 * 滚列表。
+	 *
+	 * <p>★以前这里的 clamp 只在渲染里做，滚轮也没接线★ ⇒ 条目超过一屏时第 N 条永远选不到
+	 * （渲染显示的窗口和命中用的 {@code scrollRow} 各说各话）。现在三处同一口径。
+	 */
+	public static void scrollByRows(int rows, int y, int h) {
+		scrollRow = Math.max(0, Math.min(maxScroll(y, h), scrollRow + rows));
+	}
+
 	public static void render(DrawContext dc, TextRenderer tr, int x, int y, int w, int h,
 			double mouseX, double mouseY) {
 		MailProtocol.Snapshot snap = MailClientNetworking.LAST;
@@ -73,7 +101,7 @@ public final class HubMailPage {
 		if (entries.isEmpty()) {
 			dc.drawText(tr, Text.literal("没有待领取"), x + 2, bodyTop + 4, HubTheme.MUTED, false);
 		} else {
-			int fit = Math.max(1, (bodyBottom - bodyTop + GAP) / (ROW_H + GAP));
+			int fit = fitRows(y, h);
 			int maxRow = Math.max(0, entries.size() - fit);
 			scrollRow = Math.max(0, Math.min(scrollRow, maxRow));
 			selected = Math.max(0, Math.min(selected, entries.size() - 1));
@@ -214,7 +242,8 @@ public final class HubMailPage {
 
 		// 左列表选中
 		if (mx >= x && mx <= x + listW && my >= bodyTop && my < bodyBottom) {
-			int fit = Math.max(1, (bodyBottom - bodyTop + GAP) / (ROW_H + GAP));
+			int fit = fitRows(y, h);
+			scrollRow = Math.max(0, Math.min(maxScroll(y, h), scrollRow));
 			int idx = (int) ((my - bodyTop) / (ROW_H + GAP)) + scrollRow;
 			int row = (int) ((my - bodyTop) % (ROW_H + GAP));
 			if (row < ROW_H && idx >= 0 && idx < entries.size() && idx < scrollRow + fit) {
@@ -223,10 +252,6 @@ public final class HubMailPage {
 			}
 		}
 		return new Result(Action.NONE, -1);
-	}
-
-	public static void scrollByRows(int rows) {
-		scrollRow = Math.max(0, scrollRow + rows);
 	}
 
 	/** 换页/回到顶部时重置（选中项保留，避免领完上一条后选中跳走）。 */
