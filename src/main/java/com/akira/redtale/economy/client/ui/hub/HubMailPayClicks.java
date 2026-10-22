@@ -21,16 +21,15 @@ final class HubMailPayClicks {
 					return HubClicks.R.HANDLED;
 				}
 				case CLAIM -> {
-					// T62：按下标领（服务端按 kind+index 定位队列条目，不按金额/名字匹配）
+					// T62：r.index() 是列表下标（选定那一条），领的永远是玩家看到的那条
 					var snap = MailClientNetworking.LAST;
-					int idx = Math.max(0, Math.min(r.index() < 0 ? 0 : r.index(),
-							Math.max(0, snap.entries().size() - 1)));
 					if (snap.entries().isEmpty()) {
 						host.setStatus("没有可领取的邮件");
 						return HubClicks.R.HANDLED;
 					}
+					int idx = Math.max(0, Math.min(r.index(), snap.entries().size() - 1));
 					var e = snap.entries().get(idx);
-					// 货币条目 index 固定 -1 ⇒ 用条目自带的 index 发包，不用列表下标
+					// 队列里的定位号由条目自带（货币条目固定 -1），不是列表下标
 					MailClientNetworking.claim(e.kind(), e.index());
 					host.setStatus(e.kind() == com.akira.redtale.economy.net.MailProtocol.KIND_MONEY
 							? "正在领取货币…" : "正在取出物品…");

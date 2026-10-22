@@ -39,7 +39,7 @@ public final class HubMailPage {
 
 	public enum Action { NONE, OPEN_MAIL, CLAIM, SELECT }
 
-	/** 点击结果：{@code index} 对 SELECT 是列表下标，对 CLAIM 是物品队列下标。 */
+	/** 点击结果：{@code index} 对 SELECT 与 CLAIM 都是<b>列表下标</b>（不是队列里的 index）。 */
 	public record Result(Action action, int index) {
 	}
 
@@ -235,8 +235,10 @@ public final class HubMailPage {
 			int bx = dx + 6;
 			int cby = Math.max(bodyTop + 40, bodyBottom - 24);
 			if (mx >= bx && mx <= bx + bw && my >= cby && my <= cby + 18) {
-				MailProtocol.Entry e = entries.get(Math.max(0, Math.min(selected, entries.size() - 1)));
-				return new Result(Action.CLAIM, e.index());
+				// ★返回列表下标，不是条目自带的队列 index★：调用方原来拿它当列表下标用，
+				// 而队列 index（货币恒 -1）和列表位置毫无关系 ⇒ 选中第 3 条也会去领 entries[0]。
+				int idx = Math.max(0, Math.min(selected, entries.size() - 1));
+				return new Result(Action.CLAIM, idx);
 			}
 		}
 
